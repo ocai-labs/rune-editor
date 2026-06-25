@@ -90,6 +90,7 @@ export function transformPastedHTML(html: string, view: EditorView, editor: Edit
   const doc = new DOMParser().parseFromString(html, "text/html")
 
   transformToggleHTML(doc)
+  transformInlineCodeHTML(doc)
   flattenLists(doc)
   transformPastedImageHTML(doc, view, editor)
 
@@ -100,9 +101,55 @@ export function transformPastedHTML(html: string, view: EditorView, editor: Edit
       continue
     }
     if (knownBlockTags.has(el.tagName.toLowerCase()) || isFlattenedListWrapper(el)) continue
+    // Inline-level top-level elements are part of a single paragraph's inline run,
+    // NOT block wrappers. Degrading them to `<p>` injects block boundaries that
+    // fragment the surrounding top-level text nodes (one Notion paragraph → N blocks).
+    if (isInlineLevel(el)) {
+      // A genuine inline tag (`<span>`, `<a>`, `<code>`…) is left in place — PM's
+      // DOMParser folds it into the contiguous inline run.
+      if (INLINE_TAGS.has(el.tagName.toLowerCase())) continue
+      // A block tag forced inline via `display:inline` (Notion's inline-code
+      // `<div style="display:inline">`) is still treated as a block by PM's
+      // hardcoded block-tag set, so it would break the paragraph. Unwrap it to
+      // its inline children so only inline content remains.
+      el.replaceWith(...Array.from(el.childNodes))
+      continue
+    }
     el.replaceWith(...degradeToParagraphs(el, knownBlockTags))
   }
   return doc.body.innerHTML
+}
+
+/**
+ * Notion serialises inline code as
+ * `<div class="notion-inline-code-container" style="display:inline"><span
+ * style="…monospace…;background:…">code</span></div>`. Two problems on paste:
+ * the `<div>` is block-level to PM's DOMParser (it would fragment the host
+ * paragraph), and the styled `<span>` is not a `<code>` element, so the code
+ * mark's `<code>`-only parseHTML never matches and the inline code degrades to
+ * plain text. Rewrite each container to a real `<code>` element: inline (no
+ * fragmentation) AND matched by the code mark downstream. textContent only —
+ * the monospace/background styling on the inner span is chrome we don't want to
+ * leak into the document.
+ */
+function transformInlineCodeHTML(doc: Document) {
+  for (const el of Array.from(doc.querySelectorAll(".notion-inline-code-container"))) {
+    const code = doc.createElement("code")
+    code.textContent = el.textContent
+    el.replaceWith(code)
+  }
+}
+
+const INLINE_TAGS = new Set([
+  "span", "a", "code", "em", "strong", "b", "i", "u", "s", "strike", "del", "ins",
+  "sub", "sup", "mark", "small", "abbr", "cite", "q", "time", "label", "font",
+  "kbd", "samp", "var", "big", "tt",
+])
+
+function isInlineLevel(el: Element): boolean {
+  if (INLINE_TAGS.has(el.tagName.toLowerCase())) return true
+  const display = (el as HTMLElement).style?.display ?? ""
+  return display.startsWith("inline")
 }
 
 /**

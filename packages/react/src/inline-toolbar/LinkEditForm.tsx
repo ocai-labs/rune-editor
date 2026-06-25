@@ -4,10 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// LinkEditForm — shown by InlineToolbar when the Link button is clicked
-// over a selection that already has a link mark. Edits href + text in
-// place, or removes the link. Save-on-unmount with a dirty check so
-// "open and close without changes" doesn't pollute undo history.
+// LinkEditForm — shown when the Link button is clicked over a selection that
+// already has a link mark (inline toolbar) or via the link hover card's Edit.
+// Edits href + text in place, or removes the link. Save-on-unmount with a
+// dirty check so "open and close without changes" doesn't pollute undo
+// history. Pure content (no chrome / positioning): the call site wraps it —
+// LinkPanelPopover (inline toolbar) or LinkHoverCard's own PopoverContent.
 import {
   useEffect,
   useRef,
@@ -120,7 +122,7 @@ export function LinkEditForm({
   return (
     <div
       data-rune-inline-toolbar-link-panel=""
-      className="absolute top-full left-0 mt-1 z-10 w-80 space-y-3 rounded-lg bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10 select-none animate-in fade-in-0 zoom-in-95 duration-100"
+      className="w-80 space-y-3 p-3 select-none"
     >
       <label
         htmlFor="rune-link-url-input"

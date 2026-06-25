@@ -21,6 +21,17 @@
   cursor: pointer;
 }
 
+/* Bold mark (<strong>/<b> from StarterKit). Notion renders bold as
+   font-weight 600 (semibold) — measured from its authored inline style via
+   DevTools, where bold text carries `font-weight: 600`, not the 700 a bare
+   <strong> ships. Styled as plain CSS on the PM-DOM element (NOT via the
+   mark's renderHTML) so clipboard text/html stays a semantic <strong> with no
+   inline weight — pasted into Notion/GitHub/TextEdit it reads as their bold,
+   not a hardcoded 600. */
+.rune-editor :is(strong, b) {
+  font-weight: 600;
+}
+
 /* Inline `code` mark — distinct from the codeBlock block, whose
    `<pre><code>` is styled in blocks/codeBlock.css. Notion-style monospace
    pill: faint neutral bg, a code-specific red fg, small rounded padding,

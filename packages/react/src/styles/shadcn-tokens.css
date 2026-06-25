@@ -50,7 +50,16 @@
 
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Notion's measured default body-text color (read from its DevTools console,
+     NOT a screenshot — see project_notion_accent_authored_values): light
+     #2c2c2b = rgb(44,44,43). Expressed as the neutral oklch that round-trips to
+     it (≈ rgb 44,44,44): Notion's faint warm tint is <1 level — below the
+     perceptual threshold — so a C=0 gray is exact enough and matches this
+     file's oklch-gray convention. Was shadcn's oklch(0.145 0 0) (≈ #0a0a0a,
+     near-pure black — harsher than Notion). This is the shared fg seed: editor
+     text AND all chrome derive from it, so the whole UI softens to Notion's
+     tone in one move. */
+  --foreground: oklch(0.293 0 0);
 
   --popover: var(--background);
   --popover-foreground: var(--foreground);
@@ -102,7 +111,12 @@
 
 .dark {
   --background: oklch(0.213 0 0);
-  --foreground: oklch(0.985 0 0);
+  /* Notion's measured default body-text color, dark mode: #f0efed =
+     rgb(240,239,237) — a soft warm off-white, not the near-pure-white shadcn
+     shipped (oklch(0.985 0 0) ≈ #fafafa, harsher in dark). Neutral oklch L set
+     to the OKLab lightness of that color; round-trips to ≈ rgb(239,239,239).
+     Neutral (C=0) for the same reason as the :root seed above. */
+  --foreground: oklch(0.952 0 0);
 
   --popover: color-mix(in oklab, var(--foreground) 7%, var(--background));
   --popover-foreground: var(--foreground);

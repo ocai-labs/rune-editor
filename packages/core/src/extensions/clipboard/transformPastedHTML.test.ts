@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest"
 import { Editor } from "@tiptap/core"
+import { DOMParser as PMDOMParser } from "@tiptap/pm/model"
 import { createRuneKit as kit } from "../../kit"
 import { transformPastedHTML } from "./transformPastedHTML"
 
@@ -22,6 +23,36 @@ function withEditor<T>(
 
 function transform(html: string, kitOptions: Parameters<typeof kit>[0] = {}): string {
   return withEditor((editor) => transformPastedHTML(html, editor.view, editor), kitOptions)
+}
+
+// Mirror the real paste pipeline: transformPastedHTML preprocesses the raw
+// clipboard HTML, then PM's DOMParser maps it into doc blocks (block-fill wraps
+// loose inline runs into paragraphs). Returns the top-level block names.
+function pasteBlocks(html: string): string[] {
+  return withEditor((editor) => {
+    const transformed = transformPastedHTML(html, editor.view, editor)
+    const dom = new DOMParser().parseFromString(transformed, "text/html")
+    const docNode = PMDOMParser.fromSchema(editor.schema).parse(dom.body)
+    const names: string[] = []
+    docNode.forEach((node) => names.push(node.type.name))
+    return names
+  })
+}
+
+// Returns the text spans that carry a given mark after pasting `html`.
+function pastedTextWithMark(html: string, markName: string): string[] {
+  return withEditor((editor) => {
+    const transformed = transformPastedHTML(html, editor.view, editor)
+    const dom = new DOMParser().parseFromString(transformed, "text/html")
+    const docNode = PMDOMParser.fromSchema(editor.schema).parse(dom.body)
+    const out: string[] = []
+    docNode.descendants((node) => {
+      if (node.isText && node.marks.some((m) => m.type.name === markName)) {
+        out.push(node.text ?? "")
+      }
+    })
+    return out
+  })
 }
 
 describe("transformPastedHTML", () => {
@@ -208,6 +239,50 @@ describe("transformPastedHTML", () => {
   it("preserves pasted img raw src when importImageUrl is absent", () => {
     expect(transform('<img src="https://source.example/a.png" alt="A">'))
       .toBe('<img src="https://source.example/a.png" alt="A">')
+  })
+
+  // A single paragraph copied from Notion arrives as a flat run of top-level
+  // text nodes interleaved with inline elements (a `<span>` for colored text, a
+  // `<div style="display:inline">` for inline-code) — NOT wrapped in a `<p>`.
+  // Degrading those inline elements to block `<p>`s used to fragment the one
+  // paragraph into N blocks (the inline boundaries became block boundaries).
+  describe("inline-rooted paste stays one paragraph (Notion single paragraph)", () => {
+    const NOTION_PARAGRAPH =
+      `Make a new page and type ` +
+      `<div class="notion-inline-code-container" style="display:inline">` +
+      `<span style="color:#EB5757" data-token-index="1">/meet</span></div>` +
+      ` to capture meeting ` +
+      `<span style="color:rgba(44, 44, 43, 1)" data-token-index="3">notes </span>` +
+      `and thoughts effortlessly`
+
+    it("folds the whole inline run into a single paragraph", () => {
+      expect(pasteBlocks(NOTION_PARAGRAPH)).toEqual(["paragraph"])
+    })
+
+    it("does not inject block <p> boundaries into the inline run", () => {
+      const out = transform(NOTION_PARAGRAPH)
+      expect(out).not.toContain("<p>")
+      // inline-code <div> → <code> (inline); colored span stays a span
+      expect(out).not.toContain("notion-inline-code-container")
+      expect(out).toContain("<code>/meet</code>")
+      expect(out).toContain(">notes </span>")
+    })
+
+    it("keeps a bare top-level <span> as inline content, not a paragraph", () => {
+      expect(pasteBlocks("hello <span>world</span> again")).toEqual(["paragraph"])
+    })
+
+    it("still degrades a genuine block <div> wrapper to a paragraph", () => {
+      // No inline display + block tag → unchanged degrade behavior.
+      expect(transform("<div>plain block</div>")).toBe("<p>plain block</p>")
+    })
+
+    it("preserves Notion inline code as a real <code> carrying the code mark", () => {
+      // The notion-inline-code-container is rewritten to <code> so PM's code
+      // mark matches; only "/meet" carries the mark, the rest is plain text.
+      expect(pastedTextWithMark(NOTION_PARAGRAPH, "code")).toEqual(["/meet"])
+      expect(transform(NOTION_PARAGRAPH)).toContain("<code>/meet</code>")
+    })
   })
 
   it("keeps image marker alongside existing list flattening", () => {

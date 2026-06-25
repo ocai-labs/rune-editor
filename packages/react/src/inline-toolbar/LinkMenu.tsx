@@ -5,9 +5,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // LinkMenu — inline link insertion form. Shown by InlineToolbar when the
-// Link button is clicked over a selection that has no link mark. Layout
-// hangs below the toolbar (top-full) so row 2's Link button stays exposed
-// and can toggle it closed.
+// Link button is clicked over a selection that has no link mark. Pure content
+// (no chrome / positioning): the call site supplies both — LinkPanelPopover
+// for the inline toolbar (a body-portaled dropdown below the toolbar, so the
+// form stays exposed and the Link button can toggle it closed).
 import { useEffect, useRef, useState } from "react"
 import type { Editor } from "@tiptap/core"
 // Side-effect: load Link's Commands<> augmentation so setLink / unsetLink
@@ -49,7 +50,7 @@ export function LinkMenu({ editor, onClose }: LinkMenuProps) {
   return (
     <div
       data-rune-inline-toolbar-link-panel=""
-      className="absolute top-full left-0 mt-1 z-10 w-80 space-y-2 rounded-lg bg-popover p-2 text-popover-foreground shadow-lg ring-1 ring-foreground/10 select-none animate-in fade-in-0 zoom-in-95 duration-100"
+      className="w-80 space-y-2 p-2 select-none"
       // Block focus shift away from PM when interacting with the panel
       // chrome (the input itself still focuses normally).
       onMouseDown={(e) => {

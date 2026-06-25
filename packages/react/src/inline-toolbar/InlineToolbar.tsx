@@ -85,6 +85,7 @@ import { cn } from "../lib/utils"
 import { useRuneEditorState } from "../useRuneEditorState"
 import { LinkMenu } from "./LinkMenu"
 import { LinkEditForm } from "./LinkEditForm"
+import { LinkPanelPopover } from "./LinkPanelPopover"
 import { TurnIntoSuggestionMenu } from "./TurnIntoSuggestionMenu"
 import { InlineColorMenu } from "./InlineColorMenu"
 import { useTurnIntoTargets } from "../turn-into"
@@ -169,6 +170,11 @@ export function InlineToolbar({
   // rows — reproducing the original `top-full left-0` placement, but as a
   // portaled popover immune to the toolbar's overflow / window-blur reflow.
   const colorAnchorRef = useRef<HTMLDivElement | null>(null)
+  // The link form is taller than the color grid, so it anchors to the WHOLE
+  // toolbar (PopoverContent) and drops below it — anchoring to the
+  // formatting-area wrapper like the color menu would land the form on top of
+  // the renderExtraSection slot that sits below the formatting rows.
+  const toolbarContentRef = useRef<HTMLDivElement | null>(null)
   const currentBlock = useCurrentTextSelectionBlock(editor)
   const currentBlockId = currentBlock?.id ?? null
   // A table source has no conversion targets at all — hide the row entirely
@@ -388,10 +394,10 @@ export function InlineToolbar({
     ? (editor.getAttributes("link").href as string | undefined) ?? ""
     : ""
 
-  // LinkMenu / LinkEditForm each render their own root with
-  // data-rune-inline-toolbar-link-panel; no extra wrapper here (a static
-  // wrapper around an absolute child has zero size and Playwright reports
-  // it as hidden).
+  // The active link form, mounted inside LinkPanelPopover (a body-portaled
+  // sibling of the toolbar — see the sibling render below). Gated on linkOpen
+  // so the form mounts/unmounts exactly when the panel toggles, preserving
+  // LinkEditForm's save-on-unmount timing.
   let linkPopover: ReactNode = null
   if (linkOpen) {
     linkPopover =
@@ -434,6 +440,7 @@ export function InlineToolbar({
     >
       <PopoverAnchor virtualRef={virtualRef} />
       <PopoverContent
+        ref={toolbarContentRef}
         side="bottom"
         align="start"
         sideOffset={10}
@@ -459,11 +466,12 @@ export function InlineToolbar({
         className="flex w-48 flex-col gap-1 overflow-hidden rounded-lg p-2 shadow-lg ring-1 ring-foreground/10"
         {...{ [CONTENT_ATTR]: "" }}
       >
-        {/* Wrapper is position:relative so the link sub-popover (top-full)
-            hangs off the panel rather than the viewport. It also anchors the
-            color dropdown (InlineColorMenu) — a body-portaled sibling popover
-            opening below this area, not an absolute child. */}
-        <div ref={colorAnchorRef} className="relative flex flex-col">
+        {/* The formatting-area wrapper. Its getBoundingClientRect anchors the
+            two body-portaled sibling dropdowns that open below it — the color
+            palette (InlineColorMenu) and the link forms (LinkPanelPopover) —
+            reproducing the old `top-full left-0` placement without the
+            overflow-hidden clip an absolute child suffered. */}
+        <div ref={colorAnchorRef} className="flex flex-col">
           {/* Turn-into row — promoted to a full-width labeled row (Notion-style):
               current block type + a chevron. Opens TurnIntoSuggestionMenu
               anchored to this button. Hidden (row + divider) when the source
@@ -639,7 +647,6 @@ export function InlineToolbar({
               }}
             />
           </div>
-          {linkPopover}
         </div>
         {/* Host-rendered section slot — below the formatting grid, for the
             same non-collapsed selection that opened the toolbar (gate already
@@ -686,6 +693,19 @@ export function InlineToolbar({
         onApplyBackground={onApplyBackground}
         recent={recentColors}
       />
+      {/* Link form — same construction as the color palette (a body-portaled
+          sibling popover), but anchored to the WHOLE toolbar so the tall form
+          drops below it instead of landing on the renderExtraSection slot.
+          Replaces the old `absolute top-full` child that the toolbar's w-48
+          overflow-hidden box clipped (#352 fixed color the same way; the link
+          forms were the deferred half). */}
+      <LinkPanelPopover
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        anchorRef={toolbarContentRef}
+      >
+        {linkPopover}
+      </LinkPanelPopover>
     </Popover>
   )
 }
