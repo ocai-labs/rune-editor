@@ -77,6 +77,13 @@
   --rune-divider-color: color-mix(in oklab, var(--rune-editor-fg) 12%, transparent);
   --rune-list-indent: 1.5em;
   --rune-list-gap: 0.4em;
+  /* To-do checkbox border (unchecked). Notion paints its empty checkbox
+     with a defined icon-gray (`--c-icoPri`), NOT the text color — a
+     currentColor border tracks the (possibly dark/heavy) body color and
+     reads too strong. A mid-gray derived from the editor fg matches
+     Notion's understated empty box. The checked fill reuses
+     --editor-accent (Notion brand blue) directly. */
+  --rune-checkbox-border: color-mix(in oklab, var(--rune-editor-fg) 45%, transparent);
   /* Per-depth horizontal indent applied to any block via
      [data-depth="N"]. Sized so a depth-N+1 list marker lands at the
      column where depth-N's text content starts, producing a clean

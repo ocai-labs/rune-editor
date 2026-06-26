@@ -105,15 +105,34 @@
 
 .rune-numbered-list:not([data-marker-style]) .rune-block-content::before { content: counter(rune-li-counter, decimal) "."; }
 
+/* Task rows pin the checkbox to the FIRST text line (not the vertical
+ * center of a wrapped multi-line row), mirroring Notion's flex-start row
+ * with a fixed-height marker box. Overrides the shared `align-items:
+ * baseline` set on .rune-block-content above. */
+.rune-task-list .rune-block-content {
+  align-items: flex-start;
+}
+
 .rune-task-checkbox {
   position: relative;
-  flex: 0 0 1em;
-  width: 1em;
-  height: 1em;
+  /* Fixed 16px square like Notion's (their inner checkbox is 16×16 with a
+   * 1.5px border), border-box so the border lives INSIDE the 16px — with
+   * the editor's default content-box this would otherwise paint 16+3px. */
+  box-sizing: border-box;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  /* Center the 16px square on the first text line. The line box is
+   * `line-height × 1em` = 1.5em tall (paragraph.css sets line-height 1.5
+   * on .rune-block-content), so drop the square by half the slack. This
+   * replaces the old font-tuned baseline-ghost hack: it tracks font-size
+   * (the square stays 16px like Notion's; the margin grows on a larger
+   * editor font) and needs no per-font tuning. */
   margin: 0;
+  margin-top: calc((1.5em - 16px) / 2);
   padding: 0;
-  border: 1px solid currentColor;
-  border-radius: 0.2em;
+  border: 1.5px solid var(--rune-checkbox-border);
+  border-radius: 1.5px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -122,26 +141,12 @@
   cursor: pointer;
 }
 
-/* The list .rune-block-content uses `align-items: baseline` so all three
- * list families (bullet / numbered / task) share the same alignment rule.
- * Bullet/numbered markers are real text glyphs (•, 1.) so their baseline
- * matches the paragraph's. The task checkbox is an empty <button>, whose
- * default baseline is the box's bottom edge — that's why an unstyled
- * checkbox sits visually low next to the text.
- *
- * Anchor the button's baseline higher by injecting a zero-width inline
- * child: in baseline-aligned flex containers the item's baseline is its
- * first inline child's baseline, and an inline-block's baseline is its
- * own bottom. So a 0×0.8em ghost makes the button report its baseline at
- * 0.8em from the top of its 1em box → checkbox center lands ≈ text
- * x-height. 0.8em is font-tuned for Geist; tweak if we ever swap the
- * default sans. */
-.rune-task-checkbox::after {
-  content: "";
-  display: inline-block;
-  width: 0;
-  height: 0.8em;
-  vertical-align: baseline;
+/* Checked: solid accent fill + white check, matching Notion's blue
+ * checkbox (the empty-box gray border is replaced by the accent so the
+ * 1.5px edge doesn't read as a darker rim around the fill). */
+.rune-task-list[data-checked="true"] .rune-task-checkbox {
+  background: var(--editor-accent);
+  border-color: var(--editor-accent);
 }
 
 .rune-task-list[data-checked="true"] .rune-task-checkbox::before {
@@ -151,7 +156,9 @@
   display: grid;
   place-items: center;
   font-size: 0.8em;
+  font-weight: 700;
   line-height: 1;
+  color: #fff;
 }
 
 .rune-task-list[data-checked="true"] .rune-block-content > p {

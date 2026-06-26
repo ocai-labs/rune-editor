@@ -54,11 +54,11 @@
   "author": "Ocean AI, LLC <oss@oceanai.so>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OceanAI-lab/rune-editor.git",
+    "url": "git+https://github.com/ocai-labs/rune-editor.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/OceanAI-lab/rune-editor#readme",
+  "homepage": "https://github.com/ocai-labs/rune-editor#readme",
   "bugs": {
-    "url": "https://github.com/OceanAI-lab/rune-editor/issues"
+    "url": "https://github.com/ocai-labs/rune-editor/issues"
   }
 }
