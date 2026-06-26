@@ -1,6 +1,6 @@
 {
   "name": "@ocai/rune-react",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Default Rune editor UI: hooks, components, Tailwind v4 + Radix primitives.",
   "type": "module",
   "main": "./dist/index.js",
