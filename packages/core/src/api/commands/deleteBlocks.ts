@@ -15,6 +15,10 @@ import {
   resolveBodyBlockById,
   surfaceChildrenAt,
 } from "../../schema/bodySurface"
+import {
+  firstSelectableIndex,
+  isBlockSelectable,
+} from "../../extensions/block-selection/selectable"
 import type { DeleteBlocksTarget } from "../types"
 
 export interface DeleteRange {
@@ -95,26 +99,50 @@ export function setSelectionAfterDelete(
     tr.setSelection(near)
     return
   }
+  const paragraph = schema.nodes.paragraph
   if (tr.doc.childCount === 0) {
-    const paragraph = schema.nodes.paragraph
     if (!paragraph) return
     tr.insert(0, paragraph.create())
     tr.setSelection(TextSelection.create(tr.doc, 1))
     return
   }
 
-  if (firstDeletedIndex === 0) {
-    tr.setSelection(Selection.near(tr.doc.resolve(0), 1))
+  // Deleting all body blocks can leave a doc that is non-empty yet has no
+  // editable body — only a leading non-selectable block (the in-document
+  // title) survives. The schema (`block+`) accepts a title-only doc, but the
+  // user needs a line to type into, so re-seed one empty body paragraph after
+  // the title (Notion keeps an empty line under the title). `firstSelectableIndex`
+  // is `doc.childCount` exactly when nothing on the root surface is selectable.
+  const firstSelectable = firstSelectableIndex(tr.doc)
+  if (firstSelectable >= tr.doc.childCount) {
+    if (!paragraph) return
+    const at = tr.doc.content.size
+    tr.insert(at, paragraph.create())
+    tr.setSelection(TextSelection.create(tr.doc, at + 1))
     return
   }
 
-  const index = Math.min(firstDeletedIndex - 1, tr.doc.childCount - 1)
-  const node = tr.doc.child(index)
+  // Land the caret at the START of the new first block when the deletion began
+  // at the start of the selectable region — either index 0 (no title) or the
+  // first body block sitting right after a leading non-selectable title. The
+  // title is excluded from block ops and isn't where the user was editing, so
+  // parking the caret in it (the default "end of previous block" below) would
+  // be wrong.
+  const prevIndex = Math.min(firstDeletedIndex - 1, tr.doc.childCount - 1)
+  if (firstDeletedIndex === 0 || (prevIndex >= 0 && !isBlockSelectable(tr.doc.child(prevIndex)))) {
+    const landIndex = Math.min(firstDeletedIndex, tr.doc.childCount - 1)
+    tr.setSelection(
+      Selection.near(tr.doc.resolve(topLevelBlockStartPos(tr.doc, landIndex)), 1),
+    )
+    return
+  }
+
+  const node = tr.doc.child(prevIndex)
   if (!node.isTextblock) {
-    tr.setSelection(Selection.near(tr.doc.resolve(topLevelBlockEndPos(tr.doc, index)), -1))
+    tr.setSelection(Selection.near(tr.doc.resolve(topLevelBlockEndPos(tr.doc, prevIndex)), -1))
     return
   }
 
-  const bounds = topLevelBlockTextBounds(tr.doc, index)
+  const bounds = topLevelBlockTextBounds(tr.doc, prevIndex)
   tr.setSelection(TextSelection.create(tr.doc, bounds.to))
 }

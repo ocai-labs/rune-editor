@@ -20,6 +20,7 @@ import {
 import type { SurfaceRef } from "../shared"
 import { surfaceChildrenAt } from "../../schema/bodySurface"
 import { MultiBlockSelection } from "./MultiBlockSelection"
+import { isBlockSelectable } from "./selectable"
 import { blockSelectionKey } from "./plugin"
 import { claimGesture, isPrimaryRelease, primaryLost } from "../shared/gesture-state"
 import type { GestureClaim } from "../shared/gesture-state"
@@ -395,6 +396,10 @@ function intersectedBlockRange(view: EditorView, walk: SurfaceWalk, rect: Rect):
   let lo: number | null = null
   let hi: number | null = null
   for (let i = 0; i < walk.childCount; i++) {
+    // Skip blocks that opt out of block selection (the title). Only the ROOT
+    // surface (`surfacePos === -1`) can host such a block — the title lives at
+    // doc index 0 and never inside a column — so the column walk is untouched.
+    if (walk.surfacePos === -1 && !isBlockSelectable(view.state.doc.child(i))) continue
     const el = getBlockElement(view, walk, i)
     if (!el) continue
     const r = el.getBoundingClientRect()

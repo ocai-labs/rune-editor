@@ -30,6 +30,7 @@
 @import "./styles/editor-chrome.css";
 @import "./styles/typography.css";
 @import "./styles/wikilink.css";
+@import "./styles/blocks/title.css";
 @import "./styles/blocks/paragraph.css";
 @import "./styles/blocks/heading.css";
 @import "./styles/blocks/divider.css";

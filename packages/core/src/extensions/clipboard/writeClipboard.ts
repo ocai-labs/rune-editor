@@ -45,6 +45,11 @@ export function writeClipboard(view: EditorView, event: ClipboardEvent, cut: boo
   // from sel.content() above (still valid as a JSON snapshot), but a future
   // "lazy slice capture" optimization that fetched the slice inside the cut
   // branch would silently serialize the empty post-delete selection.
-  if (cut) view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
+  //
+  // Tag the delete with `uiEvent: "cut"` (PM's own convention for its native
+  // cut handler, which this replaces). Downstream appendTransactions key off
+  // it — notably TitleKit's boundary, which on a cut that empties the body
+  // re-seeds an empty line and moves the caret into it.
+  if (cut) view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta("uiEvent", "cut"))
   return true
 }

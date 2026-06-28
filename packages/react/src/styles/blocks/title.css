@@ -1,0 +1,43 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * Copyright (c) 2026 Ocean AI, LLC
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* Title block — in-document page title (renders <h1 class="rune-title">).
+   It lives as block 0 inside the editor; horizontal inset comes from the
+   shared .rune-block-content wrapper so nothing extra is needed here.
+
+   Host chrome (cover, icon row, scroller, small-text variant) is NOT in
+   this file — those rules belong in the consuming app's own stylesheet. */
+
+/* In-document page title: display-size, bold weight, tight line-height.
+   The block wrapper (.rune-block-content) supplies the horizontal inset.
+   position:relative is required so the ::before placeholder can be
+   absolutely positioned without escaping the content box. */
+.rune-editor .rune-title {
+  position: relative;
+  margin: 0;
+  color: var(--foreground);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 48px;
+  word-break: break-word;
+}
+
+/* Always-on "New page" placeholder for an empty title (Notion shows it
+   whether or not the title is focused). An empty ProseMirror textblock
+   holds only a trailing <br>, so key off that; absolutely positioned so
+   it overlays without nudging the caret line. rune-react's default
+   placeholders ship `title: undefined`, which opts the title out of the
+   generic Placeholder extension (see buildDefaultPlaceholders in
+   RuneEditor.tsx), so this ::before is the title's ONLY hint — no double
+   rendering. */
+.rune-editor .rune-title:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "New page";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  color: color-mix(in oklab, var(--foreground) 32%, transparent);
+  pointer-events: none;
+}

@@ -62,7 +62,7 @@ export type {
   BlockColorKind,
 } from "./api"
 
-export { getRuneSchemaContext } from "./api/schemaContext"
+export { getRuneSchemaContext, getAgentHiddenTypes } from "./api/schemaContext"
 export type {
   RuneSchemaContext,
   RuneEditorSchemaSummary,
@@ -245,6 +245,11 @@ export type {
   RuneMediaImportResult,
   RuneMediaImportSource,
 } from "./blocks"
+
+// Opt-in in-document page title (NOT a default body block). Enable via
+// createRuneKit({ plugins: [TitleKit] }). See blocks/Title.
+export { TitleKit, TitleBlock, TITLE_TYPE, setTitleText } from "./blocks/Title"
+export type { RuneTitleBlock } from "./blocks/Title"
 
 export {
   InlineMath,

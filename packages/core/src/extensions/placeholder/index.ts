@@ -8,7 +8,11 @@ import { Extension } from "@tiptap/core"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
 import { Decoration, DecorationSet } from "@tiptap/pm/view"
 import { resolvePlaceholder } from "./resolve"
-import type { PlaceholderConfig, PlaceholderPluginState } from "./types"
+import type {
+  PlaceholderConfig,
+  PlaceholderPluginState,
+  PlaceholderResolver,
+} from "./types"
 
 export const placeholderPluginKey = new PluginKey<PlaceholderPluginState>("rune-placeholder")
 
@@ -50,8 +54,18 @@ export const Placeholder = Extension.create<PlaceholderOptions>({
           const placeholders = extension.options.placeholders
           if (placeholders) {
             const unknown: string[] = []
+            const entries = placeholders as Record<
+              string,
+              PlaceholderResolver | undefined
+            >
             for (const key of Object.keys(placeholders)) {
               if (key === "default") continue
+              // An explicit per-type `undefined` is a deliberate opt-out, not
+              // a typo — harmless even when the type isn't registered (e.g.
+              // rune-react ships `title: undefined` in its defaults but
+              // TitleKit, the only thing that registers `title`, is opt-in).
+              // Don't flag it.
+              if (entries[key] === undefined) continue
               if (!view.state.schema.nodes[key]) unknown.push(key)
             }
             if (unknown.length > 0) {

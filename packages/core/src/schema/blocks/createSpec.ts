@@ -114,6 +114,15 @@ export interface BlockMetaSpec {
   isolating?: boolean
   defining?: boolean
   hardBreakShortcut?: "shift+enter" | "enter" | "none"
+  /**
+   * The ProseMirror node-spec `marks` allow-list. Omit (the default) → the node
+   * permits every registered mark. `""` → the node permits NO inline marks, so
+   * bold/italic/color/link/etc. can never be applied or pasted into it. Use for
+   * plain-text display nodes like the page title. rune-react's InlineToolbar
+   * reads this off the schema and stays closed over a selection wholly inside a
+   * marks-free block (a formatting toolbar with nothing to format is noise).
+   */
+  marks?: string
 }
 
 export type BlockSpecFromInput = (args: {
@@ -272,6 +281,11 @@ export interface BlockSpecConfig {
   slashMenuItems?: (editor: Editor) => DefaultSuggestionItem[]
   /** Gutter/side-menu integration. */
   sideMenu?: BlockSideMenuSpec
+  /**
+   * A block marked `agentHidden` is excluded from rune-ai read-tool outputs
+   * (the AI can't target it) — e.g. a structural page title.
+   */
+  agentHidden?: boolean
   /** Block-owned capability flags consumed by schema/UI integration. */
   supports?: BlockSupportsSpec
   /** Attr changes the factory atom NodeView absorbs without a rebuild.
@@ -527,6 +541,7 @@ export function createBlockSpec(config: BlockSpecConfig) {
     schemaContext: sanitizeSchemaContext(config.schemaContext),
     slashMenuItems: config.slashMenuItems,
     sideMenu: config.sideMenu,
+    agentHidden: config.agentHidden,
     supports: config.supports,
     inPlaceAttrs: config.inPlaceAttrs,
     resizeMediaSelector: config.resizeMediaSelector,
@@ -549,6 +564,8 @@ export function createBlockSpec(config: BlockSpecConfig) {
     selectable: config.meta?.selectable,
     code: config.meta?.code,
     isolating: config.meta?.isolating,
+    // Omit → PM default (all marks allowed). `""` → no marks (plain-text node).
+    marks: config.meta?.marks,
 
     addOptions() {
       return {

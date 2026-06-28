@@ -287,6 +287,47 @@ describe("Placeholder plugin", () => {
     }
   })
 
+  it("does not warn for an explicit `undefined` opt-out of an unregistered type", () => {
+    // rune-react ships `title: undefined` in its default placeholders, but
+    // TitleKit (the only thing that registers the `title` node) is opt-in.
+    // An explicit `undefined` is a deliberate opt-out, not a typo, so it must
+    // NOT trip the unknown-key warning for consumers without TitleKit.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const localContainer = document.createElement("div")
+      document.body.appendChild(localContainer)
+      const editor = new Editor({
+        element: localContainer,
+        extensions: [
+          Document,
+          Text,
+          Para,
+          Heading,
+          Placeholder.configure({
+            placeholders: {
+              default: '"/" for commands',
+              // `title` is not registered here; the explicit `undefined`
+              // opt-out must stay silent. A real string for an unknown key
+              // (covered by the test above) still warns.
+              ...({ title: undefined } as unknown as Record<string, string>),
+            },
+          }),
+        ],
+        content: "<p></p>",
+      })
+
+      const ours = warn.mock.calls
+        .map((args) => String(args[0] ?? ""))
+        .filter((m) => m.includes("rune-placeholder"))
+      expect(ours.some((m) => m.includes("title"))).toBe(false)
+
+      editor.destroy()
+      localContainer.remove()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it("widget lands inside a NodeView's contentDOM, not on the outer wrapper", () => {
     // Regression net for PR #184 review concern: TaskList (and any future
     // block whose NodeView root != contentDOM) must receive the placeholder

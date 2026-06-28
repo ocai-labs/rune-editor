@@ -8,6 +8,7 @@ import type { RawCommands } from "@tiptap/core"
 import { TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state"
 import { nanoid } from "nanoid"
 import { MultiBlockSelection } from "./MultiBlockSelection"
+import { firstSelectableIndex } from "./selectable"
 import { blockSelectionKey, type BlockSelectionPluginMeta } from "./plugin"
 import { topLevelBlockIndexById } from "../../schema/topLevelBlocks"
 import { setSelectionAfterDelete } from "../../api/commands/deleteBlocks"
@@ -54,8 +55,12 @@ function moveSelectedBlocks(
     const surfaceN = surface.childCount
     const [lo, hi] = sel.blockIndices
     // Clamp at the surface's edges (column top/bottom mirror doc top/bottom):
-    // consumed no-op, exactly like the root clamps.
-    if (direction === -1 && lo === 0) return true
+    // consumed no-op, exactly like the root clamps. The TOP edge is the first
+    // SELECTABLE index, not 0 — so a body block never moves above a leading
+    // non-selectable run (the in-document title). (An MBS can't cover the title
+    // itself: MultiBlockSelection.create clamps it out.)
+    const minIdx = firstSelectableIndex(surface)
+    if (direction === -1 && lo <= minIdx) return true
     if (direction === 1 && hi === surfaceN - 1) return true
 
     // Absolute pos of the surface's first child (0 for the root surface).
@@ -90,7 +95,13 @@ function moveSelectedBlocks(
   const bounds = surfaceBlockTextBoundsAtPos(state.doc, sel.from)
   if (!bounds) return false
   const { surface, indexInSurface: index } = bounds
-  if (direction === -1 && index === 0) return true
+  // The first selectable index on this surface — a leading non-selectable run
+  // (the in-document title) is neither movable itself nor a slot a body block
+  // may move above. `index < minIdx` ⇒ the caret is IN the title: consumed no-op
+  // so Mod-ArrowDown can't push the title below the body.
+  const minIdx = firstSelectableIndex(surface.node)
+  if (index < minIdx) return true
+  if (direction === -1 && index === minIdx) return true
   if (direction === 1 && index === surface.node.childCount - 1) return true
 
   const blockFrom = bounds.from - 1
@@ -145,10 +156,15 @@ export function blockSelectionCommands(): Partial<RawCommands> {
       ({ tr, state, dispatch }) => {
         const N = state.doc.childCount
         if (N === 0) return false
+        // Skip a leading run of non-selectable root blocks (the title, always
+        // at index 0). If nothing on the root surface is selectable, there's
+        // no block selection to make.
+        const lo = firstSelectableIndex(state.doc)
+        if (lo >= N) return false
         if (dispatch) {
-          const firstId = state.doc.child(0).attrs.id as string | null
+          const firstId = state.doc.child(lo).attrs.id as string | null
           const meta: BlockSelectionPluginMeta = { setAnchor: firstId }
-          tr.setSelection(MultiBlockSelection.create(state.doc, 0, N - 1))
+          tr.setSelection(MultiBlockSelection.create(state.doc, lo, N - 1))
           tr.setMeta(blockSelectionKey, meta)
           dispatch(tr)
         }

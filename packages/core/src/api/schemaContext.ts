@@ -254,3 +254,18 @@ export function getRuneSchemaContext(editor: Editor): RuneSchemaContext {
     palette: [...COLOR_NAMES],
   }
 }
+
+/**
+ * The set of block types marked `agentHidden` in their spec — blocks that
+ * rune-ai strips from its read-tool outputs (`list_blocks` /
+ * `get_editor_context`) so the AI can't target them (e.g. a structural page
+ * title). Derived from spec metadata, so any block (built-in or plugin) that
+ * opts in via `agentHidden: true` is classified here automatically.
+ */
+export function getAgentHiddenTypes(editor: Editor): Set<string> {
+  const out = new Set<string>()
+  forEachBlockSpec(editor, (nodeName, meta) => {
+    if (meta.agentHidden === true) out.add(meta.type ?? nodeName)
+  })
+  return out
+}

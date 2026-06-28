@@ -1,7 +1,7 @@
 // Initial document. RuneEditor accepts an HTML string for `content` and parses
 // it through the schema (headings UI 1/2/3 = h2/h3/h4, lists, quote, code).
 export const SEED = `
-<h2>Welcome to Rune</h2>
+<h1>Welcome to Rune</h1>
 <p>Rune is a Tiptap v3 / ProseMirror editor wrapper with product-grade block
 behaviors. This page is a live editor — type, drag, and try the menus.</p>
 

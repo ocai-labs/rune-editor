@@ -7,6 +7,7 @@ import {
   FloatingTableOfContents,
   type Editor,
 } from "@ocai/rune-react"
+import { TitleKit } from "@ocai/rune-core"
 import "@ocai/rune-react/style.css"
 import "./demo.css"
 import { SEED } from "./seed"
@@ -43,7 +44,12 @@ export function App() {
       </header>
 
       <main className="demo-main">
-        <RuneEditor content={SEED} onReady={setEditor} className="demo-editor">
+        <RuneEditor
+          content={SEED}
+          kit={{ plugins: [TitleKit] }}
+          onReady={setEditor}
+          className="demo-editor"
+        >
           <RuneSlashMenu editor={editor} />
           <RuneEmojiPicker editor={editor} />
           <RuneLinkMenu editor={editor} getItems={async () => []} />

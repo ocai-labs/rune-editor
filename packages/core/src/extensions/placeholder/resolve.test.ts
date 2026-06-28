@@ -33,6 +33,16 @@ const Heading = createBlockSpec({
   renderDOM: ({ node }) => [`h${node.attrs.level as number}`, {}, 0],
 })
 
+// Minimal stand-in for the opt-in TitleKit block — enough to register a
+// `title` node type so the resolver opt-out path can be exercised here
+// without pulling in TitleBoundary's keymaps/normalization.
+const Title = createBlockSpec({
+  type: "title",
+  content: "inline*",
+  parseDOM: [{ tag: "h1" }],
+  renderDOM: () => ["h1", {}, 0],
+})
+
 function makeEditor(html: string) {
   const element = document.createElement("div")
   document.body.appendChild(element)
@@ -124,6 +134,36 @@ describe("resolvePlaceholder", () => {
     expect(
       resolvePlaceholder(editor.state, { ...baseConfig, heading: undefined }, true, true),
     ).toEqual([])
+    editor.destroy()
+  })
+
+  it("opts the in-document title out: a focused empty title gets no placeholder (CSS owns 'New page')", () => {
+    // rune-react ships `title: undefined` in its default placeholders so the
+    // ONLY empty-title hint is title.css's always-on "New page" ::before.
+    // A focused empty title must therefore NOT also fall through to the
+    // `default` slash hint — otherwise it double-renders (the bug FIX 1
+    // closes).
+    const element = document.createElement("div")
+    document.body.appendChild(element)
+    const editor = new Editor({
+      element,
+      extensions: [Document, Text, Title, Para],
+      content: "<h1></h1><p>body</p>",
+    })
+    editor.commands.setTextSelection(1) // caret inside the empty title
+    const optedOut: PlaceholderConfig = {
+      ...baseConfig,
+      // `title` isn't in the typed key union (opt-in TitleKit block); spread
+      // a Record so the literal doesn't trip the excess-property check.
+      ...({ title: undefined } as Record<string, undefined>),
+    }
+    expect(resolvePlaceholder(editor.state, optedOut, true, true)).toEqual([])
+
+    // Control: WITHOUT the opt-out the focused empty title falls through to
+    // `default` — exactly the hint that would double up with the CSS ::before.
+    const hit = firstHit(resolvePlaceholder(editor.state, baseConfig, true, true))
+    expect(hit?.node.type.name).toBe("title")
+    expect(hit?.text).toBe('"/" for commands')
     editor.destroy()
   })
 

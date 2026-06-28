@@ -7,6 +7,7 @@
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import type { IndentConfig } from "../schema/blocks/createSpec"
 import { surfaceChildrenAt } from "../schema/bodySurface"
+import { isBlockSelectable } from "../extensions/block-selection/selectable"
 
 /**
  * The depth at which `pos` sits, as the depth of the immediately preceding
@@ -28,6 +29,11 @@ function immediatelyPrevDepth(doc: ProseMirrorNode, pos: number): number {
     const childStart = offset
     offset += child.nodeSize
     if (childStart >= pos) return
+    // A non-selectable block (the in-document title) is never an indent anchor:
+    // body blocks must not nest under it. Skipping it leaves the first body
+    // block with no preceding sibling, so its follow-prev cap stays 0 (Tab is a
+    // no-op there) — the same as a title-less doc's lone first block.
+    if (!isBlockSelectable(child)) return
     prevDepth = (child.attrs.depth as number | undefined) ?? 0
   })
   return prevDepth

@@ -255,7 +255,17 @@ export function InlineToolbar({
       const sel = editor.state.selection
       const isText = sel instanceof TextSelection
       const collapsed = sel.from === sel.to
-      if (!isText || collapsed) {
+      // A plain-text block (node spec `marks: ""`, e.g. the page title) has no
+      // inline marks to format. When the selection sits WHOLLY inside one such
+      // block, keep the toolbar closed rather than float a grid of no-op
+      // formatting buttons (and a Turn-into / color menu) over a field that
+      // can't take any of them. A selection that merely STARTS in the title and
+      // extends into the body still opens — its body run is formattable.
+      const marksFree =
+        isText &&
+        sel.$from.parent === sel.$to.parent &&
+        sel.$from.parent.type.spec.marks === ""
+      if (!isText || collapsed || marksFree) {
         setOpen(false)
         setColorOpen(false)
         setLinkOpen(false)

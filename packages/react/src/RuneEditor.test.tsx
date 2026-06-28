@@ -70,6 +70,13 @@ describe("RuneEditor", () => {
     // via its hasOwn check.
     expect(placeholder?.options.placeholders.toggle).toBeUndefined()
     expect(Object.prototype.hasOwnProperty.call(placeholder?.options.placeholders, "toggle")).toBe(true)
+    // The in-document page title (opt-in TitleKit) opts OUT of the generic
+    // Placeholder: title.css's always-on "New page" ::before is the only
+    // title hint. The key is present-as-undefined so resolve.ts treats it as
+    // a hard opt-out (hasOwn) and index.ts skips the unknown-key warning for
+    // it (consumers without TitleKit aren't warned).
+    expect(placeholder?.options.placeholders.title).toBeUndefined()
+    expect(Object.prototype.hasOwnProperty.call(placeholder?.options.placeholders, "title")).toBe(true)
   })
 
   it("merges consumer placeholders without dropping other kit fields", async () => {

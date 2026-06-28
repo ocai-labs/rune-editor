@@ -7,7 +7,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { Editor } from "@tiptap/core"
 import { EditorContent } from "@tiptap/react"
-import { createRuneKit } from "@ocai/rune-core"
+import { createRuneKit, TitleKit } from "@ocai/rune-core"
 import { describe, expect, it, onTestFinished } from "vitest"
 import { ComponentsContext, defaultComponents } from "../suggestion-menu/ComponentsContext"
 import { InlineToolbar } from "./InlineToolbar"
@@ -180,6 +180,46 @@ describe("InlineToolbar", () => {
     // non-vacuous.
     expect(screen.queryByRole("button", { name: "Color" })).toBeNull()
     expect(screen.queryByRole("button", { name: "extra-section" })).toBeNull()
+  })
+
+  it("stays closed for a selection wholly inside a marks-free block (the page title)", async () => {
+    // TitleKit's title block is plain text (`marks: ""`), so a selection inside
+    // it has nothing for the formatting toolbar to act on — the toolbar must not
+    // open over it (no Color / Bold / Turn-into).
+    const editor = new Editor({
+      element: document.createElement("div"),
+      extensions: createRuneKit({ plugins: [TitleKit] }),
+    })
+    mockEditorCoords(editor)
+    onTestFinished(() => {
+      if (!editor.isDestroyed) editor.destroy()
+    })
+    editor.commands.setContent([
+      { type: "title", content: [{ type: "text", text: "My title" }] },
+      { type: "paragraph", attrs: { id: "p1" }, content: [{ type: "text", text: "body" }] },
+    ])
+    setSelectionAroundText(editor, "My title")
+
+    render(
+      <ComponentsContext.Provider value={defaultComponents}>
+        <InlineToolbar editor={editor} />
+      </ComponentsContext.Provider>,
+    )
+
+    // The selection IS a non-collapsed range (so a body selection of the same
+    // shape WOULD open the toolbar) — the gate, not an empty caret, keeps it
+    // shut. Color is always present once the toolbar opens, so its absence
+    // confirms the toolbar never opened.
+    expect(editor.state.selection.empty).toBe(false)
+    expect(screen.queryByRole("button", { name: "Color" })).toBeNull()
+
+    // A selection that extends from the title into the body still opens — its
+    // body run is formattable. Anchor in the title, head in the body.
+    const titlePos = 1
+    act(() => {
+      editor.commands.setTextSelection({ from: titlePos, to: editor.state.doc.content.size - 1 })
+    })
+    expect(await screen.findByRole("button", { name: "Color" })).toBeInTheDocument()
   })
 
   it("reflects mark transactions in the Bold button's pressed state", async () => {

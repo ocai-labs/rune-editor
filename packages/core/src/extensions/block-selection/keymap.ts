@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core"
 import { TextSelection } from "@tiptap/pm/state"
 import type { ResolvedPos } from "@tiptap/pm/model"
 import { MultiBlockSelection } from "./MultiBlockSelection"
+import { firstSelectableIndex, isBlockSelectable } from "./selectable"
 import { blockSelectionKey, type BlockSelectionPluginMeta } from "./plugin"
 import {
   surfaceBlockTextBoundsAtPos,
@@ -58,6 +59,9 @@ function handleModA(editor: Editor): boolean {
   const { state } = editor
   const { selection, doc } = state
   const N = doc.childCount // ROOT child count — Mod-A's expansion target is ALWAYS root (F4).
+  // First SELECTABLE root index — skips a leading non-selectable block (the
+  // title). The full-root MBS is [lo, N-1], so the title is never swept in.
+  const lo = firstSelectableIndex(doc)
 
   // Already in MultiBlockSelection — expand to the ROOT full MBS, or no-op.
   // F4: a column-local MBS + Mod-A jumps straight to the layout-as-one-unit
@@ -66,10 +70,11 @@ function handleModA(editor: Editor): boolean {
   if (selection instanceof MultiBlockSelection) {
     const isRootSurface = selection.surface === doc
     if (isRootSurface) {
-      const [lo, hi] = selection.blockIndices
-      if (lo === 0 && hi === N - 1) return true // already all root blocks, no-op
+      const [curLo, curHi] = selection.blockIndices
+      if (curLo === lo && curHi === N - 1) return true // already all selectable root blocks, no-op
     }
-    editor.commands.setBlockSelection({ from: 0, to: N - 1 })
+    if (lo >= N) return true // nothing selectable; consume and no-op
+    editor.commands.setBlockSelection({ from: lo, to: N - 1 })
     return true
   }
 
@@ -83,14 +88,16 @@ function handleModA(editor: Editor): boolean {
 
   if (selection.from === block.from && selection.to === block.to) {
     // Whole (surface-local) block text selected → promote to a ROOT MBS over
-    // ALL root blocks. F4: from inside a column this selects the layout's
-    // root-level ancestor as one of the root blocks (the layout participates
-    // as a single unit); it does NOT select the column's children.
-    const firstId = doc.child(0).attrs.id as string | null
+    // ALL SELECTABLE root blocks (`lo` skips a leading non-selectable title).
+    // F4: from inside a column this selects the layout's root-level ancestor
+    // as one of the root blocks (the layout participates as a single unit); it
+    // does NOT select the column's children.
+    if (lo >= N) return true // nothing selectable (e.g. title-only doc); consume, no-op
+    const firstId = doc.child(lo).attrs.id as string | null
     const meta: BlockSelectionPluginMeta = { setAnchor: firstId }
     editor.view.dispatch(
       editor.state.tr
-        .setSelection(MultiBlockSelection.create(doc, 0, N - 1))
+        .setSelection(MultiBlockSelection.create(doc, lo, N - 1))
         .setMeta(blockSelectionKey, meta),
     )
     return true
@@ -115,6 +122,12 @@ function handleEscape(editor: Editor): boolean {
   // this is the column child → a column-local single-block MBS (not the layout).
   const block = surfaceBlockTextBoundsAtPos(doc, selection.from)
   if (block) {
+    // A non-selectable block (the in-document title) can't be promoted to a
+    // block selection — Escape inside it is a no-op, caret stays. Without this
+    // the caret would be promoted to an MBS that create() then clamps onto the
+    // first body block (a surprising jump); a clean no-op matches Notion. The
+    // create() clamp remains the safety net for the non-keyboard paths.
+    if (!isBlockSelectable(block.node)) return false
     const id = block.node.attrs.id as string | null
     const meta: BlockSelectionPluginMeta = { setAnchor: id }
     editor.view.dispatch(
@@ -139,8 +152,12 @@ function handleArrow(editor: Editor, direction: -1 | 1): boolean {
   if (!(sel instanceof MultiBlockSelection)) return false
   const [lo, hi] = sel.blockIndices
   const N = mbsSurfaceChildCount(sel) // surface-local child count (column-local stops here)
+  // Lower bound = first SELECTABLE index on this surface (skips a leading
+  // non-selectable title on the root; 0 inside a column). Keeps ArrowUp from
+  // moving the block selection onto the title.
+  const minIdx = firstSelectableIndex(sel.surface)
   const targetIdx =
-    direction === -1 ? Math.max(0, lo - 1) : Math.min(N - 1, hi + 1)
+    direction === -1 ? Math.max(minIdx, lo - 1) : Math.min(N - 1, hi + 1)
   const surfaceArgPos = mbsSurfaceArg(sel)
   const targetId = sel.surface.child(targetIdx).attrs.id as string | null
   const meta: BlockSelectionPluginMeta = { setAnchor: targetId }
@@ -169,8 +186,11 @@ function handleShiftArrow(editor: Editor, direction: -1 | 1): boolean {
   // Head is the end opposite the anchor. If anchor missing, use lo as anchor.
   const effectiveAnchor = anchorIdx >= 0 ? anchorIdx : lo
   const currentHead = effectiveAnchor === lo ? hi : lo
+  // Clamp the head to the first SELECTABLE index on this surface so a
+  // Shift-ArrowUp from the first body block never extends onto the title.
+  const minIdx = firstSelectableIndex(sel.surface)
   const newHead =
-    direction === -1 ? Math.max(0, currentHead - 1) : Math.min(N - 1, currentHead + 1)
+    direction === -1 ? Math.max(minIdx, currentHead - 1) : Math.min(N - 1, currentHead + 1)
   editor.view.dispatch(
     editor.state.tr.setSelection(
       MultiBlockSelection.create(editor.state.doc, effectiveAnchor, newHead, surfaceArgPos),

@@ -40,6 +40,11 @@ export interface BlockSpecMetadata {
   schemaContext?: RuneBlockSchemaContextSpec
   slashMenuItems?: (editor: Editor) => DefaultSuggestionItem[]
   sideMenu?: BlockSideMenuSpec
+  /**
+   * Whether the block is hidden from rune-ai read-tool outputs.
+   * See `BlockSpecConfig.agentHidden`.
+   */
+  agentHidden?: boolean
   supports?: BlockSupportsSpec
   /**
    * Attr changes the factory atom NodeView absorbs without a rebuild.
