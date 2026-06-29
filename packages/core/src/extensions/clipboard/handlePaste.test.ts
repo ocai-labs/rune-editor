@@ -41,7 +41,7 @@ describe("handlePaste", () => {
   it("returns false when clipboard has no rune-doc MIME", () => {
     const editor = makeEditor()
     const event = makePasteEvent({ "text/html": "<p>x</p>" })
-    expect(handlePaste(editor.view as any, event)).toBe(false)
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
     editor.destroy()
   })
 
@@ -51,7 +51,7 @@ describe("handlePaste", () => {
     const sourceSlice = editor.state.selection.content()
     const json = JSON.stringify(sourceSlice.toJSON())
     const event = makePasteEvent({ "application/x-rune-doc": json })
-    expect(handlePaste(editor.view as any, event)).toBe(true)
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
     expect(event.defaultPrevented).toBe(true)
     editor.destroy()
   })
@@ -59,7 +59,7 @@ describe("handlePaste", () => {
   it("on malformed rune-doc: returns false (fall through to HTML/text)", () => {
     const editor = makeEditor()
     const event = makePasteEvent({ "application/x-rune-doc": "{not valid json" })
-    expect(handlePaste(editor.view as any, event)).toBe(false)
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
     expect(event.defaultPrevented).toBe(false)
     editor.destroy()
   })
@@ -69,7 +69,7 @@ describe("handlePaste", () => {
     const event = makePasteEvent({
       "application/x-rune-doc": JSON.stringify({ content: [{ type: "nonexistent_block" }] }),
     })
-    expect(handlePaste(editor.view as any, event)).toBe(false)
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
     editor.destroy()
   })
 
@@ -100,7 +100,100 @@ describe("handlePaste", () => {
         editor.state.selection.content().toJSON(),
       ),
     })
-    expect(handlePaste(editor.view as any, event)).toBe(false)
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
+    expect(event.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handlePaste — markdown text path", () => {
+  function findBlocks(editor: Editor, typeName: string) {
+    const out: import("@tiptap/pm/model").Node[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === typeName) out.push(node)
+    })
+    return out
+  }
+
+  it("intercepts pure plain-text Markdown and emits real blocks", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const md = "# Heading\n\nsome **bold** text\n\n- a\n- b\n"
+    const event = makePasteEvent({ "text/plain": md })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(event.defaultPrevented).toBe(true)
+
+    const headings = findBlocks(editor, "heading")
+    expect(headings.some((h) => h.textContent === "Heading")).toBe(true)
+    // The literal "# Heading" line must NOT survive as a paragraph.
+    expect(findBlocks(editor, "paragraph").some((p) => p.textContent.startsWith("# "))).toBe(false)
+    expect(findBlocks(editor, "bulletList").map((n) => n.textContent)).toEqual(
+      expect.arrayContaining(["a", "b"]),
+    )
+    editor.destroy()
+  })
+
+  it("maps Markdown `#` to Heading level 2, not <h1>/paragraph (decision a)", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({ "text/plain": "# Title\n\nbody\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    const heading = findBlocks(editor, "heading").find((h) => h.textContent === "Title")
+    expect(heading?.attrs.level).toBe(2)
+    editor.destroy()
+  })
+
+  it("parses a fenced code block with its language", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({ "text/plain": "```js\nconst a = 1\n```\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    const code = findBlocks(editor, "codeBlock")
+    expect(code.length).toBe(1)
+    expect(code[0]?.textContent).toContain("const a = 1")
+    editor.destroy()
+  })
+
+  it("parses a GFM table into a table block", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({ "text/plain": "| a | b |\n| - | - |\n| 1 | 2 |\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(findBlocks(editor, "table").length).toBe(1)
+    editor.destroy()
+  })
+
+  it("defers to the HTML path when text/html is also present (decision b)", () => {
+    const editor = makeEditor()
+    const event = makePasteEvent({ "text/html": "<p>x</p>", "text/plain": "# markdown\n\nbody\n" })
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
+    expect(event.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("leaves non-Markdown plain text to the default text parser", () => {
+    const editor = makeEditor()
+    const event = makePasteEvent({ "text/plain": "just a line\nanother line" })
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
+    expect(event.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("keeps paste literal inside a code block", () => {
+    const editor = makeEditor("<pre><code>x</code></pre>")
+    let codePos = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (codePos === -1 && node.type.name === "codeBlock") codePos = pos
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(codePos + 1))),
+    )
+    const event = makePasteEvent({ "text/plain": "# heading\n\nbody\n" })
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
     expect(event.defaultPrevented).toBe(false)
     editor.destroy()
   })

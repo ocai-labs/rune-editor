@@ -34,7 +34,7 @@ export function createClipboardPlugin(editor: Editor, options: ClipboardOptions 
       clipboardSerializer,
       clipboardTextParser,
       transformPastedHTML: (html, view) => transformPastedHTML(html, view, editor),
-      handlePaste: (view, event) => handlePaste(view, event as ClipboardEvent),
+      handlePaste: (view, event) => handlePaste(view, event as ClipboardEvent, editor),
       handleDOMEvents: {
         copy: (view, event) => writeClipboard(view, event as ClipboardEvent, /*cut*/ false),
         cut:  (view, event) => writeClipboard(view, event as ClipboardEvent, /*cut*/ true),
