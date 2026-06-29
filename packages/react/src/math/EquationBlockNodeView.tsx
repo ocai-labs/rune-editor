@@ -17,6 +17,7 @@ import { editorViewDom } from "../positioning"
 import { MathBlockEmptyState } from "./MathBlockEmptyState"
 import { MathPopover } from "./MathPopover"
 import { renderKatexSafe, type RenderKatexResult } from "./renderKatex"
+import { useKatexReady } from "./useKatexReady"
 import { deleteNode, mathAnchorRect, selectNode } from "./nodeViewShared"
 import { useMathIntent } from "./useMathIntent"
 import { mergeNodeViewHTMLAttributes } from "../nodeview/htmlAttributes"
@@ -27,12 +28,19 @@ import { mergeNodeViewHTMLAttributes } from "../nodeview/htmlAttributes"
 // ternary chain.
 function EquationBlockBody({
   isEmpty,
+  loading,
+  latex,
   result,
 }: {
   isEmpty: boolean
+  loading: boolean
+  latex: string
   result: RenderKatexResult | null
 }) {
   if (isEmpty) return <MathBlockEmptyState />
+  // KaTeX chunk not resolved yet — show the raw LaTeX rather than the
+  // error banner (result is null during loading, same as empty).
+  if (loading) return <div className="rune-equation-loading">{latex}</div>
   if (result?.ok) {
     return (
       <div
@@ -75,10 +83,15 @@ function EquationBlockNodeView(props: ReactNodeViewProps<HTMLDivElement>) {
   const latex = String(node.attrs.latex ?? "")
   const renderedLatex = draftLatex ?? latex
   const isEmpty = !renderedLatex.trim()
+  // KaTeX is lazy-loaded on first math mount; `result` stays null until the
+  // chunk resolves, and EquationBlockBody renders a raw-LaTeX placeholder.
+  const katexReady = useKatexReady()
   const result = useMemo(
     () =>
-      isEmpty ? null : renderKatexSafe(renderedLatex, { displayMode: true }),
-    [isEmpty, renderedLatex],
+      isEmpty || !katexReady
+        ? null
+        : renderKatexSafe(renderedLatex, { displayMode: true }),
+    [isEmpty, katexReady, renderedLatex],
   )
   const virtualRef = useStableVirtualElement(
     open ? () => mathAnchorRect(rootRef.current) : null,
@@ -207,7 +220,12 @@ function EquationBlockNodeView(props: ReactNodeViewProps<HTMLDivElement>) {
           data-type="equation-block"
           data-latex={latex}
         >
-          <EquationBlockBody isEmpty={isEmpty} result={result} />
+          <EquationBlockBody
+            isEmpty={isEmpty}
+            loading={!isEmpty && !katexReady}
+            latex={renderedLatex}
+            result={result}
+          />
         </div>
         <div ref={hostRef} className="rune-side-menu-host" />
       </NodeViewWrapper>

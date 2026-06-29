@@ -16,6 +16,7 @@ import { editorViewDom } from "../positioning"
 import { MathEmptyState } from "./MathEmptyState"
 import { MathPopover } from "./MathPopover"
 import { renderKatexToString } from "./renderKatex"
+import { useKatexReady } from "./useKatexReady"
 import {
   deleteNode,
   mathAnchorRect,
@@ -45,10 +46,15 @@ function InlineMathNodeView(props: ReactNodeViewProps<HTMLSpanElement>) {
   const latex = String(node.attrs.latex ?? "")
   const renderedLatex = draftLatex ?? latex
   const isEmpty = !renderedLatex.trim()
+  // KaTeX is lazy-loaded on first math mount; until the chunk resolves we
+  // show the raw LaTeX (see the loading branch below).
+  const katexReady = useKatexReady()
   const rendered = useMemo(
     () =>
-      isEmpty ? "" : renderKatexToString(renderedLatex, { displayMode: false }),
-    [isEmpty, renderedLatex],
+      isEmpty || !katexReady
+        ? ""
+        : renderKatexToString(renderedLatex, { displayMode: false }),
+    [isEmpty, katexReady, renderedLatex],
   )
   const virtualRef = useStableVirtualElement(
     open ? () => mathAnchorRect(rootRef.current) : null,
@@ -165,6 +171,8 @@ function InlineMathNodeView(props: ReactNodeViewProps<HTMLSpanElement>) {
       >
         {isEmpty ? (
           <MathEmptyState />
+        ) : !katexReady ? (
+          <span className="rune-math-loading">{renderedLatex}</span>
         ) : (
           <span dangerouslySetInnerHTML={{ __html: rendered }} />
         )}

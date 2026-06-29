@@ -94,6 +94,26 @@
   vertical-align: -0.25em;
 }
 
+/* Placeholder shown while the lazily-imported KaTeX chunk resolves —
+   the raw LaTeX, muted, so the brief first-math-node load reads as
+   "rendering" rather than a blank flash. Inline + block variants. */
+.rune-math-loading {
+  opacity: 0.5;
+  font-family: var(--rune-font-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+}
+
+.rune-equation-loading {
+  display: flex;
+  justify-content: center;
+  padding-block: 0.75rem;
+  padding-inline: 1rem;
+  opacity: 0.5;
+  font-family: var(--rune-font-mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Rendered KaTeX in a block — centered. */
 .rune-equation-render {
   display: flex;

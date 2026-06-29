@@ -4,7 +4,44 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import katex from "katex"
+// KaTeX (~78 KB gzip) is the single heaviest dependency the editor pulls,
+// yet only documents that contain math need it. Rather than a static
+// `import katex from "katex"` — which a consumer's bundler hoists into the
+// initial chunk for EVERY page — we load it lazily via dynamic import on
+// first math-node mount (see `useKatexReady`). Docs without equations never
+// pay for it, and bundlers split it into its own async chunk. The math
+// NodeViews gate rendering on `isKatexLoaded()` / `useKatexReady()` and show
+// a raw-LaTeX placeholder until the chunk resolves.
+type Katex = (typeof import("katex"))["default"]
+
+let katexMod: Katex | null = null
+let katexLoad: Promise<Katex> | null = null
+
+/** Trigger (or await the in-flight) dynamic import of KaTeX. Idempotent. */
+export function loadKatex(): Promise<Katex> {
+  if (katexMod) return Promise.resolve(katexMod)
+  if (!katexLoad) {
+    katexLoad = import("katex").then((m) => {
+      katexMod = m.default
+      return katexMod
+    })
+  }
+  return katexLoad
+}
+
+/** True once the lazily-imported KaTeX module is resolved and available. */
+export function isKatexLoaded(): boolean {
+  return katexMod !== null
+}
+
+function katexOrThrow(): Katex {
+  if (!katexMod) {
+    // Callers gate render on isKatexLoaded()/useKatexReady, so reaching here
+    // means a render slipped through before the lazy chunk resolved.
+    throw new Error("KaTeX not loaded — await loadKatex() before rendering")
+  }
+  return katexMod
+}
 
 const CACHE_LIMIT = 200
 // JS Map preserves insertion order; delete-then-set on hit moves the entry
@@ -31,7 +68,7 @@ export function renderKatexToString(
     return cached
   }
 
-  const html = katex.renderToString(latex, {
+  const html = katexOrThrow().renderToString(latex, {
     displayMode: options.displayMode,
     throwOnError: false,
     strict: false,
@@ -78,7 +115,7 @@ export function renderKatexSafe(
   }
   let result: RenderKatexResult
   try {
-    const html = katex.renderToString(latex, {
+    const html = katexOrThrow().renderToString(latex, {
       displayMode: options.displayMode,
       throwOnError: true,
       strict: false,

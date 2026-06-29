@@ -4,10 +4,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, it, expect } from "vitest"
-import { renderKatexSafe } from "./renderKatex"
+import { beforeAll, describe, it, expect } from "vitest"
+import { loadKatex, renderKatexSafe } from "./renderKatex"
 
 describe("renderKatexSafe", () => {
+  // KaTeX is now lazy-loaded; resolve the dynamic import before exercising
+  // the synchronous render path (the NodeViews gate on useKatexReady).
+  beforeAll(async () => {
+    await loadKatex()
+  })
+
   it("returns ok:true with HTML for valid latex", () => {
     const result = renderKatexSafe("x^2", { displayMode: true })
     expect(result.ok).toBe(true)

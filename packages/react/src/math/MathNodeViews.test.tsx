@@ -46,7 +46,11 @@ describe("math NodeViews", () => {
     })
 
     expect(await screen.findByLabelText("Inline math: x^2")).toBeInTheDocument()
-    expect(document.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(1)
+    // KaTeX is lazy-loaded on first math mount — wait for the chunk to
+    // resolve and the rendered `.katex` output to replace the placeholder.
+    await waitFor(() =>
+      expect(document.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(1),
+    )
   })
 
   it("opens from MathController intent, commits edits, and consumes the intent", async () => {
