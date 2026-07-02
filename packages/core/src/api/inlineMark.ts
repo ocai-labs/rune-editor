@@ -5,7 +5,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { Editor } from "@tiptap/core"
-import type { Attrs, Node as PMNode } from "@tiptap/pm/model"
+import type { Attrs, MarkType, Node as PMNode } from "@tiptap/pm/model"
+import type { Transaction } from "@tiptap/pm/state"
 import { resolveBodyBlockById } from "../schema/bodySurface"
 import {
   runeCommandError,
@@ -118,8 +119,10 @@ export interface SetInlineMarkData {
 
 /**
  * Apply or remove an inline mark over a block-local character range in one
- * transaction (one undo step). The single core API the AI agent's `format_text`
- * tool wraps; mirrors `replaceSelectionText`'s result/gating shape.
+ * transaction (one undo step). A host-facing offset-addressed primitive (the
+ * AI agent's retired `format_text` wrapper is gone — agents mark text via
+ * `apply_edits`' markdown path); mirrors `replaceSelectionText`'s
+ * result/gating shape.
  *
  * Mark VALIDITY is decided by `editor.schema.marks`, not a hardcoded list, so a
  * newly registered mark is supported with no change here (spec D2). The range
@@ -213,23 +216,43 @@ export function setInlineMark(
   if (unset) {
     tr.removeMark(posFrom, posTo, markType)
   } else {
-    // Merge PER NODE (mirrors Tiptap's native setMark): each text node in the
-    // range keeps its OWN same-type mark's untouched axis. Sampling the
-    // existing mark once at the range start and addMark-ing that single
-    // instance uniformly would SMEAR the start char's attrs across the whole
-    // range — `textStyle` excludes itself, so addToSet REPLACES per node,
-    // wiping any node whose attrs differ from the start (e.g. a mid-range run
-    // that already carried a different backgroundColor).
-    doc.nodesBetween(posFrom, posTo, (node, pos) => {
-      if (!node.isInline) return
-      const subFrom = Math.max(pos, posFrom)
-      const subTo = Math.min(pos + node.nodeSize, posTo)
-      const own = markType.isInSet(node.marks)
-      const mergedAttrs = { ...(own?.attrs ?? {}), ...(attrs ?? {}) }
-      tr.addMark(subFrom, subTo, markType.create(mergedAttrs as Attrs))
-    })
+    addInlineMarkMerged(tr, doc, posFrom, posTo, markType, attrs as Attrs | undefined)
   }
   editor.view.dispatch(tr)
 
   return runeCommandOk({ blockId, mark, from, to })
+}
+
+/**
+ * Add `markType` (with `attrs`) over `[from, to)`, merging PER NODE (mirrors
+ * Tiptap's native `setMark`): each text node in the range keeps its OWN
+ * same-type mark's untouched axis. Existing marks are read from `doc`; the
+ * additions are written to `tr` (so the caller controls the transaction /
+ * dispatch — one shared `tr` across many ranges is exactly what `applyMatching`
+ * needs). `addMark` never shifts positions, so ranges computed from one `doc`
+ * stay valid as sibling ranges are applied.
+ *
+ * Why not sample the mark once and `addMark` uniformly: `textStyle` excludes
+ * itself, so `addToSet` REPLACES per node — a single-instance addMark would
+ * SMEAR the range-start char's attrs across the whole range, wiping any run
+ * that already carried a different axis (e.g. a mid-range `backgroundColor`).
+ * This exact bug shipped once in `format_text`'s history; the per-node merge is
+ * the fix, shared here so `setInlineMark` and `applyMatching` can't drift.
+ */
+export function addInlineMarkMerged(
+  tr: Transaction,
+  doc: PMNode,
+  from: number,
+  to: number,
+  markType: MarkType,
+  attrs?: Attrs,
+): void {
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isInline) return
+    const subFrom = Math.max(pos, from)
+    const subTo = Math.min(pos + node.nodeSize, to)
+    const own = markType.isInSet(node.marks)
+    const mergedAttrs = { ...(own?.attrs ?? {}), ...(attrs ?? {}) }
+    tr.addMark(subFrom, subTo, markType.create(mergedAttrs))
+  })
 }

@@ -16,7 +16,7 @@ import { sideMenuKey } from "../side-menu/SideMenu"
 import { claimGesture, isPrimaryRelease, primaryLost } from "../shared/gesture-state"
 import type { GestureClaim } from "../shared/gesture-state"
 import { isDraggable } from "../side-menu/block-registry"
-import { snapshotBlocks, surfaceBlockSnapshot, slotAtY, refreshSnapshotRects, effectivePrevIndex } from "./block-drag-geometry"
+import { surfaceBlockSnapshot, slotAtY, refreshSnapshotRects, effectivePrevIndex } from "./block-drag-geometry"
 import { executeReorder, executeDepthOnlyChange } from "./reorder"
 import {
   resolveEmptiedSourceColumnForMove,

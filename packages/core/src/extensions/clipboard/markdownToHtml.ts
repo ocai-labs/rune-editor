@@ -36,7 +36,7 @@ const md = new MarkdownIt({ html: false, linkify: true }).use(taskLists)
  * Replacement reads each tag's original level, so there is no cascade
  * (a shifted `h1→h2` is not re-matched and pushed to `h3`).
  */
-function shiftHeadings(html: string): string {
+export function shiftHeadings(html: string): string {
   return html.replace(
     /<(\/?)h([1-6])\b([^>]*)>/gi,
     (_match, slash: string, digit: string, rest: string) => {

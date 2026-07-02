@@ -22,6 +22,10 @@ export type RuneCommandErrorCode =
   | "not-editable"
   | "not-found"
   | "unsupported"
+  // apply_edits (Tier 1) locate/guard failures — see api/commands/applyMarkdownEdits.ts.
+  | "no-match"
+  | "ambiguous-match"
+  | "not-editable-lossless"
 
 export function runeCommandOk<T>(data: T): RuneCommandResult<T> {
   return { ok: true, data }

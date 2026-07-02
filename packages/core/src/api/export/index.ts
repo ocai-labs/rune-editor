@@ -4,5 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-export { exportMarkdown } from "./markdown"
+export { exportMarkdown, exportMarkdownWithChunks } from "./markdown"
+export type { RuneMarkdownChunk, ExportMarkdownOptions } from "./markdown"
+export type { MarkdownDialect } from "./serializeInline"
 export { exportMarkdownFromDoc } from "./fromDoc"

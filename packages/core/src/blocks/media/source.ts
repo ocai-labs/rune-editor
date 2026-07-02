@@ -6,6 +6,7 @@
 
 // Adding a fourth source-backed block (e.g. PDF) must also replace
 // import-plugin's hardcoded kind routing with metadata-driven routing.
+// See "Future Work" in internal design notes.
 export const SOURCE_BLOCK_KINDS = ["image", "video", "audio"] as const
 export type SourcedBlockKind = (typeof SOURCE_BLOCK_KINDS)[number]
 

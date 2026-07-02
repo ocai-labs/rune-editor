@@ -283,7 +283,8 @@ export const TableCommands = Extension.create({
               seen.add(relPos)
               const cellNode = node.nodeAt(relPos)
               if (!cellNode) continue
-              // Merged cells are rejected at the schema level (invariant #7) so colspan is always 1 in practice, but
+              // Merged cells are rejected at the schema level (the architecture notes
+              // invariant #7) so colspan is always 1 in practice, but
               // honor the attr defensively if upstream changes it.
               const colspan = (cellNode.attrs.colspan as number | undefined) ?? 1
               const colwidth = Array.from({ length: colspan }, () => perCol)

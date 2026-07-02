@@ -6,7 +6,7 @@
 
 // packages/react/src/suggestion-menu/hooks/useSuggestionMenuKeyboard.test.tsx
 import { describe, it, expect, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";

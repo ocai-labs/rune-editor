@@ -6,7 +6,6 @@
 
 import type { Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
-import type { EditorView } from "@tiptap/pm/view"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { isMarqueeEligibleTarget } from "./marquee"
 import { blockSelectionKey } from "./plugin"

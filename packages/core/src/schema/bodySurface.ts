@@ -88,7 +88,7 @@ function depthOf(node: ProseMirrorNode): number {
  * block (also built via the factory) is classified correctly with zero
  * resolver edits.
  */
-function isBodyBlockNode(node: ProseMirrorNode): boolean {
+export function isBodyBlockNode(node: ProseMirrorNode): boolean {
   const attrs = node.type.spec.attrs
   return attrs != null && "depth" in attrs
 }
@@ -127,7 +127,7 @@ function typeAdmitsBodyBlocks(type: NodeType): boolean {
   return admits
 }
 
-function isStructuralBlockContainer(node: ProseMirrorNode): boolean {
+export function isStructuralBlockContainer(node: ProseMirrorNode): boolean {
   if (isBodyBlockNode(node)) return false
   return typeAdmitsBodyBlocks(node.type)
 }

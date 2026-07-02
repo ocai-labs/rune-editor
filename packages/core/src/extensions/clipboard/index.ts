@@ -10,7 +10,8 @@ import { createClipboardPlugin, type ClipboardOptions } from "./plugin"
 /**
  * The Clipboard extension. Single PM Plugin holding all clipboard props
  * (handleDOMEvents.copy/cut, handlePaste, transformPastedHTML,
- * clipboardTextParser, clipboardSerializer).
+ * clipboardTextParser, clipboardSerializer). See
+ * internal design notes.
  */
 export const Clipboard = Extension.create<ClipboardOptions>({
   name: "clipboard",
@@ -27,4 +28,5 @@ export { serializeBlocksForClipboard } from "./serializeBlocks"
 export { markdownToDoc } from "./markdownToDoc"
 export type { ParseHTML } from "./markdownToDoc"
 export { markdownToHtml } from "./markdownToHtml"
+export { parseAiMarkdown } from "./aiMarkdown"
 export type { ClipboardOptions } from "./plugin"

@@ -14,7 +14,8 @@ type SuggestionMatch = ReturnType<
 >;
 
 /**
- * Notion-model matcher for the `/` trigger.
+ * Notion-model matcher for the `/` trigger (reference behavior captured in
+ * internal design notes).
  * Replaces @tiptap/suggestion's default `findSuggestionMatch`, which has two
  * divergences from the observed Notion model:
  *

@@ -4,7 +4,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// Notion-model slash matching — reference behavior.
+// Notion-model slash matching — reference behavior captured in
+// internal design notes.
 // Two layers:
 //   1. pure matcher calls (config + explicit session runs in current-doc
 //      coordinates, as the session-run mapper would hand them over),

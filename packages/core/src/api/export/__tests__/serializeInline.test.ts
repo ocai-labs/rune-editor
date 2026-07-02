@@ -118,17 +118,47 @@ describe("serializeInlineContent", () => {
     ).toBe("[[Target|Display]]")
   })
 
-  it("drops underline mark", () => {
+  it("serializes underline as <u>", () => {
     expect(
       inlineFromEditor({
         content: [
           { type: "text", marks: [{ type: "underline" }], text: "under" },
         ],
       }),
-    ).toBe("under")
+    ).toBe("<u>under</u>")
   })
 
-  it("drops textColor and backgroundColor marks via textStyle", () => {
+  it("serializes textStyle textColor as a data-text-color span", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [{ type: "textStyle", attrs: { textColor: "blue" } }],
+            text: "blue text",
+          },
+        ],
+      }),
+    ).toBe('<span data-text-color="blue">blue text</span>')
+  })
+
+  it("serializes textStyle backgroundColor as a data-background-color span", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              { type: "textStyle", attrs: { backgroundColor: "yellow" } },
+            ],
+            text: "hi",
+          },
+        ],
+      }),
+    ).toBe('<span data-background-color="yellow">hi</span>')
+  })
+
+  it("serializes textStyle with both colors in one span", () => {
     expect(
       inlineFromEditor({
         content: [
@@ -137,14 +167,123 @@ describe("serializeInlineContent", () => {
             marks: [
               {
                 type: "textStyle",
-                attrs: { color: "#ff0000", backgroundColor: null },
+                attrs: { textColor: "blue", backgroundColor: "yellow" },
               },
             ],
-            text: "red",
+            text: "both",
           },
         ],
       }),
-    ).toBe("red")
+    ).toBe(
+      '<span data-text-color="blue" data-background-color="yellow">both</span>',
+    )
+  })
+
+  it("emits no wrapper for an attr-less textStyle mark", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              {
+                type: "textStyle",
+                attrs: { textColor: null, backgroundColor: null },
+              },
+            ],
+            text: "plain",
+          },
+        ],
+      }),
+    ).toBe("plain")
+  })
+
+  it("nests link ⊃ bold ⊃ colored text", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              { type: "link", attrs: { href: "https://example.com" } },
+              { type: "bold" },
+              { type: "textStyle", attrs: { textColor: "blue" } },
+            ],
+            text: "deep",
+          },
+        ],
+      }),
+    ).toBe(
+      '<span data-text-color="blue">[**deep**](https://example.com)</span>',
+    )
+  })
+
+  it("wraps a color span OUTSIDE inline code so it can round-trip", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              { type: "code" },
+              { type: "textStyle", attrs: { textColor: "blue" } },
+            ],
+            text: "fn()",
+          },
+        ],
+      }),
+    ).toBe('<span data-text-color="blue">`fn()`</span>')
+  })
+
+  it("wraps bold OUTSIDE inline code (code innermost, not `**x**`)", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [{ type: "code" }, { type: "bold" }],
+            text: "x",
+          },
+        ],
+      }),
+    ).toBe("**`x`**")
+  })
+
+  it("wraps a link OUTSIDE inline code (code innermost)", () => {
+    // code + link can't coexist in a live doc (Code excludes link), so this can
+    // never round-trip; the serializer must still emit code innermost.
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              { type: "link", attrs: { href: "https://example.com" } },
+              { type: "code" },
+            ],
+            text: "x",
+          },
+        ],
+      }),
+    ).toBe("[`x`](https://example.com)")
+  })
+
+  it("orders html outermost, bold middle, code innermost (all three)", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              { type: "code" },
+              { type: "bold" },
+              { type: "textStyle", attrs: { textColor: "blue" } },
+            ],
+            text: "x",
+          },
+        ],
+      }),
+    ).toBe('<span data-text-color="blue">**`x`**</span>')
   })
 
   it("serializes multiple marks — bold italic", () => {
@@ -238,5 +377,68 @@ describe("serializeInlineContent", () => {
         ],
       }),
     ).toBe("`` code`here ``")
+  })
+
+  describe("plain-text escaping", () => {
+    const plain = (text: string) =>
+      inlineFromEditor({ content: [{ type: "text", text }] })
+
+    it("escapes emphasis-looking asterisks", () => {
+      expect(plain("*not italic*")).toBe("\\*not italic\\*")
+    })
+
+    it("escapes underscores", () => {
+      expect(plain("_under_")).toBe("\\_under\\_")
+    })
+
+    it("escapes a literal backtick in plain text", () => {
+      expect(plain("a`b")).toBe("a\\`b")
+    })
+
+    it("escapes brackets in plain text", () => {
+      expect(plain("[brackets]")).toBe("\\[brackets\\]")
+    })
+
+    it("escapes a backslash before other escapes", () => {
+      expect(plain("a\\*b")).toBe("a\\\\\\*b")
+    })
+
+    it("neutralizes a tag-like < but leaves `< 3` alone", () => {
+      expect(plain("<tag>")).toBe("&lt;tag>")
+      expect(plain("</p>")).toBe("&lt;/p>")
+      expect(plain("< 3")).toBe("< 3")
+    })
+
+    it("escapes only entity-like ampersands", () => {
+      expect(plain("&amp;")).toBe("&amp;amp;")
+      expect(plain("&#39;")).toBe("&amp;#39;")
+      expect(plain("Tom & Jerry")).toBe("Tom & Jerry")
+      expect(plain("Q&A")).toBe("Q&A")
+    })
+
+    it("escapes dollar signs so they are not read as inline math", () => {
+      expect(plain("$5 and $6")).toBe("\\$5 and \\$6")
+    })
+
+    it("escapes a leading heading marker", () => {
+      expect(plain("# not a heading")).toBe("\\# not a heading")
+    })
+
+    it("escapes a leading ordered-list marker", () => {
+      expect(plain("1. not a list")).toBe("1\\. not a list")
+    })
+
+    it("escapes a leading bullet marker", () => {
+      expect(plain("- not a bullet")).toBe("\\- not a bullet")
+    })
+
+    it("escapes a leading blockquote marker", () => {
+      expect(plain("> not a quote")).toBe("\\> not a quote")
+    })
+
+    it("leaves a mid-line hash and a spaced hash-word alone", () => {
+      expect(plain("use # here")).toBe("use # here")
+      expect(plain("#hashtag")).toBe("#hashtag")
+    })
   })
 })

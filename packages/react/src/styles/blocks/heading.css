@@ -38,7 +38,8 @@
    same 2px leaf), symmetric with how the top totals fold the leaf in.
    Overrides the universal 3/3 from editor-chrome.css via --block-pad-top so
    the side-menu grip
-   widget stays aligned (it reads --block-pad-top via CSS cascade per the gutter contract). One block matches exactly one level, so the four
+   widget stays aligned (it reads --block-pad-top via CSS cascade per
+   the gutter contract). One block matches exactly one level, so the four
    per-level rules never conflict. */
 .rune-editor :is(.ProseMirror, .rune-column) > .rune-block:not(.rune-toggle):has(> .rune-block-content > :is(h2, h3, h4, h5)) {
   padding-top: var(--block-pad-top);

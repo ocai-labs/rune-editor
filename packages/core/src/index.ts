@@ -20,6 +20,7 @@ export {
   getBlockById,
   findBlocks,
   exportMarkdown,
+  exportMarkdownWithChunks,
   exportMarkdownFromDoc,
   runeCommandOk,
   runeCommandError,
@@ -30,6 +31,8 @@ export {
   setInlineMark,
   posAtBlockOffset,
   setBlockColor,
+  applyMarkdownEdits,
+  applyMatching,
   explainBlockInputRejection,
   explainBlockInputsRejection,
 } from "./api"
@@ -51,6 +54,9 @@ export type {
   RuneCommandResult,
   RuneBlockOutline,
   RuneBlockSnapshot,
+  RuneMarkdownChunk,
+  ExportMarkdownOptions,
+  MarkdownDialect,
   RunePublicBlock,
   RuneSelectionBlockRange,
   RuneSelectionKind,
@@ -60,6 +66,13 @@ export type {
   SetBlockColorInput,
   SetBlockColorData,
   BlockColorKind,
+  RuneMarkdownEdit,
+  ApplyMarkdownEditsOptions,
+  ApplyMarkdownEditsData,
+  RuneMatchWhere,
+  RuneMatchSet,
+  ApplyMatchingOptions,
+  ApplyMatchingData,
 } from "./api"
 
 export { getRuneSchemaContext, getAgentHiddenTypes } from "./api/schemaContext"
@@ -392,7 +405,7 @@ export type {
 export { MultiBlockSelection } from "./extensions/block-selection/MultiBlockSelection"
 export { setMarqueeZone } from "./extensions/block-selection/marquee"
 
-export { Clipboard, collectKnownBlockTags, markdownToDoc, markdownToHtml } from "./extensions/clipboard"
+export { Clipboard, collectKnownBlockTags, markdownToDoc, markdownToHtml, parseAiMarkdown } from "./extensions/clipboard"
 export type { ClipboardOptions, ParseHTML } from "./extensions/clipboard"
 export { clipboardPluginKey } from "./extensions/clipboard/plugin"
 export { serializeBlocksForClipboard } from "./extensions/clipboard/serializeBlocks"

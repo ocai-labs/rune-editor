@@ -31,7 +31,9 @@ import { findContainingBlock, viewportToCBLocal } from "./cb"
  * is what makes the "zero per-block CSS" contract physically work.
  * If a horizontal shift reappears in this code path, that is the
  * canary; investigate which ancestor's scoped styles stopped matching
- * before adjusting layer count.
+ * before adjusting layer count. See design spec
+ * `internal design notes`
+ * for the full alternatives analysis.
  */
 function buildAncestorChain(
   sources: readonly HTMLElement[],

@@ -68,7 +68,8 @@ export interface InternalRefOptions {
    *
    * Off by default: every enabled client rewrites labels into the shared
    * doc, which is churn in collab setups. Collab apps should enable it on
-   * exactly one authority client or leave it off.
+   * exactly one authority client or leave it off. See
+   * internal design notes.
    */
   syncLabel?: boolean
   HTMLAttributes: Record<string, unknown>

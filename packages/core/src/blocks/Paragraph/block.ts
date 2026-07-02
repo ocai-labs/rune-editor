@@ -10,7 +10,8 @@ import { insertOrUpdateBlockForSlashMenu } from "../../extensions/suggestion-men
 
 // Paragraph has no per-block props. parseDOM matches `<p>`; renderDOM
 // wraps in `.rune-block > .rune-block-content > <p>` so future block-
-// level color paints inside the rhythm padding.
+// level color paints inside the rhythm padding (see spec
+// internal design notes).
 // Shared id / depth come from the factory.
 export const Paragraph = createBlockSpec({
   type: "paragraph",

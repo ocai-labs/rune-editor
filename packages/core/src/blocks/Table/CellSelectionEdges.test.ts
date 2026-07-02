@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from "vitest"
 import { Paragraph } from "../Paragraph/block"
-import { CellSelection, TableMap } from "prosemirror-tables"
+import { CellSelection } from "prosemirror-tables"
 import Document from "@tiptap/extension-document"
 import Text from "@tiptap/extension-text"
 import { Table } from "./block"

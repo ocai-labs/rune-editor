@@ -9,7 +9,21 @@ export {
   explainBlockInputRejection,
   explainBlockInputsRejection,
 } from "./commands/blockInputDiagnostics"
-export { exportMarkdown, exportMarkdownFromDoc } from "./export"
+export { applyMarkdownEdits } from "./commands"
+export type {
+  RuneMarkdownEdit,
+  ApplyMarkdownEditsOptions,
+  ApplyMarkdownEditsData,
+} from "./commands"
+export { applyMatching } from "./commands"
+export type {
+  RuneMatchWhere,
+  RuneMatchSet,
+  ApplyMatchingOptions,
+  ApplyMatchingData,
+} from "./commands"
+export { exportMarkdown, exportMarkdownWithChunks, exportMarkdownFromDoc } from "./export"
+export type { RuneMarkdownChunk, ExportMarkdownOptions, MarkdownDialect } from "./export"
 export {
   getDocument,
   getBlockById,

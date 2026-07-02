@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest"
 import type { JSONContent } from "@tiptap/core"
 import { createTestEditor } from "../../../test-utils/createTestEditor"
-import { exportMarkdown } from "../markdown"
+import { exportMarkdown, exportMarkdownWithChunks } from "../markdown"
 
 function md(content: unknown[]): string {
   const editor = createTestEditor({
@@ -881,5 +881,76 @@ describe("exportMarkdown", () => {
         ]),
       ).toBe("1. a\n\nmid\n\n1. c\n")
     })
+  })
+})
+
+// ── dialects (B1: styled default vs plain user-facing export) ───────────────
+
+describe("exportMarkdown — dialects (B1)", () => {
+  function editorWith(content: unknown[]) {
+    return createTestEditor({
+      content: { type: "doc", content: content as JSONContent[] },
+    })
+  }
+
+  const run = (t: string, marks: Array<{ type: string; attrs?: Record<string, unknown> }>) =>
+    ({ type: "text", text: t, marks }) as JSONContent
+  const p = (content: JSONContent[]): unknown[] => [
+    { type: "paragraph", attrs: { id: "p", depth: 0 }, content },
+  ]
+
+  it("plain drops color spans and <u>, keeping the text unwrapped", () => {
+    const editor = editorWith(
+      p([
+        run("colored", [{ type: "textStyle", attrs: { textColor: "blue" } }]),
+        { type: "text", text: " and " },
+        run("under", [{ type: "underline" }]),
+      ]),
+    )
+    expect(exportMarkdown(editor, { dialect: "plain" })).toBe("colored and under\n")
+    // Styled keeps both HTML emissions.
+    expect(exportMarkdown(editor, { dialect: "styled" })).toBe(
+      '<span data-text-color="blue">colored</span> and <u>under</u>\n',
+    )
+  })
+
+  it("plain keeps markdown-syntax marks (code+color → just backticks)", () => {
+    const editor = editorWith(
+      p([
+        run("fn()", [
+          { type: "code" },
+          { type: "textStyle", attrs: { textColor: "blue" } },
+        ]),
+      ]),
+    )
+    expect(exportMarkdown(editor, { dialect: "plain" })).toBe("`fn()`\n")
+    expect(exportMarkdown(editor, { dialect: "styled" })).toBe(
+      '<span data-text-color="blue">`fn()`</span>\n',
+    )
+  })
+
+  it("plain still escapes CommonMark literals (escaping is not a styled-only concern)", () => {
+    const editor = editorWith(
+      p([run("*x*", [{ type: "textStyle", attrs: { textColor: "blue" } }])]),
+    )
+    // Span dropped, but the literal asterisks are still escaped.
+    expect(exportMarkdown(editor, { dialect: "plain" })).toBe("\\*x\\*\n")
+  })
+
+  it("defaults to styled — no options === { dialect: 'styled' }", () => {
+    const editor = editorWith(
+      p([run("colored", [{ type: "textStyle", attrs: { textColor: "blue" } }])]),
+    )
+    expect(exportMarkdown(editor)).toBe(exportMarkdown(editor, { dialect: "styled" }))
+    expect(exportMarkdown(editor)).toContain('data-text-color="blue"')
+  })
+
+  it("exportMarkdownWithChunks stays styled (chunks keep color spans)", () => {
+    const editor = editorWith(
+      p([run("colored", [{ type: "textStyle", attrs: { textColor: "blue" } }])]),
+    )
+    const { markdown, chunks } = exportMarkdownWithChunks(editor)
+    expect(markdown).toContain('data-text-color="blue"')
+    expect(chunks[0]!.text).toContain('data-text-color="blue"')
   })
 })

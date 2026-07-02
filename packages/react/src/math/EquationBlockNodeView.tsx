@@ -110,7 +110,7 @@ function EquationBlockNodeView(props: ReactNodeViewProps<HTMLDivElement>) {
   }, [decorations, editor, getPos])
 
   const openPopover = useCallback(() => {
-    // the readonly contract (entry-gate): no popover entry path
+    // the architecture notes readonly contract (entry-gate): no popover entry path
     // may fire while the editor is not editable. Mirrors
     // InlineMathNodeView's gate on the commit path.
     if (!editor.isEditable) return

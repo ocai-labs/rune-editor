@@ -7,6 +7,7 @@
 // MediaFloatingBar — Notion-style hover toolbar pinned inside the
 // top-right corner of a FILLED image / video block (audio is excluded —
 // the player surface is too small to overlay chrome on).
+// Spec: internal design notes.
 //
 // Structure mirrors Notion's authored DOM: the bar is an absolutely
 // positioned child (`top: 4px; inset-inline-end: 4px; z-index: 2`) of the
@@ -33,7 +34,7 @@
 // `data-rune-editor-chrome`, so hovering/clicking the bar neither moves
 // the caret nor re-resolves the hover.
 
-import { Fragment, useEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ComponentProps, ComponentType } from "react"
 import type { Editor } from "@tiptap/core"

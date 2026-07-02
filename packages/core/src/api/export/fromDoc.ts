@@ -6,7 +6,7 @@
 
 import { Editor, type JSONContent } from "@tiptap/core"
 import { createRuneKit, type CreateRuneKitOptions } from "../../kit"
-import { exportMarkdown } from "./markdown"
+import { exportMarkdown, type ExportMarkdownOptions } from "./markdown"
 
 /**
  * Convert a stored ProseMirror document (`doc` JSON, e.g. the persisted
@@ -25,10 +25,13 @@ import { exportMarkdown } from "./markdown"
  * @param content - A full `{ type: "doc", content: [...] }` JSON document.
  * @param options - Forwarded to {@link createRuneKit}; only schema-affecting
  *   options (custom blocks via `blockIdTypes`, etc.) influence the output.
+ * @param exportOptions - Forwarded to {@link exportMarkdown} (e.g.
+ *   `{ dialect: "plain" }` for a user-facing export). Defaults to `"styled"`.
  */
 export function exportMarkdownFromDoc(
   content: JSONContent,
   options?: CreateRuneKitOptions,
+  exportOptions?: ExportMarkdownOptions,
 ): string {
   const editor = new Editor({
     element: null,
@@ -36,7 +39,7 @@ export function exportMarkdownFromDoc(
     content,
   })
   try {
-    return exportMarkdown(editor)
+    return exportMarkdown(editor, exportOptions)
   } finally {
     editor.destroy()
   }

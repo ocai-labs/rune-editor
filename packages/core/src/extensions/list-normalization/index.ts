@@ -36,7 +36,7 @@ export const listNormalizationKey = new PluginKey("rune-list-normalization")
  * Paste, programmatic insert (`commands.insertBlocks`), undo/redo,
  * and external setContent all bypass the drag handler. Putting the
  * invariant at the appendTransaction layer covers every mutation
- * source uniformly.
+ * source uniformly — see spec internal design notes §3.
  *
  * Bullet support and manual markerStyle override are reserved hooks
  * (spec §8); not implemented in v1.

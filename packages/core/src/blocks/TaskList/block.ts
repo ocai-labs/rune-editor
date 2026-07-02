@@ -32,8 +32,6 @@ function taskListAttrsFromElement(li: HTMLElement) {
   }
 }
 
-const ROOT_SYNCED_ATTRIBUTES = ["data-id", "data-depth", "data-checked"] as const
-
 function setCheckedAttributes(dom: HTMLElement, button: HTMLButtonElement, checked: boolean) {
   button.setAttribute("aria-checked", checked ? "true" : "false")
   if (checked) dom.setAttribute("data-checked", "true")

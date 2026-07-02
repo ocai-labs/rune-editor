@@ -324,3 +324,16 @@ export {
   resolveTurnIntoSources,
   applyTurnIntoTr,
 }
+export { applyMarkdownEdits } from "./applyMarkdownEdits"
+export type {
+  RuneMarkdownEdit,
+  ApplyMarkdownEditsOptions,
+  ApplyMarkdownEditsData,
+} from "./applyMarkdownEdits"
+export { applyMatching } from "./applyMatching"
+export type {
+  RuneMatchWhere,
+  RuneMatchSet,
+  ApplyMatchingOptions,
+  ApplyMatchingData,
+} from "./applyMatching"

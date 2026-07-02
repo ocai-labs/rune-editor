@@ -16,7 +16,8 @@
 
 /* Force-scan this package's own JSX so utility classes used inside
    @ocai/rune-react components (popover, slash menu, etc.) end up in the
-   compiled CSS even when a downstream consumer (via a dev alias) imports this file from outside the package. The
+   compiled CSS even when a downstream consumer (e.g. the dev playground
+   via the dev alias) imports this file from outside the package. The
    default Tailwind v4 source detection runs from the consumer's vite
    root and would otherwise miss packages/react/src/**. */
 @source "./**/*.{ts,tsx}";

@@ -6,6 +6,7 @@
 
 // Integration coverage for the media `align` attr + the expanded
 // blockActions (Download / View original) across image / video / audio.
+// Spec: internal design notes.
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createTestEditor } from "../../test-utils/createTestEditor"

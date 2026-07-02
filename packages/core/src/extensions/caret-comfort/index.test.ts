@@ -228,7 +228,8 @@ describe("CaretComfort", () => {
   })
 
   // jsdom's collapsed Range geometry differs from real Chromium/WebKit;
-  // this test exercises the code path. The Playwright e2e spec (`empty caret block scrolls`)
+  // this test exercises the code path. The Playwright spec
+  // the e2e suite (`empty caret block scrolls`)
   // is the authoritative real-DOM regression.
   it("falls back to ProseMirror coords when an empty caret range has a zero rect", () => {
     const editor = makeEditor("<p></p>")

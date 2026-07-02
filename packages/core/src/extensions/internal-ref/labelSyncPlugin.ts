@@ -100,7 +100,8 @@ function intersectsSelection(selection: Selection, run: LabelRun): boolean {
 }
 
 /**
- * The option (b) live-label pass.
+ * The option (b) live-label pass (design:
+ * internal design notes).
  * Rewrites each ref run's text to `resolve().displayText` when they
  * differ; `null`/`undefined`/`""` from the resolver never touches the
  * doc — the existing text IS the cached fallback for unresolvable

@@ -12,7 +12,7 @@
    relative via editor-chrome.css). `top: var(--block-pad-top)` lines the
    grip up with the block's first content line.
 
-   color binds --rune-gutter-fg, NEVER currentColor — so
+   the gutter contract: color binds --rune-gutter-fg, NEVER currentColor — so
    block-level data-text-color / data-background-color can't tint the
    gutter icons. */
 

@@ -41,15 +41,6 @@ function upAt(x: number, y: number) {
 }
 async function flushMicrotasks() { await Promise.resolve() }
 
-function cellPositions(editor: Editor) {
-  const positions: number[] = []
-  editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === "tableCell" || node.type.name === "tableHeader") positions.push(pos)
-    return true
-  })
-  return positions
-}
-
 /** Returns the text content of every first-row cell, left to right. */
 function firstRowCellTexts(editor: Editor): string[] {
   const table = editor.state.doc.firstChild
@@ -76,7 +67,6 @@ function writeFirstRowCell(editor: Editor, colIdx: number, text: string) {
   let cellOffset = 1 // skip table's opening token
   let rowOffset = 1 // skip row's opening token
   for (let c = 0; c < colIdx; c++) rowOffset += firstRow.child(c).nodeSize
-  const cellNode = firstRow.child(colIdx)
   // Position of the tableParagraph inside the cell: +1 for cell open, +1 for paragraph open
   const paraPos = 1 + cellOffset + rowOffset + 1
   const { tr, schema } = editor.state

@@ -190,7 +190,8 @@ const DEFAULT_TRIGGERS: TriggerConfig[] = [
     // whitespace before the `/`) is evaluated on the whole textblock, and
     // an open session is sticky to its anchor — spaces and further slashes
     // typed after the trigger are query text, never terminators or
-    // re-anchors.
+    // re-anchors. Full reference behavior in
+    // internal design notes.
     // allowSpaces stays set for @tiptap/suggestion's plugin-level dismissal
     // bookkeeping (`shouldKeepDismissed` keys off it); the match itself is
     // entirely the custom matcher's.

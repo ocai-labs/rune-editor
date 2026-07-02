@@ -198,3 +198,127 @@ describe("handlePaste — markdown text path", () => {
     editor.destroy()
   })
 })
+
+describe("handlePaste — VS Code editor paste", () => {
+  function findBlocks(editor: Editor, typeName: string) {
+    const out: import("@tiptap/pm/model").Node[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === typeName) out.push(node)
+    })
+    return out
+  }
+
+  // The defining property of every VS Code paste: a syntax-highlight
+  // `text/html` snapshot rides along. It must NEVER be the thing that lands.
+  const vscodeHtml = '<div style="color:#569cd6">const</div>'
+
+  it("routes `markdown` mode to real blocks even though text/html is present", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({
+      "vscode-editor-data": JSON.stringify({ mode: "markdown" }),
+      "text/plain": "# Heading\n\nsome **bold** text\n",
+      "text/html": vscodeHtml,
+    })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(event.defaultPrevented).toBe(true)
+    expect(findBlocks(editor, "heading").some((h) => h.textContent === "Heading")).toBe(true)
+    // The literal "# Heading" line must NOT survive as a paragraph, and the
+    // highlight HTML's "const" must not leak in.
+    expect(findBlocks(editor, "paragraph").some((p) => p.textContent.startsWith("# "))).toBe(false)
+    expect(editor.state.doc.textContent).not.toContain("const")
+    editor.destroy()
+  })
+
+  it("routes a code language to a code block carrying that language", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({
+      "vscode-editor-data": JSON.stringify({ mode: "typescript" }),
+      "text/plain": "const a = 1\nconst b = 2",
+      "text/html": vscodeHtml,
+    })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    const code = findBlocks(editor, "codeBlock")
+    expect(code.length).toBe(1)
+    expect(code[0]?.attrs.language).toBe("typescript")
+    expect(code[0]?.textContent).toContain("const a = 1")
+    // Not parsed as Markdown, not left as highlighted HTML paragraphs.
+    expect(findBlocks(editor, "heading").length).toBe(0)
+    editor.destroy()
+  })
+
+  it("routes `plaintext` mode to one paragraph per line", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({
+      "vscode-editor-data": JSON.stringify({ mode: "plaintext" }),
+      "text/plain": "line one\nline two",
+      "text/html": vscodeHtml,
+    })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    const paras = findBlocks(editor, "paragraph").map((p) => p.textContent)
+    expect(paras).toEqual(expect.arrayContaining(["line one", "line two"]))
+    expect(findBlocks(editor, "codeBlock").length).toBe(0)
+    editor.destroy()
+  })
+
+  it("falls back to paragraphs when vscode-editor-data is unparseable", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({
+      "vscode-editor-data": "{not json",
+      "text/plain": "just some text",
+      "text/html": vscodeHtml,
+    })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(editor.state.doc.textContent).not.toContain("const")
+    expect(findBlocks(editor, "paragraph").some((p) => p.textContent === "just some text")).toBe(true)
+    editor.destroy()
+  })
+
+  it("inserts raw text literally when pasted inside a code block", () => {
+    const editor = makeEditor("<pre><code>x</code></pre>")
+    let codePos = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (codePos === -1 && node.type.name === "codeBlock") codePos = pos
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(codePos + 1))),
+    )
+    const event = makePasteEvent({
+      "vscode-editor-data": JSON.stringify({ mode: "markdown" }),
+      "text/plain": "# not a heading here",
+      "text/html": vscodeHtml,
+    })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(findBlocks(editor, "codeBlock").length).toBe(1)
+    expect(findBlocks(editor, "heading").length).toBe(0)
+    expect(editor.state.doc.textContent).toContain("# not a heading here")
+    editor.destroy()
+  })
+
+  it("defers to prosemirror-tables when the caret is inside a table", () => {
+    const editor = makeEditor("<table><tr><td><p>a</p></td><td><p>b</p></td></tr></table>")
+    let cellPos = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (cellPos === -1 && node.type.name === "tableCell") cellPos = pos
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(cellPos + 2))),
+    )
+    const event = makePasteEvent({
+      "vscode-editor-data": JSON.stringify({ mode: "typescript" }),
+      "text/plain": "const a = 1",
+      "text/html": vscodeHtml,
+    })
+    expect(handlePaste(editor.view as any, event, editor)).toBe(false)
+    expect(event.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+})

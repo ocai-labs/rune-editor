@@ -7,7 +7,7 @@
 /* Rune editor tokens. Consumers override any of these on `.rune-editor`
    (or a parent) to re-theme.
 
-   --rune-gutter-fg derives from --rune-editor-fg via
+   the gutter contract: --rune-gutter-fg derives from --rune-editor-fg via
    color-mix, NEVER currentColor. Block-level data-text-color /
    data-background-color must not tint gutter icons.
 

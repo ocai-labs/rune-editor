@@ -7,7 +7,7 @@
 /**
  * Transaction meta key tagged on every transaction an AI/agent tool dispatches
  * (the AI agent-tool layer's `runTool` wraps `execute` and stamps this on whatever the tool
- * dispatches: insert_blocks / update_block / turn_into / replace_selection, …).
+ * dispatches: insert_blocks / update_block / turn_into / apply_edits, …).
  *
  * Unlike `INTERNAL_NORMALIZATION_META`, an agent write IS a real user-visible
  * edit — it persists, counts as "document modified", and is one undo step. The

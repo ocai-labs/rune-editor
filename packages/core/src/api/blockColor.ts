@@ -40,7 +40,7 @@ function isColorName(value: unknown): value is ColorName {
  * commands; the single core API the AI agent's `set_block_color` tool wraps.
  *
  * Colour-name validity is decided by `COLOR_NAMES` (unknown → `invalid-input`),
- * not a zod enum (the same validity-by-core stance as `format_text`'s mark). The
+ * not a zod enum (the same validity-by-core stance as `setInlineMark`'s mark). The
  * block's COLOUR CAPABILITY is gated by the block spec's DECLARED `supports`
  * (what the agent sees in `getRuneSchemaContext`), not by raw runtime attr
  * presence — `deriveBlockColorTypes` lists a block under both axes when it

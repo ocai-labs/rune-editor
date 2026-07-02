@@ -77,7 +77,7 @@ export class RuneTableView implements NodeView {
   private table: HTMLTableElement
   private cellMinWidth: number
 
-  constructor(private node: ProseMirrorNode, cellMinWidth: number, private view: EditorView) {
+  constructor(private node: ProseMirrorNode, cellMinWidth: number, view: EditorView) {
     this.cellMinWidth = cellMinWidth
     const doc = view.dom.ownerDocument
 

@@ -11,10 +11,7 @@ import {
   topLevelBlockStartPos,
   topLevelBlockTextBounds,
 } from "../../schema/topLevelBlocks"
-import {
-  resolveBodyBlockById,
-  surfaceChildrenAt,
-} from "../../schema/bodySurface"
+import { resolveBodyBlockById } from "../../schema/bodySurface"
 import {
   firstSelectableIndex,
   isBlockSelectable,

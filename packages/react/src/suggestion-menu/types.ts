@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { ReactNode, FC, JSX } from "react";
+import type { ReactNode, JSX } from "react";
 import type { DefaultSuggestionItem, DefaultGridSuggestionItem } from "@ocai/rune-core";
 
 export type DefaultReactSuggestionItem = DefaultSuggestionItem & {

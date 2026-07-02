@@ -82,7 +82,7 @@
   --rune-z-float:           9999;
 }
 
-/* The gutter contract (CSS-only side-menu alignment, no JS measurement).
+/* the gutter contract (CSS-only side-menu alignment, no JS measurement).
  *
  * Table owns its visual breathing room inside `.rune-table-chrome-padding`.
  * The outer `.rune-block` must stay a clean positioning / hit-test shell;
