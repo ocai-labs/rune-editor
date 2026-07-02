@@ -1,5 +1,23 @@
 # @ocai/rune-core
 
+## 0.18.0
+
+### Minor Changes
+
+- d0c5416: rune-ai now edits through a styling-aware markdown round-trip instead of character offsets.
+
+  **Read == write.** `exportMarkdown` and the AI read tools (`read_document`, `get_block`, `get_editor_context`) now serialize a styling-aware markdown dialect — inline color (`<span data-text-color="…">`), `<u>` underline, wiki links, and inline math all round-trip, produced from the same registry-driven walk the write path parses back. Inline `textColor`/`backgroundColor` and `underline`, previously dropped on export, are preserved. Plain text that looks like markdown is now escaped on serialize. `exportMarkdown(editor, { dialect: "styled" | "plain" })` — default `"styled"`; pass `"plain"` for user-facing export menus to drop the raw-HTML emissions.
+
+  **New `apply_edits({ oldStr, newStr, blockId? })`.** The everyday text-edit tool: markdown find/replace, quote-don't-compute. The model copies `oldStr` verbatim from what a read tool showed and supplies replacement markdown — no offsets. A batch is one transaction / one undo step. Structured errors (`no-match`, `ambiguous-match`, `not-editable-lossless`) with recovery hints; a normalization ladder tolerates whitespace/quote drift.
+
+  **New `apply_matching({ where, set })`.** Declarative bulk op with engine-guaranteed completeness for "all X → Y" (e.g. recolor every code span). Predicate vocabulary (`mark`/`blockType`/`hasTextColor`/`textMatches`) and transforms are schema-derived; enumerates every match itself, including text inside table cells, in one transaction.
+
+  **Retirements (no back-compat).** `format_text` and `replace_selection` are removed (subsumed by `apply_edits`); `update_block`'s text-content path is removed (props/type/depth by id remain). Content-affecting `turn_into` is steered to `apply_edits`; `turn_into` stays for pure type flips. The AI tool surface is now 15 tools.
+
+### Patch Changes
+
+- d0c5416: Remove dead code and an unused dependency. Dropped the unused `@tiptap/extension-horizontal-rule` dependency from both packages (the divider is a custom `Divider` block — StarterKit's built-in horizontal rule stays disabled), trimming the install footprint. Also pruned internal dead code surfaced by `tsc --noUnusedLocals`: unused imports, a dead constant, a never-read NodeView field, and dead test helpers. No public API or runtime behavior change.
+
 ## 0.17.0
 
 ### Minor Changes

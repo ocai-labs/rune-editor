@@ -1,5 +1,25 @@
 # @ocai/rune-react
 
+## 0.18.0
+
+### Minor Changes
+
+- 2ad0807: The inline `:` emoji picker is now a keyboard-navigable grid. Typing `:` followed by a query renders a 9-column glyph grid you can move through with ←→↑↓ and select with Enter, with the matched emoji's name shown below the grid. Search runs off a self-owned `emojiSearch` index (replacing frimousse for the inline picker), and the grid scrolls with a native styled scrollbar (draggable, `scrollbar-gutter: stable`) instead of a custom JS overlay.
+
+  No public API change — the `RuneEmojiPicker` preset used for the callout/title grid pickers is unchanged.
+
+### Patch Changes
+
+- 9e94ad8: Lazy-load KaTeX so it no longer ships in consumers' initial bundle. The math NodeViews now load KaTeX (~77 KB gzip) via dynamic import on first math-node mount, showing the raw LaTeX as a brief placeholder until the chunk resolves. Documents without equations never download KaTeX, and bundlers split it into its own async chunk — measured at **−77 KB gzip (−15%)** off the playground's initial JS.
+
+  No public API change. KaTeX rendering becomes asynchronous on first use only (cached thereafter); the rendered output is unchanged.
+
+- d0c5416: Remove dead code and an unused dependency. Dropped the unused `@tiptap/extension-horizontal-rule` dependency from both packages (the divider is a custom `Divider` block — StarterKit's built-in horizontal rule stays disabled), trimming the install footprint. Also pruned internal dead code surfaced by `tsc --noUnusedLocals`: unused imports, a dead constant, a never-read NodeView field, and dead test helpers. No public API or runtime behavior change.
+- bcab9c2: Floating TOC hover-card rows no longer let long heading labels spill past the row edge. The label is now clipped with a gentle right-edge fade mask (matching the sidebar row-label treatment) instead of `truncate` — which never worked here because the row `Button` is `inline-flex`, so `text-overflow: ellipsis` had no inline box to act on. Short labels are unaffected; the current/hover row keeps a crisp background fill.
+- Updated dependencies [d0c5416]
+- Updated dependencies [d0c5416]
+  - @ocai/rune-core@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes
