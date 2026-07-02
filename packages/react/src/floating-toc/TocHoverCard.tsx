@@ -150,13 +150,23 @@ export function TocHoverCard({
                 // when the pointer hovers it; pin the hover color back to
                 // --editor-accent for current.
                 className={cn(
-                  "w-full cursor-pointer justify-start truncate font-normal",
+                  "w-full cursor-pointer justify-start font-normal",
                   h.id === currentId
                     ? "text-(--editor-accent) hover:text-(--editor-accent)"
                     : "text-muted-foreground",
                 )}
               >
-                {h.text || `Heading ${h.level}`}
+                {/* Overflow treatment is a gentle right-edge fade mask,
+                    not truncate's hard ellipsis — the same effect as the
+                    sidebar row label (zyler RenamableRowLabel): at rest the
+                    title stays fully readable and only the extreme right
+                    edge softens. The mask lives on this inner span, not the
+                    Button, so the ghost hover fill keeps a crisp edge;
+                    flex-1 + min-w-0 lets it fill the row and shrink below
+                    its content so overflow-hidden can clip the tail. */}
+                <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-start [mask-image:linear-gradient(to_right,black_85%,transparent_99%)]">
+                  {h.text || `Heading ${h.level}`}
+                </span>
               </Button>
             </li>
           ))}
