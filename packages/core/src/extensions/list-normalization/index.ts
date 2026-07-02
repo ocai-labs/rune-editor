@@ -8,6 +8,7 @@ import { Extension } from "@tiptap/core"
 import type { EditorState, Transaction } from "@tiptap/pm/state"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
 
+import { forEachBodyBlock } from "../../schema/bodySurface"
 import { INTERNAL_NORMALIZATION_META } from "../internal-meta"
 import { computeListRuns, type ListRunInfo } from "../list-run-engine"
 
@@ -85,7 +86,11 @@ function buildNormalizationTransaction(state: EditorState): Transaction | null {
   const tr = state.tr
   let mutated = false
 
-  state.doc.forEach((block, pos) => {
+  // Walk EVERY body block, not just root children: a numberedList inside a
+  // column has stale `start` attrs too, and the engine now numbers it on its
+  // own surface. `forEachBodyBlock` yields absolute positions, so the byPos
+  // lookup and setNodeMarkup below address in-column blocks unchanged.
+  forEachBodyBlock(state.doc, ({ node: block, pos }) => {
     if (block.type.name !== "numberedList") return
     const blockInfo = info.byPos.get(pos)
     if (!blockInfo) return

@@ -268,6 +268,69 @@ export function forEachBodyBlock(
   })
 }
 
+/** One body block in a `BodySurface.children` list. */
+export interface BodySurfaceBlock {
+  node: ProseMirrorNode
+  /** Absolute PM position of the block (the position before it). */
+  pos: number
+  /** Index within its surface (0-based, surface-local). */
+  index: number
+}
+
+/** A body-block surface handed to `forEachBodySurface`, with its children. */
+export interface BodySurface {
+  /**
+   * Absolute pos of the surface node, or `-1` for the doc root — the same
+   * sentinel `ResolvedBodyBlock.surfacePos` uses.
+   */
+  surfacePos: number
+  /**
+   * This surface's body-block children, in document order, each carrying its
+   * ABSOLUTE PM position — a self-contained stream a per-surface algorithm
+   * can fold over without ever touching a sibling surface.
+   */
+  children: BodySurfaceBlock[]
+}
+
+/**
+ * Visit each body-block SURFACE — the doc root, then every `column` — as an
+ * INDEPENDENT unit, handing the callback that surface's children (document
+ * order, absolute positions) in one batch.
+ *
+ * The complement of `forEachBodyBlock`: that flattens all surfaces into one
+ * document-order block stream; this keeps them separate, for callers whose
+ * per-surface state must RESET at a surface boundary. The motivating case is
+ * list numbering — a run's counter and marker cycle restart in each column,
+ * so a numbered list inside a column begins at 1, unaffected by the root or
+ * a sibling column (Notion parity).
+ *
+ * Composes the SINGLE traversal in `walkBodySurfaces` (no second walk): its
+ * in-order block visits are bucketed by `surfacePos`, so each bucket is that
+ * surface's children in document order. The root surface is emitted first
+ * (its `columnLayout` child is visited before the walk descends into the
+ * columns), then each column in first-child order. A surface with no
+ * body-block children is not emitted — there is nothing to fold over.
+ */
+export function forEachBodySurface(
+  doc: ProseMirrorNode,
+  fn: (surface: BodySurface) => void,
+): void {
+  const bySurface = new Map<number, BodySurfaceBlock[]>()
+  const order: number[] = []
+  walkBodySurfaces(doc, ({ node, pos, indexInSurface, surfacePos }) => {
+    let children = bySurface.get(surfacePos)
+    if (!children) {
+      children = []
+      bySurface.set(surfacePos, children)
+      order.push(surfacePos)
+    }
+    children.push({ node, pos, index: indexInSurface })
+  })
+  for (const surfacePos of order) {
+    fn({ surfacePos, children: bySurface.get(surfacePos)! })
+  }
+}
+
 /**
  * Walk up from `$pos` to the nearest ancestor that is a registered body block,
  * returning it with its surface-relative index, or `null` when there is none

@@ -18,6 +18,9 @@ import type { GestureClaim } from "../shared/gesture-state"
 import { isDraggable } from "../side-menu/block-registry"
 import { surfaceBlockSnapshot, slotAtY, refreshSnapshotRects, effectivePrevIndex } from "./block-drag-geometry"
 import { executeReorder, executeDepthOnlyChange } from "./reorder"
+import type { ReorderDestOpts } from "./reorder"
+import { rescaleMovedContentWidths } from "./contentWidthRescale"
+import { availableContentWidth } from "../resize/geometry"
 import {
   resolveEmptiedSourceColumnForMove,
   runContainsColumnLayout,
@@ -122,6 +125,48 @@ function collectRunIds(
     else return []
   }
   return ids
+}
+
+/**
+ * The px content-width a body block has on its surface: `availableContentWidth`
+ * of the `.rune-block` element at `pos`. Used by the cross-surface contentWidth
+ * rescale (Task G) as the SOURCE measurement — the dragged block's own element,
+ * so its stored % basis (its content box, own depth indent included) is read
+ * exactly. Returns `null` when the element is missing OR the measurement is
+ * degenerate (`<= 1`, i.e. an unlaid-out surface — jsdom reports
+ * `clientWidth === 0`), so the caller no-ops rather than rescale against a
+ * bogus width.
+ */
+function surfaceContainerPx(view: EditorView, pos: number): number | null {
+  const dom = view.nodeDOM(pos) as HTMLElement | null
+  if (!dom) return null
+  const px = availableContentWidth(dom)
+  return Number.isFinite(px) && px > 1 ? px : null
+}
+
+/**
+ * The px content-width a surface offers a depth-0 block: `availableContentWidth`
+ * of the surface's OWN element — the column NodeView root (which doubles as its
+ * contentDOM) or, for the root surface (`surfacePos === -1`), the editor's
+ * content element (`view.dom`, the block rows' direct parent). The Task G
+ * DESTINATION measurement: taken on the surface rather than a resident block so
+ * an EMPTY column still measures, and a resident's own depth indent
+ * (`padding-inline-start` on `.rune-block`, which `availableContentWidth`
+ * subtracts) can't skew the basis. A landing depth > 0 still reads slightly
+ * wide — accepted slack for this view-layer, best-effort rescale. Same `null`
+ * contract as `surfaceContainerPx`. Exported for tests.
+ */
+export function surfaceElementPx(
+  view: EditorView,
+  surfacePos: number,
+): number | null {
+  const dom =
+    surfacePos === -1
+      ? view.dom
+      : (view.nodeDOM(surfacePos) as HTMLElement | null)
+  if (!dom) return null
+  const px = availableContentWidth(dom)
+  return Number.isFinite(px) && px > 1 ? px : null
 }
 
 /** Handle returned by `setupBlockDrag` — lets the owning plugin view abort a
@@ -765,10 +810,41 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
         // Task 5, out of scope here.
         const forceTextCaret =
           act.sourceSurfacePos !== -1 || act.currentSurfacePos !== -1
+        // Cross-surface contentWidth rescale (Task G, VIEW-LAYER only). A media
+        // block's contentWidth is a % of ITS surface's container width; moving
+        // it to a wider/narrower surface while keeping the % would resize it in
+        // PIXELS. Preserve the user's chosen pixel width by rescaling the % into
+        // the destination surface's container, in the SAME tr as the move (one
+        // undo step, no flicker). Measure BEFORE dispatch off the still-in-place
+        // DOM: source = the dragged block's own element (act.range.from), dest =
+        // the destination surface's OWN element — not a resident block, so an
+        // EMPTY column still measures (a resident-block basis silently skipped
+        // the rescale there) and a resident's depth indent can't skew it. A
+        // same-surface drop, an unmeasurable width, or an equal-width move skips
+        // the hook entirely — so a pure root→root move stays byte-identical to
+        // the frozen drag contract. Storage stays %; the headless moveBlocks
+        // command never rescales.
+        let onMoved: ReorderDestOpts["onMoved"]
+        if (act.currentSurfacePos !== act.sourceSurfacePos) {
+          const srcPx = surfaceContainerPx(view, act.range.from)
+          const destPx = surfaceElementPx(view, act.currentSurfacePos)
+          if (srcPx != null && destPx != null && srcPx !== destPx) {
+            const movedRangeSize = act.range.to - act.range.from
+            onMoved = (tr, result) =>
+              rescaleMovedContentWidths(
+                tr,
+                result.insertPos,
+                movedRangeSize,
+                srcPx,
+                destPx,
+              )
+          }
+        }
         const tr = executeReorder(view.state, source, act.lastTarget, {
           destSurfacePos: act.currentSurfacePos,
           emptiedSourceColumn,
           forceTextCaret,
+          onMoved,
         })
         if (tr) view.dispatch(tr)
       }

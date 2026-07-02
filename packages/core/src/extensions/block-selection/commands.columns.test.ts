@@ -364,3 +364,52 @@ describe("caret (TextSelection) commands — caret inside a column child (surfac
     expect(editor.state.selection.from).toBe(posOfBlock(editor, dupId) + 1 + 1)
   })
 })
+
+// BS-3 regression: programmatic setBlockSelection resolved endpoint ids with the
+// root-only topLevelBlockIndexById, so an in-column id yielded -1 and the command
+// no-opped. Endpoints must resolve surface-aware, share ONE surface, and build a
+// column-local MBS. Numeric refs keep the historical root semantics.
+describe("setBlockSelection — in-column endpoint ids (surface-aware)", () => {
+  it("selects a run of column children on the column surface", () => {
+    const editor = fixture()
+    const ok = editor.commands.setBlockSelection({ from: "b1", to: "b2" })
+    expect(ok).toBe(true)
+    const sel = editor.state.selection as MultiBlockSelection
+    expect(sel).toBeInstanceOf(MultiBlockSelection)
+    expect(sel.surface.type.name).toBe("column")
+    // Both b1/b2 are col_b's children → surface-local indices [0, 1].
+    expect(sel.blockIndices).toEqual([0, 1])
+    // The selected nodes are the column's blocks, not root blocks.
+    expect(sel.blockNodes.map((n) => n.textContent)).toEqual(["B1", "B2"])
+  })
+
+  it("selects a single column child (from === to)", () => {
+    const editor = fixture()
+    const ok = editor.commands.setBlockSelection({ from: "b2", to: "b2" })
+    expect(ok).toBe(true)
+    const sel = editor.state.selection as MultiBlockSelection
+    expect(sel.surface.type.name).toBe("column")
+    expect(sel.blockIndices).toEqual([1, 1])
+  })
+
+  it("returns false for endpoints on DIFFERENT surfaces (cross-column)", () => {
+    const editor = fixture()
+    // a1 lives in col_a, b1 in col_b — a cross-surface MBS is not a thing.
+    expect(editor.commands.setBlockSelection({ from: "a1", to: "b1" })).toBe(false)
+  })
+
+  it("returns false for a root ↔ in-column pair", () => {
+    const editor = fixture()
+    expect(editor.commands.setBlockSelection({ from: "r1", to: "b1" })).toBe(false)
+  })
+
+  it("still resolves root ids on the root surface", () => {
+    const editor = fixture()
+    const ok = editor.commands.setBlockSelection({ from: "r1", to: "lay" })
+    expect(ok).toBe(true)
+    const sel = editor.state.selection as MultiBlockSelection
+    // Root surface = the doc.
+    expect(sel.surface.type.name).toBe("doc")
+    expect(sel.blockIndices).toEqual([0, 1])
+  })
+})

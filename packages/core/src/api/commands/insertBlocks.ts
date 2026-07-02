@@ -8,10 +8,10 @@ import type { Editor } from "@tiptap/core"
 import type { Schema, Node as ProseMirrorNode } from "@tiptap/pm/model"
 import { getBlockSpecs } from "../../schema/blocks/registry"
 import {
-  topLevelBlockIndexAtBoundaryPos,
-  topLevelBlockPosById,
-} from "../../schema/topLevelBlocks"
-import { resolveColumnById } from "../../schema/bodySurface"
+  resolveBodyBlockById,
+  resolveColumnById,
+  surfaceChildrenAt,
+} from "../../schema/bodySurface"
 import type { BlockInsertTarget, RuneBlockInput } from "../types"
 // `RuneBlockInput` also backs the no-nesting insert guard below.
 
@@ -30,7 +30,7 @@ export function resolveInsertPos(
   if (at === undefined || at === "end") return doc.content.size
 
   if (typeof at === "number") {
-    return topLevelBlockIndexAtBoundaryPos(doc, at) === -1 ? -1 : at
+    return numericBoundaryIsInsertable(doc, at) ? at : -1
   }
 
   // Column-surface target: resolve a boundary position INSIDE a named column.
@@ -38,9 +38,40 @@ export function resolveInsertPos(
     return resolveColumnInsertPos(doc, at)
   }
 
-  const pos = topLevelBlockPosById(doc, at.id)
-  if (pos === -1) return -1
-  return at.side === "before" ? pos : pos + (doc.nodeAt(pos)?.nodeSize ?? 0)
+  // `{id, side}` anchor: resolve on the anchor's OWN surface (root or a column)
+  // so an in-column anchor inserts within its column, not at the root. Depth is
+  // clamped surface-locally downstream (the command's `normalizeDepthAt` walk);
+  // here we only pick the absolute boundary, mirroring the root convention —
+  // before → the block's pos, after → past the block's whole node.
+  const resolved = resolveBodyBlockById(doc, at.id)
+  if (!resolved) return -1
+  return at.side === "before"
+    ? resolved.pos
+    : resolved.pos + resolved.node.nodeSize
+}
+
+/**
+ * Whether a numeric position sits exactly on a block boundary of ITS body
+ * surface — the doc root OR a `column`'s content. `surfaceChildrenAt` resolves
+ * the surface a position lives on, but it descends past a textblock, so a
+ * mid-text caret still resolves to a surface; we additionally require `pos` to
+ * equal one of that surface's child boundaries (its content start, a gap
+ * between two children, or its content end). A column-content boundary is a
+ * valid insert target; a position inside a textblock is not. Root boundaries
+ * stay accepted, behavior-equivalent to the old `topLevelBlockIndexAtBoundaryPos`
+ * gate.
+ */
+function numericBoundaryIsInsertable(doc: ProseMirrorNode, pos: number): boolean {
+  const surface = surfaceChildrenAt(doc, pos)
+  if (!surface) return false
+  let boundary = surface.start
+  if (pos === boundary) return true // surface content start (insert at head)
+  for (let i = 0; i < surface.node.childCount; i++) {
+    boundary += surface.node.child(i).nodeSize
+    if (pos === boundary) return true // gap after child i, or content end
+    if (pos < boundary) return false // interior of child i (mid-textblock)
+  }
+  return false
 }
 
 /**

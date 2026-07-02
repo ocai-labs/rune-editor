@@ -6,6 +6,8 @@
 
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 
+import { forEachBodySurface } from "../../schema/bodySurface"
+
 export type ListKind = "numbered" | "bullet"
 
 export type NumberedMarkerStyle = "decimal" | "lower-alpha" | "lower-roman"
@@ -13,7 +15,7 @@ export type BulletMarkerStyle = "disc" | "circle" | "square"
 export type ListMarkerStyle = NumberedMarkerStyle | BulletMarkerStyle
 
 export interface ListRunBlockInfo {
-  /** Top-level offset of this block in the doc. */
+  /** Absolute PM position of this block (root-level, or inside a column). */
   pos: number
   /** PM node size — used by callers building node decorations. */
   nodeSize: number
@@ -34,7 +36,7 @@ export interface ListRunBlockInfo {
 }
 
 export interface ListRunInfo {
-  /** Keyed by top-level doc offset of each list block. */
+  /** Keyed by the absolute doc position of each list block (root or in-column). */
   byPos: Map<number, ListRunBlockInfo>
 }
 
@@ -50,8 +52,9 @@ function countKind(stack: StackEntry[], kind: StackEntry["kind"]): number {
 }
 
 /**
- * Pure single-pass walk over the doc that produces every piece of
- * per-list-block presentational state in one place. Consumers:
+ * Pure walk over every body-block SURFACE (the doc root, then each `column`)
+ * that produces every piece of per-list-block presentational state in one
+ * place. Consumers:
  *
  *   - ListNumbering decoration: reads `index` + `markerStyle` to render.
  *   - ListNormalization appendTransaction: reads `isRunLeader` to decide
@@ -61,64 +64,75 @@ function countKind(stack: StackEntry[], kind: StackEntry["kind"]): number {
  * walk in either consumer would let "what is a run leader" drift
  * between rendering and normalization, which is exactly the class of
  * bug this layer exists to prevent.
+ *
+ * The per-block algorithm runs ONCE PER SURFACE with a fresh `stack` +
+ * `depthCounters`, so numbering and marker cycling RESTART at each surface
+ * boundary: a numbered list inside a column starts at 1, unaffected by the
+ * root or a sibling column (Notion parity). The root surface still sees the
+ * `columnLayout` as a plain non-list block, so it interrupts a root run
+ * exactly as before. `byPos` stays keyed by ABSOLUTE pos, so both consumers
+ * address in-column and root blocks the same way.
  */
 export function computeListRuns(doc: ProseMirrorNode): ListRunInfo {
-  const stack: StackEntry[] = []
-  const depthCounters = new Map<number, number>()
   const byPos = new Map<number, ListRunBlockInfo>()
 
-  doc.forEach((block, offset) => {
-    const depth = typeof block.attrs.depth === "number" ? block.attrs.depth : 0
+  forEachBodySurface(doc, ({ children }) => {
+    const stack: StackEntry[] = []
+    const depthCounters = new Map<number, number>()
 
-    while (stack.length > 0 && (stack[stack.length - 1]?.flatDepth ?? 0) >= depth) {
-      stack.pop()
-    }
+    for (const { node: block, pos } of children) {
+      const depth = typeof block.attrs.depth === "number" ? block.attrs.depth : 0
 
-    if (block.type.name === "numberedList") {
-      for (const key of Array.from(depthCounters.keys())) {
-        if (key > depth) depthCounters.delete(key)
+      while (stack.length > 0 && (stack[stack.length - 1]?.flatDepth ?? 0) >= depth) {
+        stack.pop()
       }
 
-      const markerStyle = ORDERED_MARKERS[countKind(stack, "ordered") % 3]!
-      const previous = depthCounters.get(depth)
-      const isRunLeader = previous == null
-      const rawStart = typeof block.attrs.start === "number" ? block.attrs.start : null
-      // Leader honors `start` (`start=1` is equivalent to null since 1 is
-      // the default index); non-leaders ignore `start` entirely — the
-      // counter wins. ListNormalization erases stale non-leader `start`
-      // attrs from the doc so the stored shape matches what is rendered.
-      const index = isRunLeader
-        ? (rawStart ?? 1)
-        : (previous as number) + 1
-      depthCounters.set(depth, index)
+      if (block.type.name === "numberedList") {
+        for (const key of Array.from(depthCounters.keys())) {
+          if (key > depth) depthCounters.delete(key)
+        }
 
-      byPos.set(offset, {
-        pos: offset,
-        nodeSize: block.nodeSize,
-        kind: "numbered",
-        depth,
-        isRunLeader,
-        index,
-        markerStyle,
-      })
-      stack.push({ kind: "ordered", flatDepth: depth })
-    } else if (block.type.name === "bulletList") {
-      for (const key of Array.from(depthCounters.keys())) {
-        if (key >= depth) depthCounters.delete(key)
-      }
+        const markerStyle = ORDERED_MARKERS[countKind(stack, "ordered") % 3]!
+        const previous = depthCounters.get(depth)
+        const isRunLeader = previous == null
+        const rawStart = typeof block.attrs.start === "number" ? block.attrs.start : null
+        // Leader honors `start` (`start=1` is equivalent to null since 1 is
+        // the default index); non-leaders ignore `start` entirely — the
+        // counter wins. ListNormalization erases stale non-leader `start`
+        // attrs from the doc so the stored shape matches what is rendered.
+        const index = isRunLeader
+          ? (rawStart ?? 1)
+          : (previous as number) + 1
+        depthCounters.set(depth, index)
 
-      const markerStyle = BULLET_MARKERS[countKind(stack, "bullet") % 3]!
-      byPos.set(offset, {
-        pos: offset,
-        nodeSize: block.nodeSize,
-        kind: "bullet",
-        depth,
-        markerStyle,
-      })
-      stack.push({ kind: "bullet", flatDepth: depth })
-    } else {
-      for (const key of Array.from(depthCounters.keys())) {
-        if (key >= depth) depthCounters.delete(key)
+        byPos.set(pos, {
+          pos,
+          nodeSize: block.nodeSize,
+          kind: "numbered",
+          depth,
+          isRunLeader,
+          index,
+          markerStyle,
+        })
+        stack.push({ kind: "ordered", flatDepth: depth })
+      } else if (block.type.name === "bulletList") {
+        for (const key of Array.from(depthCounters.keys())) {
+          if (key >= depth) depthCounters.delete(key)
+        }
+
+        const markerStyle = BULLET_MARKERS[countKind(stack, "bullet") % 3]!
+        byPos.set(pos, {
+          pos,
+          nodeSize: block.nodeSize,
+          kind: "bullet",
+          depth,
+          markerStyle,
+        })
+        stack.push({ kind: "bullet", flatDepth: depth })
+      } else {
+        for (const key of Array.from(depthCounters.keys())) {
+          if (key >= depth) depthCounters.delete(key)
+        }
       }
     }
   })

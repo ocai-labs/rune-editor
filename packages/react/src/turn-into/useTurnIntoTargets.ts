@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import {
   getDefaultSlashMenuItems,
+  resolveBodyBlockById,
   type DefaultSuggestionItem,
   type TurnIntoBlockInput,
 } from "@ocai/rune-core"
@@ -91,11 +92,10 @@ function isTurnIntoSource(source: ProseMirrorNode): boolean {
 }
 
 function findBlockNodeById(editor: Editor, id: string): ProseMirrorNode | null {
-  for (let i = 0; i < editor.state.doc.childCount; i++) {
-    const child = editor.state.doc.child(i)
-    if (child.attrs.id === id) return child
-  }
-  return null
+  // Surface-aware: a root-only `doc.child(i)` scan missed blocks inside a
+  // column, leaving the turn-into menu empty for them. `resolveBodyBlockById`
+  // resolves on the root surface AND any nested column surface.
+  return resolveBodyBlockById(editor.state.doc, id)?.node ?? null
 }
 
 function isExactMatch(

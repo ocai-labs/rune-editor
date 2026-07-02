@@ -31,6 +31,16 @@ const schema = new Schema({
       },
       content: "inline*",
     },
+    // Minimal columns shape (see list-run-engine test): columnLayout is a body
+    // block; column is a structural surface holding first-class body blocks.
+    columnLayout: {
+      group: "block",
+      attrs: { depth: { default: 0 } },
+      content: "column+",
+    },
+    column: {
+      content: "block+",
+    },
   },
 })
 
@@ -281,5 +291,21 @@ describe("buildListNumberingDecorations", () => {
     ])
 
     expect(listIndices(newDoc)).toEqual(["1", "1", "2"])
+  })
+
+  it("4.2 renders --rune-list-index for a numbered list inside a column", () => {
+    // Regression: without per-surface numbering the in-column list got no run
+    // info, so no `--rune-list-index` decoration — the CSS counter fell back
+    // to rendering "0." on every item.
+    const nl = () => schema.node("numberedList", { depth: 0 }, schema.text("x"))
+    const doc = schema.node("doc", null, [
+      schema.node("columnLayout", { depth: 0 }, [
+        schema.node("column", null, [nl(), nl(), nl()]),
+        schema.node("column", null, [
+          schema.node("paragraph", { depth: 0 }, schema.text("x")),
+        ]),
+      ]),
+    ])
+    expect(listIndices(doc)).toEqual(["1", "2", "3"])
   })
 })

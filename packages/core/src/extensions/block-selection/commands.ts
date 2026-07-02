@@ -10,10 +10,10 @@ import { nanoid } from "nanoid"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex } from "./selectable"
 import { blockSelectionKey, type BlockSelectionPluginMeta } from "./plugin"
-import { topLevelBlockIndexById } from "../../schema/topLevelBlocks"
 import { setSelectionAfterDelete } from "../../api/commands/deleteBlocks"
 import { executeReorder } from "../block-drag/reorder"
 import {
+  resolveBodyBlockById,
   surfaceBlockTextBoundsAtPos,
   surfaceChildrenAt,
 } from "../../schema/bodySurface"
@@ -32,9 +32,21 @@ declare module "@tiptap/core" {
   }
 }
 
-function resolveIndex(doc: import("@tiptap/pm/model").Node, ref: string | number): number {
-  if (typeof ref === "number") return ref
-  return topLevelBlockIndexById(doc, ref)
+/**
+ * Resolve a `setBlockSelection` endpoint to its `(surfacePos, index)` placement.
+ * A numeric ref keeps the historical ROOT semantics (surface = doc, `surfacePos
+ * === -1`); a string id resolves surface-aware so an in-column block addresses
+ * ITS column surface — the old root-only `topLevelBlockIndexById` returned -1 for
+ * an in-column id, no-opping the command. `null` when an id doesn't resolve.
+ */
+function resolveEndpoint(
+  doc: import("@tiptap/pm/model").Node,
+  ref: string | number,
+): { surfacePos: number; index: number } | null {
+  if (typeof ref === "number") return { surfacePos: -1, index: ref }
+  const resolved = resolveBodyBlockById(doc, ref)
+  if (!resolved) return null
+  return { surfacePos: resolved.surfacePos, index: resolved.indexInSurface }
 }
 
 function moveSelectedBlocks(
@@ -138,14 +150,37 @@ export function blockSelectionCommands(): Partial<RawCommands> {
     setBlockSelection:
       ({ from, to }) =>
       ({ tr, state, dispatch }) => {
-        const fromIdx = resolveIndex(state.doc, from)
-        const toIdx = resolveIndex(state.doc, to)
-        const N = state.doc.childCount
-        if (fromIdx < 0 || toIdx < 0 || fromIdx >= N || toIdx >= N) return false
+        const fromRef = resolveEndpoint(state.doc, from)
+        const toRef = resolveEndpoint(state.doc, to)
+        if (!fromRef || !toRef) return false
+        // Both endpoints must live on the SAME surface — a cross-surface MBS
+        // (root ↔ inside a column, or two different columns) is not a thing.
+        if (fromRef.surfacePos !== toRef.surfacePos) return false
+        const surfaceNode =
+          fromRef.surfacePos === -1
+            ? state.doc
+            : state.doc.nodeAt(fromRef.surfacePos)
+        if (!surfaceNode) return false
+        const N = surfaceNode.childCount
+        if (
+          fromRef.index < 0 ||
+          toRef.index < 0 ||
+          fromRef.index >= N ||
+          toRef.index >= N
+        )
+          return false
         if (dispatch) {
-          const anchorId = state.doc.child(fromIdx).attrs.id as string | null
+          // Surface ResolvedPos for a column surface (mirrors block-drag's
+          // restoreMbs); undefined for the root reproduces the historical call.
+          const $surface =
+            fromRef.surfacePos === -1
+              ? undefined
+              : state.doc.resolve(fromRef.surfacePos + 1)
+          const anchorId = surfaceNode.child(fromRef.index).attrs.id as string | null
           const meta: BlockSelectionPluginMeta = { setAnchor: anchorId }
-          tr.setSelection(MultiBlockSelection.create(state.doc, fromIdx, toIdx))
+          tr.setSelection(
+            MultiBlockSelection.create(state.doc, fromRef.index, toRef.index, $surface),
+          )
           tr.setMeta(blockSelectionKey, meta)
           dispatch(tr)
         }

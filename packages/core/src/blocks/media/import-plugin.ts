@@ -12,7 +12,12 @@ import type { EditorView } from "@tiptap/pm/view"
 import { nanoid } from "nanoid"
 import { createNodeFromBlockInput, resolveInsertPos } from "../../api/commands/insertBlocks"
 import type { BlockInsertTarget } from "../../api/types"
-import { topLevelBlockPosById } from "../../schema/topLevelBlocks"
+import {
+  forEachBodyBlock,
+  resolveBodyBlockById,
+  surfaceChildrenAt,
+} from "../../schema/bodySurface"
+import { surfaceFromPoint } from "../../extensions/shared/surface-from-point"
 import { IMAGE_ICON_PATHS } from "../Image/block"
 import {
   SOURCE_BLOCK_KINDS,
@@ -187,7 +192,9 @@ function isSourcedBlockKind(value: string): value is SourcedBlockKind {
 
 function collectLiveMediaIds(doc: ProseMirrorNode): Set<string> {
   const ids = new Set<string>()
-  doc.forEach((node) => {
+  // Body-surface walk (not root-only `doc.forEach`) so import state for media
+  // inside a column is not pruned as "deleted" on every unrelated docChange.
+  forEachBodyBlock(doc, ({ node }) => {
     if (!isSourcedBlockKind(node.type.name)) return
     const id = node.attrs.id
     if (typeof id === "string") ids.add(id)
@@ -228,11 +235,13 @@ function findMediaBlock(
   state: EditorState,
   blockId: string,
 ): { pos: number; node: ProseMirrorNode; kind: SourcedBlockKind; nodeName: string } | null {
-  const pos = topLevelBlockPosById(state.doc, blockId)
-  if (pos === -1) return null
-  const node = state.doc.nodeAt(pos)
-  if (!node || !isSourcedBlockKind(node.type.name)) return null
-  return { pos, node, kind: node.type.name, nodeName: node.type.name }
+  // Surface-aware: resolves media blocks on nested surfaces (a `column`), not
+  // just root siblings of <doc>.
+  const resolved = resolveBodyBlockById(state.doc, blockId)
+  if (!resolved) return null
+  const node = resolved.node
+  if (!isSourcedBlockKind(node.type.name)) return null
+  return { pos: resolved.pos, node, kind: node.type.name, nodeName: node.type.name }
 }
 
 function findImageBlock(
@@ -538,24 +547,50 @@ function lastBlockDepth(state: EditorState): number {
 }
 
 function resolveSelectionInsertTarget(state: EditorState): { pos: number; depth: number } {
-  const head = state.selection.to
-  let offset = 0
-  for (let i = 0; i < state.doc.childCount; i++) {
-    const child = state.doc.child(i)
-    const end = offset + child.nodeSize
-    if (head <= end) return { pos: end, depth: nodeDepth(child) }
-    offset = end
+  // Resolve the selection head's OWN surface (the doc root, or the column for
+  // an in-column selection) so a pasted image lands as a sibling on that
+  // surface, not appended after the whole layout — then insert after the
+  // surface child the head sits in or on. `to <= end` covers both a caret
+  // INSIDE a block and a boundary selection sitting BETWEEN blocks (a
+  // MultiBlockSelection's `to`, or a NodeSelection past a non-leaf block) —
+  // the pre-column root loop's `head <= end` semantics, made surface-local.
+  // A text-bounds lookup is NOT enough here: block-end boundaries fall inside
+  // no block's text bounds and would leak to the doc-end fallback.
+  const to = state.selection.to
+  const surface = surfaceChildrenAt(state.doc, to)
+  if (surface) {
+    let offset = surface.start
+    for (let i = 0; i < surface.node.childCount; i++) {
+      const child = surface.node.child(i)
+      const end = offset + child.nodeSize
+      if (to <= end) return { pos: end, depth: nodeDepth(child) }
+      offset = end
+    }
   }
   return { pos: state.doc.content.size, depth: lastBlockDepth(state) }
 }
 
 function resolveDropInsertTarget(view: EditorView, event: DragEvent): { pos: number; depth: number } {
-  const hit = view.posAtCoords({ left: event.clientX, top: event.clientY })
-  if (!hit) return { pos: view.state.doc.content.size, depth: lastBlockDepth(view.state) }
+  const doc = view.state.doc
+  // Which body-block surface is the drop geometrically over — the root, or a
+  // column? surfaceFromPoint uses rect-containment (NOT posAtCoords, which
+  // snaps across the column boundary in gaps/padding), so an OS-file drop over
+  // a column inserts INTO it. The before/after midpoint test then runs against
+  // THAT surface's own children. `surfacePos + 1` is the first position inside
+  // the surface (0 for the root), which surfaceChildrenAt resolves back to it.
+  const { surfacePos } = surfaceFromPoint(view, event.clientX, event.clientY)
+  const surface = surfaceChildrenAt(doc, surfacePos + 1)
+  if (!surface) return { pos: doc.content.size, depth: lastBlockDepth(view.state) }
 
-  let offset = 0
-  for (let i = 0; i < view.state.doc.childCount; i++) {
-    const child = view.state.doc.child(i)
+  const surfaceEnd = surface.start + surface.node.content.size
+  const endDepth = surface.node.lastChild ? nodeDepth(surface.node.lastChild) : 0
+
+  const hit = view.posAtCoords({ left: event.clientX, top: event.clientY })
+  if (!hit) return { pos: surfaceEnd, depth: endDepth }
+
+  let offset = surface.start
+  for (let i = 0; i < surface.node.childCount; i++) {
+    const child = surface.node.child(i)
     const end = offset + child.nodeSize
     if (hit.pos <= end) {
       const dom = view.nodeDOM(offset) as HTMLElement | null
@@ -565,7 +600,7 @@ function resolveDropInsertTarget(view: EditorView, event: DragEvent): { pos: num
     }
     offset = end
   }
-  return { pos: view.state.doc.content.size, depth: lastBlockDepth(view.state) }
+  return { pos: surfaceEnd, depth: endDepth }
 }
 
 interface QueuedFileImport {
@@ -676,7 +711,9 @@ interface QueuedUrlImport {
 
 function collectPendingHtmlImports(state: EditorState): Array<{ pos: number; node: ProseMirrorNode; blockId: string; url: string }> {
   const pending: Array<{ pos: number; node: ProseMirrorNode; blockId: string; url: string }> = []
-  state.doc.forEach((node, pos) => {
+  // Body-surface walk (the walker supplies each block's absolute pos) so
+  // pasted-HTML images inside a column are imported, not just root ones.
+  forEachBodyBlock(state.doc, ({ node, pos }) => {
     if (node.type.name !== "image") return
     const url = node.attrs.pendingFromPaste
     const blockId = node.attrs.id

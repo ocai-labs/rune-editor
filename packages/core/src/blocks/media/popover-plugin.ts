@@ -10,7 +10,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state"
 import type { EditorState, Transaction } from "@tiptap/pm/state"
 import type { EditorView } from "@tiptap/pm/view"
 import { getBlockSpecs } from "../../schema"
-import { topLevelBlockPosById } from "../../schema/topLevelBlocks"
+import { resolveBodyBlockById } from "../../schema/bodySurface"
 import {
   getMediaImportState,
   mediaImportPluginKey,
@@ -62,11 +62,11 @@ function findMediaBlock(
   state: EditorState,
   blockId: string,
 ): { pos: number; node: ProseMirrorNode } | null {
-  const pos = topLevelBlockPosById(state.doc, blockId)
-  if (pos === -1) return null
-  const node = state.doc.nodeAt(pos)
-  if (!node || !supportsMediaSource(editor, node)) return null
-  return { pos, node }
+  // Surface-aware: resolves media blocks on nested surfaces (a `column`), not
+  // just root siblings of <doc>.
+  const resolved = resolveBodyBlockById(state.doc, blockId)
+  if (!resolved || !supportsMediaSource(editor, resolved.node)) return null
+  return { pos: resolved.pos, node: resolved.node }
 }
 
 function canOpenMediaPopover(

@@ -7,7 +7,7 @@
 // packages/core/src/blocks/Toggle/expandSlice.ts
 import { Slice, Fragment } from "@tiptap/pm/model"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
-import { toggleBodyRange } from "./range"
+import { toggleBodyRange, togglePosById } from "./range"
 
 /**
  * Walk `slice.content` and, for each collapsed toggle, splice its
@@ -60,16 +60,25 @@ function expandFragment(
       // Skip ids we've already expanded to prevent infinite recursion
       // when the same collapsed toggle node is encountered again.
       if (expandedIds.has(id)) return
-      let foundPos: number | null = null
-      doc.forEach((n, off) => {
-        if (n.type.name === "toggle" && n.attrs.id === id) foundPos = off
-      })
-      if (foundPos === null) return
-      const body = toggleBodyRange(doc, foundPos)
+      // Resolve the toggle on ANY surface (root OR inside a `column`), not just
+      // the root — a collapsed toggle living in a column must still pull in its
+      // hidden body. The old root-only `doc.forEach` returned nothing for an
+      // in-column toggle, silently dropping the body on copy.
+      const togglePos = togglePosById(doc, id)
+      if (togglePos === -1) return
+      const body = toggleBodyRange(doc, togglePos)
       if (body.isEmpty) return
+      // The body blocks are the toggle's own siblings, so their parent is the
+      // toggle's surface (its parent node). For a root toggle this is `doc`, so
+      // the guard below is byte-identical to the old `parent !== doc`.
+      const surface = doc.resolve(togglePos).parent
       expandedIds.add(id)
       doc.nodesBetween(body.from, body.to, (n, _p, parent) => {
-        if (parent !== doc) return false
+        // Descend through any structural layer (`columnLayout` > `column`) to
+        // reach the toggle's surface, but only COLLECT that surface's own
+        // children — returning undefined (not false) here lets the walk step
+        // into the column to find them.
+        if (parent !== surface) return
         // Skip body nodes already present in the slice to avoid duplicates
         // when the selection already covers the hidden body blocks.
         const nId = n.attrs?.id

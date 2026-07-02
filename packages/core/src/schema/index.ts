@@ -32,6 +32,7 @@ export type { BlockSpecMetadata } from "./blocks/registry"
 export {
   resolveBodyBlockById,
   forEachBodyBlock,
+  forEachBodySurface,
   nearestBodyBlock,
   bodyBlocksInRange,
   surfaceChildrenAt,
@@ -42,6 +43,8 @@ export type {
   NearestBodyBlock,
   BodyBlockInRange,
   ResolvedSurface,
+  BodySurface,
+  BodySurfaceBlock,
 } from "./bodySurface"
 export { createBlockExtension } from "./blocks/createBlockExtension"
 export { readBlockInputText } from "./blocks/blockInputText"

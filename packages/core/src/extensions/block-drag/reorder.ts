@@ -121,6 +121,15 @@ export function removeMoveSource(
  * the first depth-bearing block in `[insertPos, insertPos + rangeSize)` to
  * `newDepthAttr` and applies it to every block in that span (clamped to >= 0).
  * No-op when `newDepthAttr` is undefined. See `DropTarget` JSDoc.
+ *
+ * The walk must descend THROUGH the ancestor containers of the moved span: on a
+ * drop INSIDE a `column`, `nodesBetween` visits the enclosing columnLayout /
+ * column first, whose own pos is `< insertPos`. A bare `nodePos < insertPos →
+ * false` guard cut off descent there, so a block dropped inside a column kept
+ * its old (root-surface) depth — the same "walk misses column children" bug the
+ * cross-surface contentWidth rescale hit. Ancestors are descended but never
+ * re-based (their pos is before the run); root drops have no such ancestors, so
+ * the walk is unchanged there.
  */
 function rebaseSliceDepth(
   tr: Transaction,
@@ -132,7 +141,9 @@ function rebaseSliceDepth(
   const sliceEnd = insertPos + rangeSize
   let delta: number | null = null
   tr.doc.nodesBetween(insertPos, sliceEnd, (node, nodePos) => {
-    if (nodePos < insertPos || nodePos >= sliceEnd) return false
+    // Ancestor container spanning the moved run: descend, never re-base.
+    if (nodePos < insertPos) return true
+    if (nodePos >= sliceEnd) return false
     if (node.attrs.depth === undefined) return false
     const current = typeof node.attrs.depth === "number" ? node.attrs.depth : 0
     if (delta === null) delta = newDepthAttr - current
@@ -301,6 +312,20 @@ export interface ReorderDestOpts {
    * source. Default false = legacy behavior (mode decides).
    */
   forceTextCaret?: boolean
+  /**
+   * Post-move hook (Task G), invoked with the SAME `tr` after the slice landed
+   * and before selection restore, so any edits it makes undo as one step. The
+   * drag gesture uses it to rescale moved media blocks' `contentWidth` into the
+   * destination surface's container (pixel-preserving cross-surface resize).
+   *
+   * OPTIONAL and only ever passed by the drag gesture for a cross-surface drop
+   * with measurable container widths — omitting it (the default, and what the
+   * `moveBlocks` command / block-selection commands do) reproduces the frozen
+   * root→root tr-step contract byte-for-byte. A hook that adds no steps also
+   * keeps the contract; the gesture skips it entirely when there is nothing to
+   * rescale.
+   */
+  onMoved?: (tr: Transaction, result: MoveSliceResult) => void
 }
 
 export function executeReorder(
@@ -324,6 +349,12 @@ export function executeReorder(
     },
   )
   if (!result) return null
+
+  // Post-move hook (Task G): runs on the same `tr`, before selection restore,
+  // so its edits (contentWidth rescale) share the move's undo step. Position-
+  // neutral (setNodeAttribute only), so selection restore below is unaffected.
+  // Undefined for same-surface drags and non-gesture callers → no extra steps.
+  destOpts.onMoved?.(tr, result)
 
   // Selection restoration (caller's responsibility — surface-aware).
   // `forceTextCaret` lands a caret for any column-touching move (Task 5 owns

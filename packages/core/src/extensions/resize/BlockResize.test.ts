@@ -145,6 +145,79 @@ describe("BlockResize", () => {
     expect(gestureKey.getState(editor.state)?.activeGesture).toBeNull()
   })
 
+  it("commits contentWidth on a block that lives INSIDE a column", () => {
+    // The commit path used to resolve the block via `topLevelBlockPosById`,
+    // which only walks the ROOT surface — an in-column block resolves to -1,
+    // the `pos >= 0` gate fails, and the gesture falls to its abort branch:
+    // the preview snaps back and nothing commits. The column-aware
+    // `resolveBodyBlockById` finds the block on its own surface.
+    const editor = createResizeTestEditor({
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "columnLayout",
+            attrs: { id: "cl-resize", depth: 0 },
+            content: [
+              {
+                type: "column",
+                attrs: { id: "col-L", width: 1 },
+                content: [
+                  {
+                    type: "image",
+                    attrs: {
+                      id: "img-in-col",
+                      src: "https://example.com/a.png",
+                      alt: "A",
+                    },
+                  },
+                ],
+              },
+              {
+                type: "column",
+                attrs: { id: "col-R", width: 1 },
+                content: [
+                  {
+                    type: "paragraph",
+                    attrs: { id: "col-R-p" },
+                    content: [{ type: "text", text: "right" }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      } as never,
+    })
+    const block = editor.view.dom.querySelector<HTMLElement>(
+      '.rune-block[data-id="img-in-col"]',
+    )!
+    const frame = block.querySelector<HTMLElement>(":scope > .rune-block-content")!
+    const handle = block.querySelector<HTMLElement>(".rune-resize-handle--end")!
+    stubBlockSizing(block, frame, 500, 500)
+
+    dispatchMouse(handle, "mousedown", 500)
+    expect(gestureKey.getState(editor.state)?.activeGesture).toBe("resize")
+
+    dispatchMouse(document, "mousemove", 300)
+    expect(frame.style.width).toBe("60%")
+
+    dispatchMouse(document, "mouseup", 300)
+
+    // The in-column image node carries the committed contentWidth.
+    let imgNode: import("@tiptap/pm/model").Node | null = null
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "image" && node.attrs.id === "img-in-col") {
+        imgNode = node
+        return false
+      }
+      return true
+    })
+    expect(imgNode).not.toBeNull()
+    expect(imgNode!.attrs.contentWidth).toBe(60)
+    expect(gestureKey.getState(editor.state)?.activeGesture).toBeNull()
+  })
+
   it("ignores a non-primary mouseup mid-resize (right release must not commit)", () => {
     const editor = createResizeTestEditor({
       content: {

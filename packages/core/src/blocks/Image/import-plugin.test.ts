@@ -5,6 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, it, vi } from "vitest"
+import { TextSelection } from "@tiptap/pm/state"
 import { createTestEditor } from "../../test-utils/createTestEditor"
 import { getDocument } from "../../api"
 import {
@@ -787,6 +788,39 @@ describe("ImageImport commands", () => {
     expect(getDocument(editor)).toHaveLength(2)
   })
 
+  it("binary paste with a block selection inserts after the selected block, not at doc end", async () => {
+    // Regression probe: a MultiBlockSelection's `to` sits on the block-END
+    // boundary of the last selected block. For a non-leaf block (paragraph)
+    // that boundary is inside no block's text bounds, so a bounds-only lookup
+    // falls through to the doc-end fallback and the pasted image lands at the
+    // BOTTOM of the document instead of right after the selection.
+    const pending = deferred<RuneImageImportResult>()
+    const importImageFile = vi.fn(() => pending.promise)
+    const editor = createTestEditor({
+      kit: { importImageFile },
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", attrs: { id: "p1" }, content: [{ type: "text", text: "one" }] },
+          { type: "paragraph", attrs: { id: "p2" }, content: [{ type: "text", text: "two" }] },
+          { type: "paragraph", attrs: { id: "p3" }, content: [{ type: "text", text: "three" }] },
+        ],
+      } as never,
+    })
+    expect(editor.commands.setBlockSelection({ from: "p2", to: "p2" })).toBe(true)
+    const plugin = imageImportDOMEvents(editor)
+
+    expect(plugin.paste?.(editor.view, mockPasteEvent([imageFile("paste.png")], ["Files"]))).toBe(true)
+    await flushPromises()
+
+    expect(getDocument(editor).map((block) => block.type)).toEqual([
+      "paragraph",
+      "paragraph",
+      "image",
+      "paragraph",
+    ])
+  })
+
   it("binary paste lets rune-doc clipboard MIME win", () => {
     const importImageFile = vi.fn()
     const editor = editorWithImage({ kit: { importImageFile } })
@@ -1253,5 +1287,122 @@ describe("ImageImport overlays", () => {
     await flushPromises()
 
     expect(queryOverlay(editor)).toBeNull()
+  })
+})
+
+describe("ImageImport drop / paste into a column", () => {
+  // Absolute PM pos of the (first) block carrying `id`, anywhere in the doc.
+  function blockPosById(
+    editor: ReturnType<typeof createTestEditor>,
+    id: string,
+  ): number {
+    let pos = -1
+    editor.state.doc.descendants((node, p) => {
+      if (pos !== -1) return false
+      if (node.attrs?.id === id) {
+        pos = p
+        return false
+      }
+      return true
+    })
+    return pos
+  }
+
+  // Node type of the parent holding the (first) inserted image — "column" when
+  // it landed on a column surface, "doc" when it fell back to the root.
+  function insertedImageParentType(
+    editor: ReturnType<typeof createTestEditor>,
+  ): string | null {
+    let parentType: string | null = null
+    editor.state.doc.descendants((node, pos) => {
+      if (parentType) return false
+      if (node.type.name === "image") {
+        parentType = editor.state.doc.resolve(pos).parent.type.name
+        return false
+      }
+      return true
+    })
+    return parentType
+  }
+
+  function twoColumnDoc() {
+    return {
+      type: "doc",
+      content: [
+        {
+          type: "columnLayout",
+          attrs: { id: "cl1", depth: 0 },
+          content: [
+            {
+              type: "column",
+              attrs: { id: "colL", width: 1 },
+              content: [
+                { type: "paragraph", attrs: { id: "L0" }, content: [{ type: "text", text: "left" }] },
+              ],
+            },
+            {
+              type: "column",
+              attrs: { id: "colR", width: 1 },
+              content: [
+                { type: "paragraph", attrs: { id: "R0" }, content: [{ type: "text", text: "right" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    } as never
+  }
+
+  it("drop over a column inserts the image INTO that column, not at the root", async () => {
+    const pending = deferred<RuneImageImportResult>()
+    const importImageFile = vi.fn(() => pending.promise)
+    const editor = editorWithImage({
+      kit: { importImageFile },
+      content: twoColumnDoc(),
+    })
+
+    // Point the drop (clientX/clientY = 0,0 from mockDropEvent) at the LEFT
+    // column: its rect contains the origin, the right column's does not, so
+    // surfaceFromPoint resolves to colL. posAtCoords lands inside colL's text.
+    const cols = editor.view.dom.querySelectorAll<HTMLElement>("[data-rune-column]")
+    cols[0]!.getBoundingClientRect = () =>
+      ({ top: -10, bottom: 100, left: -10, right: 100, width: 110, height: 110, x: -10, y: -10, toJSON: () => ({}) }) as DOMRect
+    cols[1]!.getBoundingClientRect = () =>
+      ({ top: -10, bottom: 100, left: 200, right: 300, width: 100, height: 110, x: 200, y: -10, toJSON: () => ({}) }) as DOMRect
+    editor.view.posAtCoords = () => ({ pos: blockPosById(editor, "L0") + 1, inside: blockPosById(editor, "L0") })
+
+    const event = mockDropEvent([imageFile("drop.png")])
+    const plugin = imageImportDOMEvents(editor)
+
+    expect(plugin.drop?.(editor.view, event)).toBe(true)
+    await flushPromises()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(insertedImageParentType(editor)).toBe("column")
+  })
+
+  it("binary paste with the caret in a column inserts the image INTO that column", async () => {
+    const pending = deferred<RuneImageImportResult>()
+    const importImageFile = vi.fn(() => pending.promise)
+    const editor = editorWithImage({
+      kit: { importImageFile },
+      content: twoColumnDoc(),
+    })
+
+    // Caret inside colR's paragraph — the pasted image must land as R0's
+    // sibling on the column surface, not appended after the whole layout.
+    const r0 = blockPosById(editor, "R0")
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, r0 + 1)),
+    )
+
+    const event = mockPasteEvent([imageFile("paste.png")], ["Files"])
+    const plugin = imageImportDOMEvents(editor)
+
+    expect(plugin.paste?.(editor.view, event)).toBe(true)
+    await flushPromises()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(insertedImageParentType(editor)).toBe("column")
   })
 })

@@ -6,7 +6,7 @@
 
 import type { Editor } from "@tiptap/core"
 import type { EditorView } from "@tiptap/pm/view"
-import { topLevelBlockPosById } from "../../schema/topLevelBlocks"
+import { resolveBodyBlockById } from "../../schema/bodySurface"
 import { getBlockSpecs } from "../../schema/blocks/registry"
 import { registerDragCancelHandlers } from "../shared/drag-utils"
 import {
@@ -60,7 +60,12 @@ export function setupResizeGesture(view: EditorView, editor: Editor): () => void
     }
     doc.body.style.userSelect = current.previousBodyUserSelect
 
-    const pos = topLevelBlockPosById(view.state.doc, current.blockId)
+    // Column-aware resolve: the block may live inside a `column` surface, where
+    // the root-only `topLevelBlockPosById` returns -1 and the `pos >= 0` gate
+    // below would drop the commit to the abort branch (preview snaps back). The
+    // mousedown path already handles columns deliberately (see the media-lookup
+    // comment above); the commit must match.
+    const pos = resolveBodyBlockById(view.state.doc, current.blockId)?.pos ?? -1
     if (commit && currentClaim?.canCommit && pos >= 0 && current.lastPct !== current.startPct) {
       // No-flicker commit: setNodeAttribute + clear resizeKey + clear gestureKey
       // in ONE transaction. releaseInto() is ownership-guarded — it adds the

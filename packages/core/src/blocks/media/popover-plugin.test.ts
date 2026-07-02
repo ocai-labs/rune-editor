@@ -285,3 +285,82 @@ describe("MediaPopover", () => {
     expect(getMediaPopoverBlockId(editor)).toBeNull()
   })
 })
+
+describe("MediaPopover inside a column", () => {
+  // A media block living on a nested column surface (not a root sibling of
+  // <doc>). The popover must resolve it via the body-surface seam, not the
+  // root-only walk. Left column holds the media; right column a paragraph so
+  // the 2-column minimum is met.
+  function editorWithColumnMedia() {
+    return createTestEditor({
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "columnLayout",
+            attrs: { id: "cl1", depth: 0 },
+            content: [
+              {
+                type: "column",
+                attrs: { id: "colL", width: 1 },
+                content: [
+                  {
+                    type: "video",
+                    attrs: {
+                      id: "colVideo",
+                      sourceType: "asset",
+                      src: "",
+                      embedUrl: null,
+                      provider: null,
+                      sourceUrl: null,
+                      title: "",
+                      width: null,
+                      height: null,
+                    },
+                  },
+                ],
+              },
+              {
+                type: "column",
+                attrs: { id: "colR", width: 1 },
+                content: [
+                  {
+                    type: "paragraph",
+                    attrs: { id: "R0" },
+                    content: [{ type: "text", text: "right" }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      } as never,
+    })
+  }
+
+  it("openMediaPopover opens for a media block nested in a column", () => {
+    const editor = editorWithColumnMedia()
+
+    expect(getMediaPopoverBlockId(editor)).toBeNull()
+    expect(editor.commands.openMediaPopover("colVideo")).toBe(true)
+    expect(getMediaPopoverBlockId(editor)).toBe("colVideo")
+    expect(editor.commands.closeMediaPopover()).toBe(true)
+    expect(getMediaPopoverBlockId(editor)).toBeNull()
+  })
+
+  it("placeholder click opens the popover for an in-column media block", () => {
+    const editor = editorWithColumnMedia()
+    const block = Array.from(
+      editor.view.dom.querySelectorAll<HTMLElement>(".rune-block.rune-video[data-id]"),
+    ).find((el) => el.getAttribute("data-id") === "colVideo")
+    expect(block).toBeTruthy()
+    const control = block!.querySelector<HTMLElement>(".rune-video-empty-control")
+    expect(control).not.toBeNull()
+
+    const openEvent = new MouseEvent("click", { bubbles: true, cancelable: true })
+    control!.dispatchEvent(openEvent)
+
+    expect(openEvent.defaultPrevented).toBe(true)
+    expect(getMediaPopoverBlockId(editor)).toBe("colVideo")
+  })
+})
