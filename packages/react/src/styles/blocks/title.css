@@ -32,12 +32,36 @@
    placeholders ship `title: undefined`, which opts the title out of the
    generic Placeholder extension (see buildDefaultPlaceholders in
    RuneEditor.tsx), so this ::before is the title's ONLY hint — no double
-   rendering. */
+   rendering.
+
+   The hint text is a single token (`--rune-title-placeholder`) so a host
+   can localize it in ONE place; it feeds both the visible ::before and the
+   height-reserving ::after below, which must stay in lockstep. */
 .rune-editor .rune-title:has(> br.ProseMirror-trailingBreak:only-child)::before {
-  content: "New page";
+  content: var(--rune-title-placeholder, "New page");
   position: absolute;
   inset-inline-start: 0;
   top: 0;
   color: color-mix(in oklab, var(--foreground) 32%, transparent);
+  pointer-events: none;
+}
+
+/* Reserve height for the wrapped hint so it behaves like real text.
+   The visible ::before above is absolutely positioned (to keep the caret at
+   the title's start), which means it contributes NO height — an empty title is
+   otherwise exactly one line tall (its lone trailing <br>). A hint that wraps
+   (narrow column, or a longer host-localized string) would then spill below
+   that one line and overlap the block underneath. This ::after is an invisible,
+   in-flow copy of the SAME text: same font / width / wrapping, so it reserves
+   exactly the hint's rendered height and grows the empty title to fit — the way
+   typed text would. `margin-top: -1lh` pulls it up over the trailing <br>'s own
+   line so that line isn't double-counted (1-line hint → 1-line box, 2-line hint
+   → 2-line box, …). Both pseudos vanish the instant the title has real content,
+   which then wraps and grows on its own via the h1's `word-break`. */
+.rune-editor .rune-title:has(> br.ProseMirror-trailingBreak:only-child)::after {
+  content: var(--rune-title-placeholder, "New page");
+  display: block;
+  visibility: hidden;
+  margin-top: -1lh;
   pointer-events: none;
 }
