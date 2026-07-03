@@ -15,6 +15,7 @@ import { BlockId } from "../block-id"
 import { BlockSelection } from "./index"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { blockSelectionKeymap } from "./keymap"
+import { createTestEditor } from "../../test-utils/createTestEditor"
 
 function makeEditor() {
   const element = document.createElement("div")
@@ -268,6 +269,51 @@ describe("Keymap: ←/→/Enter from MultiBlockSelection", () => {
     // Enter in TextSelection is handled by PM's default (splits block) — we
     // don't assert the result, only that our keymap doesn't consume it.
     editor.destroy()
+  })
+})
+
+describe("Keymap: Enter on MBS whose first block is not a textblock (dead-caret regression)", () => {
+  // firstBlockTextEnd assumes the first selected block is a textblock and
+  // hands its raw position straight to TextSelection.create. A divider
+  // (content: "", a PM leaf — no interior text position) or a columnLayout
+  // (structural, its content-end boundary isn't inside a textblock either)
+  // makes that position invalid; PM's TextSelection ctor doesn't throw, it
+  // just warns and builds a selection whose $from.parent has no inline
+  // content — a dead caret that swallows subsequent typing.
+  it("divider first: Enter lands in a real textblock, not a dead position", () => {
+    const editor = createTestEditor()
+    editor.commands.setContent([
+      { type: "divider" },
+      { type: "paragraph", content: [{ type: "text", text: "after" }] },
+    ] as never)
+    editor.commands.setBlockSelection({ from: 0, to: 0 })
+    const km = blockSelectionKeymap()
+    expect(km.Enter!({ editor })).toBe(true)
+    const sel = editor.state.selection
+    expect(sel).toBeInstanceOf(TextSelection)
+    expect(sel.$from.parent.inlineContent).toBe(true)
+  })
+
+  it("columnLayout first: Enter lands in a real textblock, not a dead position", () => {
+    const editor = createTestEditor()
+    const s = editor.schema
+    const para = (id: string, t: string) => s.nodes.paragraph!.create({ id, depth: 0 }, s.text(t))
+    const col = (id: string, ...children: import("@tiptap/pm/model").Node[]) =>
+      s.nodes.column!.create({ id, width: 1 }, children)
+    const doc = s.nodes.doc!.create(null, [
+      s.nodes.columnLayout!.create({ id: "lay", depth: 0 }, [
+        col("col_a", para("a1", "A1")),
+        col("col_b", para("b1", "B1")),
+      ]),
+      para("r1", "root-1"),
+    ])
+    editor.view.dispatch(editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content))
+    editor.commands.setBlockSelection({ from: 0, to: 0 })
+    const km = blockSelectionKeymap()
+    expect(km.Enter!({ editor })).toBe(true)
+    const sel = editor.state.selection
+    expect(sel).toBeInstanceOf(TextSelection)
+    expect(sel.$from.parent.inlineContent).toBe(true)
   })
 })
 

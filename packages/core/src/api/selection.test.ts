@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { Editor } from "@tiptap/core"
 import { AllSelection, NodeSelection, TextSelection } from "@tiptap/pm/state"
-import { CellSelection, TableMap } from "prosemirror-tables"
+import { CellSelection, TableMap } from "@tiptap/pm/tables"
 import { createRuneKit } from "../kit"
 import { getSelectionSnapshot, replaceSelectionText } from "./selection"
 

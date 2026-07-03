@@ -271,9 +271,14 @@ function applyInline(
     // out any textblock whose type disallows the mark being added.
     const ranges = computeBodyBlockRanges(node, pos, where, matcher, addType)
     if (ranges.length === 0) return
+    // Only a block with an id is ever applied below (perBlock) — an id-less
+    // block must not inflate `total`, or `count` overstates ranges that are
+    // never written (BUG: total used to increment unconditionally here).
     const id = node.attrs.id as string | undefined
-    if (id) perBlock.push({ id, ranges })
-    total += ranges.length
+    if (id) {
+      perBlock.push({ id, ranges })
+      total += ranges.length
+    }
   })
 
   if (total === 0) return runeCommandOk({ changedBlockIds: [], count: 0 })
@@ -370,7 +375,17 @@ function applyBlock(
     const stored = set.blockColor.name === "default" ? null : set.blockColor.name
     for (const { pos } of matched) tr.setNodeAttribute(pos, attr, stored)
   }
+  // `canTurnInto` above is only the CHEAP pre-filter (rejects container
+  // sources / unknown targets); `applyTurnIntoTr` can still no-op a matched
+  // block at apply time — a `columnLayout` target tripping the no-nesting
+  // guard, or `props` an adapter's validation refuses (e.g. heading level
+  // 99) — without signaling which source failed. Snapshot each matched
+  // node right before the call (post-blockColor, so a combined blockColor +
+  // turnInto call isn't skewed by the color step) and doc-compare after: a
+  // block whose turnInto no-op'd is not a match, so `count` never overstates.
+  let turnIntoApplied: Set<string> | null = null
   if (turnTarget) {
+    const preNodes = matched.map(({ pos }) => tr.doc.nodeAt(tr.mapping.map(pos)))
     // applyTurnIntoTr maps every source.pos through tr.mapping, so it is safe
     // after the position-stable blockColor step above and across its own
     // multi-source size changes. keepDepth defaults true (a bulk type flip
@@ -382,11 +397,23 @@ function applyBlock(
       turnTarget,
       schema,
     )
+    turnIntoApplied = new Set()
+    matched.forEach(({ pos, id }, i) => {
+      const before = preNodes[i]
+      const after = tr.doc.nodeAt(tr.mapping.map(pos))
+      if (after && (!before || !after.eq(before))) turnIntoApplied!.add(id)
+    })
   }
   editor.view.dispatch(tr)
+  // set.blockColor always applies unconditionally to every matched block
+  // (no apply-time refusal), so those blocks count regardless of turnInto's
+  // outcome; a turnInto-only call counts only the blocks it actually changed.
+  const changed = matched.filter(
+    ({ id }) => set.blockColor !== undefined || turnIntoApplied!.has(id),
+  )
   return runeCommandOk({
-    changedBlockIds: matched.map((m) => m.id),
-    count: matched.length,
+    changedBlockIds: changed.map((m) => m.id),
+    count: changed.length,
   })
 }
 

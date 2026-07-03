@@ -197,6 +197,72 @@ describe("handlePaste — markdown text path", () => {
     expect(event.defaultPrevented).toBe(false)
     editor.destroy()
   })
+
+  // #20 — markdown-it renders a standalone image as `<p><img></p>` (an image
+  // is inline in Markdown; rune's `image` is a block node). The headless
+  // `markdownToDoc` unwraps that lone-image wrapper paragraph
+  // (`unwrapLoneImageParagraphs`); this paste path (`markdownToSlice`) did
+  // not, on the theory that `parseSlice`'s open boundaries merge the empty
+  // wrapper away — true only for an image at the very start/end of the
+  // pasted slice, not one sandwiched between two other blocks.
+  describe("markdown paste — image paragraph unwrap (#20)", () => {
+    function blockTypes(editor: Editor): string[] {
+      const out: string[] = []
+      editor.state.doc.forEach((node) => out.push(node.type.name))
+      return out
+    }
+
+    it("pastes an INTERIOR image without a stray empty paragraph above it", () => {
+      const editor = makeEditor()
+      editor.commands.selectAll()
+      const md = "a\n\n![x](https://example.com/x.png)\n\nb\n"
+      const event = makePasteEvent({ "text/plain": md })
+
+      expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+      expect(event.defaultPrevented).toBe(true)
+
+      const types = blockTypes(editor)
+      expect(types).toContain("image")
+      // No empty paragraph anywhere in the pasted result.
+      const paragraphs = findBlocks(editor, "paragraph")
+      expect(paragraphs.every((p) => p.textContent !== "")).toBe(true)
+      expect(types).toEqual(["paragraph", "image", "paragraph"])
+    })
+
+    // Caret at "se|ed" (mid-paragraph, NOT position 0/end) — the position 0
+    // edge is a degenerate case where "nothing precedes the caret", so an
+    // open-but-atom slice boundary splitting there trivially yields an empty
+    // paragraph REGARDLESS of Markdown/images (identical to inserting any
+    // atom block — divider, table — at a textblock's very start). Mid-
+    // paragraph is the real "does the open edge merge correctly" contract.
+    it("pastes a LEADING image (slice start) — the open TAIL edge still merges into the split-off remainder", () => {
+      const editor = makeEditor("<p>seed</p>")
+      editor.commands.setTextSelection(3) // "se|ed"
+      const md = "![x](https://example.com/x.png)\n\nb\n"
+      const event = makePasteEvent({ "text/plain": md })
+
+      expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+      const paragraphs = findBlocks(editor, "paragraph")
+      expect(paragraphs.every((p) => p.textContent !== "")).toBe(true)
+      expect(blockTypes(editor)).toEqual(["paragraph", "image", "paragraph"])
+      expect(editor.state.doc.child(0).textContent).toBe("se")
+      expect(editor.state.doc.child(2).textContent).toBe("bed")
+    })
+
+    it("pastes a TRAILING image (slice end) — the open HEAD edge still merges into the split-off remainder", () => {
+      const editor = makeEditor("<p>seed</p>")
+      editor.commands.setTextSelection(3) // "se|ed"
+      const md = "a\n\n![x](https://example.com/x.png)\n"
+      const event = makePasteEvent({ "text/plain": md })
+
+      expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+      const paragraphs = findBlocks(editor, "paragraph")
+      expect(paragraphs.every((p) => p.textContent !== "")).toBe(true)
+      expect(blockTypes(editor)).toEqual(["paragraph", "image", "paragraph"])
+      expect(editor.state.doc.child(0).textContent).toBe("sea")
+      expect(editor.state.doc.child(2).textContent).toBe("ed")
+    })
+  })
 })
 
 describe("handlePaste — VS Code editor paste", () => {

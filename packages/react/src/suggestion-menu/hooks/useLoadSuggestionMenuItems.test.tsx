@@ -50,6 +50,19 @@ describe("useLoadSuggestionMenuItems", () => {
     await waitFor(() => expect(result.current.items).toEqual(["b"]));
   });
 
+  it("settles out of 'loading' when getItems rejects (no unhandled rejection)", async () => {
+    const getItems = vi.fn(async (_q: string) => {
+      throw new Error("network error");
+    });
+    const { result } = renderHook(
+      ({ q }: { q: string }) => useLoadSuggestionMenuItems(q, getItems),
+      { initialProps: { q: "foo" } },
+    );
+    expect(result.current.loadingState).toBe("loading-initial");
+    await waitFor(() => expect(result.current.loadingState).not.toBe("loading-initial"));
+    expect(result.current.loadingState).toBe("loaded");
+  });
+
   it("reloads when reloadKey changes even if the query is unchanged", async () => {
     const pending: Array<() => void> = [];
     const getItems = vi.fn(

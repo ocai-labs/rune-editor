@@ -58,13 +58,18 @@ export function CopyLinkItem({
   const handleClick = () => {
     if (disabled || !buildBlockLink) return
     const url = buildBlockLink({ editor, blockId })
-    Promise.resolve(navigator.clipboard?.writeText(url))
-      .then(() => {
-        onCopyLink?.({ ok: true, blockId, url })
-      })
-      .catch((error: unknown) => {
-        onCopyLink?.({ ok: false, blockId, url, error })
-      })
+    if (!navigator.clipboard) {
+      onCopyLink?.({ ok: false, blockId, url, error: new Error("Clipboard API unavailable") })
+    } else {
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          onCopyLink?.({ ok: true, blockId, url })
+        })
+        .catch((error: unknown) => {
+          onCopyLink?.({ ok: false, blockId, url, error })
+        })
+    }
     onAfterCopy?.()
   }
 

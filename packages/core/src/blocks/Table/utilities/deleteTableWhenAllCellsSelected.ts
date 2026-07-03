@@ -6,7 +6,7 @@
 
 import type { KeyboardShortcutCommand } from "@tiptap/core"
 import { findParentNodeClosestToPos } from "@tiptap/core"
-import { CellSelection } from "prosemirror-tables"
+import { CellSelection } from "@tiptap/pm/tables"
 
 function isCellSelection(value: unknown): value is CellSelection {
   return value instanceof CellSelection

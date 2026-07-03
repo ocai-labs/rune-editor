@@ -6,6 +6,8 @@
 
 import type { EditorView } from "@tiptap/pm/view"
 import { serializeBlocksForClipboard } from "./serializeBlocks"
+import { MultiBlockSelection } from "../block-selection/MultiBlockSelection"
+import { expandRangeOverToggleBodies } from "../../blocks/Toggle/range"
 
 /**
  * Replace PM's default copy/cut handler. PM's default begins with
@@ -50,6 +52,23 @@ export function writeClipboard(view: EditorView, event: ClipboardEvent, cut: boo
   // cut handler, which this replaces). Downstream appendTransactions key off
   // it — notably TitleKit's boundary, which on a cut that empties the body
   // re-seeds an empty line and moves the caret into it.
-  if (cut) view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta("uiEvent", "cut"))
+  //
+  // MultiBlockSelection widens over any collapsed toggle's hidden body before
+  // deleting — otherwise the copy above (which already expands via
+  // expandCollapsedToggles) puts the body on the clipboard AND leaves it
+  // behind in the doc, duplicating it. A TextSelection cut can't straddle a
+  // toggle/body boundary this way, so it keeps the plain deleteSelection().
+  if (cut) {
+    const tr = view.state.tr
+    if (sel instanceof MultiBlockSelection) {
+      const { to } = expandRangeOverToggleBodies(view.state.doc, sel.from, sel.to, {
+        collapsedOnly: true,
+      })
+      tr.delete(sel.from, to)
+    } else {
+      tr.deleteSelection()
+    }
+    view.dispatch(tr.scrollIntoView().setMeta("uiEvent", "cut"))
+  }
   return true
 }

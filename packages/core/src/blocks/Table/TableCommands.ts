@@ -20,7 +20,7 @@ import {
   deleteRow as pmDeleteRow,
   deleteTable as pmDeleteTable,
   goToNextCell,
-} from "prosemirror-tables"
+} from "@tiptap/pm/tables"
 import { TextSelection, type Transaction } from "@tiptap/pm/state"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import { buildDefaultTableContent, computeFitColWidth, MIN_COL_WIDTH, DEFAULT_TABLE_ROWS, DEFAULT_TABLE_COLS } from "./buildDefaultContent"
@@ -137,6 +137,24 @@ function currentCellPos(state: TableCommandProps["state"]) {
 
 function positiveInt(value: number | undefined, fallback: number) {
   return value !== undefined && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : fallback
+}
+
+/**
+ * Shift-Enter / Mod-Enter inside a cell: split the `tableParagraph` (Enter's
+ * own semantics) instead of falling through to StarterKit's HardBreak
+ * extension. A `hardBreak` embedded in a cell reads correctly on export
+ * (serializeInline.ts) and TableCellNormalization catches any that still
+ * land there some other way (paste, setContent, AI edits, collab), but
+ * preventing it at the KEYSTROKE is cheaper than normalizing after the
+ * fact — and matches Notion, where Enter/Shift-Enter/Mod-Enter are all just
+ * "new line in this cell". Always consumes (returns true) once the caret is
+ * confirmed inside a `tableParagraph`, so a hardBreak is never inserted
+ * there even if `splitBlock` itself no-ops.
+ */
+function splitCellParagraphOnLineBreakKey(editor: TableCommandProps["editor"]): boolean {
+  if (editor.state.selection.$from.parent.type.name !== "tableParagraph") return false
+  editor.commands.splitBlock()
+  return true
 }
 
 /** Returns `true` iff every cell in row `rowIndex` of `table` is a
@@ -398,6 +416,8 @@ export const TableCommands = Extension.create({
         return true
       },
       "Shift-Tab": () => this.editor.commands.goToPreviousTableCell(),
+      "Shift-Enter": () => splitCellParagraphOnLineBreakKey(this.editor),
+      "Mod-Enter": () => splitCellParagraphOnLineBreakKey(this.editor),
       Enter: () => {
         const { state } = this.editor
         const { selection } = state

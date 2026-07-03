@@ -6,7 +6,7 @@
 
 import { Extension } from "@tiptap/core"
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state"
-import { CellSelection } from "prosemirror-tables"
+import { CellSelection } from "@tiptap/pm/tables"
 import { findCellBefore, findCellContext } from "./utilities/findCellContext"
 import { claimGesture, isPrimaryRelease, primaryLost, type GestureClaim } from "../../extensions/shared/gesture-state"
 import { registerDragCancelHandlers } from "../../extensions/shared"

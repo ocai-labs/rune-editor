@@ -18,16 +18,21 @@ const browserParseHTML: ParseHTML = (html) =>
 
 /**
  * markdown-it renders a standalone image as `<p><img></p>` (an image is
- * inline in Markdown). rune's `image` is a BLOCK node, so PM's full-doc
- * `parse` closes the wrapping `<p>` and emits the image — leaving the now
- * emptied `<p>` as a stray blank block ABOVE every image. (The paste path
- * dodges this because `parseSlice` leaves that paragraph open and
- * `replaceSelection` merges it away; full-doc `parse` has no such merge.)
- * Unwrap each lone-image paragraph to the bare `<img>` so the image lands
- * as a clean top-level block. Mixed `text ![x](y) text` paragraphs are
- * left untouched (`children.length !== 1` / non-empty text guard).
+ * inline in Markdown). rune's `image` is a BLOCK node, so PM's DOMParser
+ * closes the wrapping `<p>` and emits the image — leaving the now emptied
+ * `<p>` as a stray blank block ABOVE every image. This bites full-doc
+ * `parse` unconditionally, and it ALSO bites `parseSlice` for any image
+ * NOT at the very start/end of the pasted slice: `parseSlice`'s open
+ * boundaries only cover the first/last top-level node, so an interior
+ * `<p><img></p>` closes exactly like the full-doc case (verified: an
+ * unguarded paste of `a\n\n![x](y)\n\nb` emits a stray paragraph, in one
+ * case with a `hardBreak`, before the image). Unwrap each lone-image
+ * paragraph to the bare `<img>` so the image lands as a clean top-level
+ * block — called by both `markdownToDoc` (below) and the paste path's
+ * `markdownToSlice` (handlePaste.ts). Mixed `text ![x](y) text` paragraphs
+ * are left untouched (`children.length !== 1` / non-empty text guard).
  */
-function unwrapLoneImageParagraphs(doc: Document) {
+export function unwrapLoneImageParagraphs(doc: Document) {
   for (const p of Array.from(doc.body.querySelectorAll("p"))) {
     const img = p.children.length === 1 ? p.firstElementChild : null
     if (!img || img.tagName !== "IMG") continue

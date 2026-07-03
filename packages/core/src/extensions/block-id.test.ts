@@ -145,4 +145,48 @@ describe("BlockId", () => {
     expect(idsAfter).toEqual(idsBefore)
     editor.destroy()
   })
+
+  it("keeps the original block's id when a duplicate is pasted ABOVE it", () => {
+    const editor = makeEditor({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { id: "origABCD" },
+          content: [{ type: "text", text: "original" }],
+        },
+      ],
+    })
+    // Sanity: after init the original owns its id.
+    const idByText = (): Record<string, string | null> => {
+      const out: Record<string, string | null> = {}
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === "paragraph") {
+          out[node.textContent] = (node.attrs.id as string | null) ?? null
+        }
+        return true
+      })
+      return out
+    }
+    expect(idByText().original).toBe("origABCD")
+
+    // Simulate the internal rune-doc paste reinstating the SAME id, inserted
+    // ABOVE the original (pos 0 = before the first block, earlier in doc order).
+    const paragraphType = editor.schema.nodes.paragraph
+    if (!paragraphType) throw new Error("paragraph node type missing")
+    const pasted = paragraphType.create(
+      { id: "origABCD", depth: 0 },
+      editor.schema.text("pasted"),
+    )
+    editor.view.dispatch(editor.state.tr.insert(0, pasted))
+
+    const ids = idByText()
+    // The pre-existing block keeps origABCD; the pasted copy is regenerated.
+    expect(ids.original).toBe("origABCD")
+    expect(ids.pasted).not.toBe("origABCD")
+    // And the doc still has unique ids overall.
+    const all = collectBlockIds(editor) as string[]
+    expect(new Set(all).size).toBe(all.length)
+    editor.destroy()
+  })
 })

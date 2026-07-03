@@ -7,7 +7,7 @@
 import { Extension } from "@tiptap/core"
 import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state"
 import type { EditorView } from "@tiptap/pm/view"
-import { addColumn, addRow, CellSelection, TableMap, type TableRect } from "prosemirror-tables"
+import { addColumn, addRow, CellSelection, TableMap, type TableRect } from "@tiptap/pm/tables"
 import { resolveTableFromFrame } from "./utilities/resolveTableFromFrame"
 import { findCellContext } from "./utilities/findCellContext"
 import { PLUS_SVG } from "../../extensions/side-menu/svg"

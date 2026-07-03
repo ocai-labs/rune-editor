@@ -282,6 +282,7 @@ export {
   toggleBodyRange,
   findCollapsedToggleContaining,
   expandCollapsedToggles,
+  expandRangeOverToggleBodies,
 } from "./blocks/Toggle/block"
 export type {
   CollapsedToggleContainingResult,

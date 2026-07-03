@@ -35,6 +35,13 @@ const ALLOWED_HTML: Map<string, Set<string>> = (() => {
   // (a disabled checkbox is inert). Not a mark, so it sits outside the
   // registry-derived whitelist; the list flattener downstream reads it.
   map.set("input", new Set(["class", "checked", "disabled", "type", "id"]))
+  // `<br>` is a NODE (hardBreak), not a mark, so it has no mark contract to
+  // derive from either — admit it explicitly, same footing as `<input>`
+  // above. An empty attr set means bare `<br>`/`<br/>` is accepted and any
+  // attribute on it is rejected (attrsSubsetOf requires every attr name to
+  // be IN the allowed set, so a non-empty attrs string always fails against
+  // `new Set()`).
+  map.set("br", new Set())
   return map
 })()
 

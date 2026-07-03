@@ -117,6 +117,47 @@ export function toggleBodyRange(
 }
 
 /**
+ * Widen a `[from, to)` boundary range so it never splits a toggle from its
+ * hidden body. For every `toggle` node `nodesBetween(from, to)` finds inside
+ * the ORIGINAL range — gated on `expanded === false` when `collapsedOnly` is
+ * true — extend `to` to `max(to, toggleBodyRange(doc, togglePos).to)`.
+ *
+ * One pass, not a fixed point: `toggleBodyRange` already walks the toggle's
+ * ENTIRE owned run (every following sibling whose `depth` > the toggle's own,
+ * transitively covering a nested sub-toggle's own hidden body too — the walk
+ * only stops at a sibling back at `depth <= parentDepth`). So a single toggle
+ * hit yields its full boundary in one call; no need to re-scan the widened
+ * span for newly-included toggles.
+ *
+ * Surface-local by construction, not by special-casing: `nodesBetween` also
+ * steps into any structural node (`column`) that lies fully inside the
+ * original range, but a toggle reached that way has its whole owned run
+ * already bounded by that structural node's own extent — which is already
+ * `<= to` — so it can never push `to` past the original range. Only a toggle
+ * on the SAME surface as the range, sitting at the range's trailing edge,
+ * can actually widen `to`.
+ *
+ * `from` passes through unchanged — a leaked body is a TRAILING problem
+ * (a collapsed toggle's body always follows it), never a leading one.
+ */
+export function expandRangeOverToggleBodies(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+  { collapsedOnly = true }: { collapsedOnly?: boolean } = {},
+): { from: number; to: number } {
+  let widenedTo = to
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type.name !== "toggle") return true
+    if (collapsedOnly && node.attrs.expanded !== false) return true
+    const body = toggleBodyRange(doc, pos)
+    if (body.to > widenedTo) widenedTo = body.to
+    return true
+  })
+  return { from, to: widenedTo }
+}
+
+/**
  * Find the absolute position of a `toggle` node by its `id` attribute,
  * searching the WHOLE document — root surface AND nested surfaces (a
  * `column` inside a `columnLayout`). Returns `-1` when no toggle carries

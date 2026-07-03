@@ -50,9 +50,15 @@ export function AudioPlayer({ src }: AudioPlayerProps) {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
-    if (playing) audio.pause()
-    else audio.play()
-    setPlaying(!playing)
+    if (playing) {
+      audio.pause()
+      setPlaying(false)
+    } else {
+      audio
+        .play()
+        .then(() => setPlaying(true))
+        .catch(() => setPlaying(false))
+    }
   }, [playing])
 
   const handleSeekChange = useCallback((values: number[]) => {

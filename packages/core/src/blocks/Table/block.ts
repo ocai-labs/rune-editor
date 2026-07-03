@@ -23,6 +23,7 @@ import { TableRow, TableCell, TableHeader, TableParagraph } from "./nodes"
 import { TableCommands } from "./TableCommands"
 import { TableSupport } from "./TableSupport"
 import { TableMergedCellsGuard } from "./TableMergedCellsGuard"
+import { TableCellNormalization } from "./normalization"
 import { CellSelectionEdges } from "./CellSelectionEdges"
 import { TableMouseSelection } from "./TableMouseSelection"
 import { PinColumnWidths } from "./PinColumnWidths"
@@ -89,6 +90,7 @@ export const Table = createBlockSpec({
     TableCommands,
     TableSupport,
     TableMergedCellsGuard,
+    TableCellNormalization,
     CellSelectionEdges,
     TableMouseSelection,
     PinColumnWidths,
@@ -250,6 +252,7 @@ export interface RuneTableBlock extends RuneBlockBase {
 export { TableRow, TableCell, TableHeader, TableParagraph } from "./nodes"
 export { TableSupport } from "./TableSupport"
 export { TableMergedCellsGuard } from "./TableMergedCellsGuard"
+export { TableCellNormalization } from "./normalization"
 export { TableCommands, isTableHeaderRow, isTableHeaderColumn, type InsertTableOptions } from "./TableCommands"
 export { CellSelectionEdges } from "./CellSelectionEdges"
 export { TableMouseSelection } from "./TableMouseSelection"

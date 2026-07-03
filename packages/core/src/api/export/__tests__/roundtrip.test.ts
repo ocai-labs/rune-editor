@@ -91,6 +91,53 @@ const para = (content: JSONContent[]): JSONContent => ({
 const text = (t: string, marks?: JSONContent["marks"]): JSONContent =>
   marks ? { type: "text", text: t, marks } : { type: "text", text: t }
 
+// Table sub-structure builders. tableCell/tableHeader/tableParagraph carry no
+// id/depth (blocks/Table/nodes.ts — they're not page-body blocks).
+const tableCellNode = (t: string, header = false): JSONContent => ({
+  type: header ? "tableHeader" : "tableCell",
+  content: [{ type: "tableParagraph", content: t === "" ? undefined : [text(t)] }],
+})
+const tableRow = (cells: string[], header = false): JSONContent => ({
+  type: "tableRow",
+  content: cells.map((c) => tableCellNode(c, header)),
+})
+// Build a row from pre-built cell nodes directly (bypassing the one-cell-
+// per-string convenience above), so a row can mix stacked/embedded-break
+// cells with plain ones.
+const tableRowOf = (cells: JSONContent[]): JSONContent => ({
+  type: "tableRow",
+  content: cells,
+})
+// A cell with N SIBLING tableParagraphs, one per line — the canonical
+// multi-line-cell shape `serializeTableMarkdown` reads/writes
+// (`parts.join("<br>")` across siblings). An empty-string line is an empty
+// tableParagraph (a genuinely blank line), same convention as
+// `tableCellNode`'s empty-string handling above.
+const tableCellStacked = (lines: string[], header = false): JSONContent => ({
+  type: header ? "tableHeader" : "tableCell",
+  content: lines.map((t) => ({ type: "tableParagraph", content: t === "" ? undefined : [text(t)] })),
+})
+// A cell with ONE tableParagraph whose lines are joined by embedded
+// `hardBreak` nodes instead of split into siblings — the non-canonical
+// shape TableCellNormalization (blocks/Table/normalization.ts) converges to
+// the stacked shape above (reachable via setContent / AI edits / collab,
+// never through the keyboard — TableCommands' Shift/Mod-Enter override
+// always splits instead).
+const tableCellEmbeddedBreak = (lines: string[], header = false): JSONContent => ({
+  type: header ? "tableHeader" : "tableCell",
+  content: [
+    {
+      type: "tableParagraph",
+      content: lines.flatMap((t, i) => (i === 0 ? [text(t)] : [{ type: "hardBreak" }, text(t)])),
+    },
+  ],
+})
+const table = (id: string, rows: JSONContent[]): JSONContent => ({
+  type: "table",
+  attrs: { id, depth: 0 },
+  content: rows,
+})
+
 describe("exportMarkdown → parseAiMarkdown round-trip", () => {
   describe("inline styling matrix", () => {
     it("inline code", () => {
@@ -197,6 +244,22 @@ describe("exportMarkdown → parseAiMarkdown round-trip", () => {
         ],
         "math",
       )
+    })
+
+    // #21 — hardBreak used to be silently dropped on export ("line1line2"),
+    // corrupting the read surface and refusing apply_edits. A regular
+    // paragraph's hardBreak round-trips as-is (embedded, NOT split) — a
+    // `<br>` mid `<p>` is directly valid tableParagraph-style inline
+    // content for `paragraph` too, so no cell-splitter-style normalization
+    // is needed here; that machinery is table-cell-specific (see the
+    // "table round-trip" describe below).
+    it("a hardBreak inside a regular paragraph (#21)", () => {
+      const md = expectRoundTrip(
+        [para([text("line1"), { type: "hardBreak" }, text("line2")])],
+        "hardbreak-paragraph",
+      )
+      expect(md).toContain("line1<br>line2")
+      expect(md).not.toContain("line1line2")
     })
   })
 
@@ -390,6 +453,83 @@ describe("exportMarkdown → parseAiMarkdown round-trip", () => {
         ],
         "mixed",
       )
+    })
+  })
+
+  // `serializeTableMarkdown` synthesizes a `|   |   |` header for a
+  // header-less table (GFM pipe tables can't omit one). Without
+  // `dropSyntheticEmptyTableHeader`, that phantom row re-parses into a real
+  // header the original doc never had — permanently failing this round-trip
+  // for every header-less table, which made `apply_edits` refuse them.
+  describe("table round-trip", () => {
+    it("header-less 2×2 (the regression: synthetic phantom header must not survive re-parse)", () => {
+      expectRoundTrip(
+        [table("t", [tableRow(["A1", "B1"]), tableRow(["A2", "B2"])])],
+        "table-headerless-2x2",
+      )
+    })
+
+    it("single-row header-less table", () => {
+      expectRoundTrip([table("t", [tableRow(["A1", "B1"])])], "table-headerless-1row")
+    })
+
+    it("with-header table round-trips unchanged (thead NOT dropped)", () => {
+      expectRoundTrip(
+        [table("t", [tableRow(["Name", "Age"], true), tableRow(["Alice", "30"])])],
+        "table-with-header",
+      )
+    })
+
+    it("header with some empty and some non-empty cells is preserved (not all-empty)", () => {
+      expectRoundTrip(
+        [table("t", [tableRow(["", "Age"], true), tableRow(["Alice", "30"])])],
+        "table-header-partial-empty",
+      )
+    })
+
+    it("header-only table with no body rows keeps its (empty) header (tbody-tr guard)", () => {
+      expectRoundTrip([table("t", [tableRow(["", ""], true)])], "table-header-only-empty")
+    })
+
+    // #21 — in-cell line breaks. A multi-line cell's canonical shape is
+    // STACKED tableParagraph siblings (serializeTableMarkdown joins them
+    // with "<br>" on export); markdown-it never wraps table-cell content in
+    // <p> (verified live — see aiMarkdown.ts's splitCellLineBreaks
+    // docstring), so the parse side must explicitly re-split on <br>.
+    describe("in-cell line breaks", () => {
+      it("a stacked two-line cell (two tableParagraph siblings) round-trips via <br>", () => {
+        const md = expectRoundTrip(
+          [table("t", [tableRowOf([tableCellStacked(["line1", "line2"])])])],
+          "table-cell-stacked",
+        )
+        expect(md).toContain("line1<br>line2")
+      })
+
+      it("a cell with an embedded hardBreak canonicalizes to stacked paragraphs and round-trips", () => {
+        // The ORIGINAL doc here is the non-canonical shape (one
+        // tableParagraph, hardBreak embedded) — TableCellNormalization
+        // converges it to stacked siblings on mount (before
+        // `editor.state.doc.toJSON()` is even read), so this also pins the
+        // normalization pass, not just the parse-side splitter.
+        expectRoundTrip(
+          [table("t", [tableRowOf([tableCellEmbeddedBreak(["line1", "line2"])])])],
+          "table-cell-embedded-hardbreak",
+        )
+      })
+
+      it("leading and trailing blank lines in a cell survive as empty tableParagraphs", () => {
+        expectRoundTrip(
+          [table("t", [tableRowOf([tableCellStacked(["", "mid", ""])])])],
+          "table-cell-blank-edges",
+        )
+      })
+
+      it("a consecutive (mid-cell) blank line survives as an empty tableParagraph", () => {
+        expectRoundTrip(
+          [table("t", [tableRowOf([tableCellStacked(["a", "", "b"])])])],
+          "table-cell-blank-middle",
+        )
+      })
     })
   })
 })

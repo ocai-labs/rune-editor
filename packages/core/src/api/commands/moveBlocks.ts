@@ -10,6 +10,7 @@ import {
   resolveColumnById,
   surfaceChildrenAt,
   surfaceChildrenInRange,
+  depthSubtreeRange,
 } from "../../schema/bodySurface"
 import type { EmptiedSourceColumn } from "../../extensions/block-drag/reorder"
 import type { MoveBlocksTarget } from "../types"
@@ -55,7 +56,14 @@ export interface ContiguousSourceRun {
   to: number
   /** Absolute pos of the surface the run lives on, or `-1` for the root. */
   surfacePos: number
-  /** Number of top-level blocks in the run (= `ids.length`). */
+  /**
+   * Number of top-level (surface-local) blocks in the run. Usually
+   * `ids.length`, but can exceed it: the run's TAIL is widened over its
+   * depth subtree (see `resolveContiguousSourceRun`), so a parent id whose
+   * deeper-depth children weren't explicitly listed still reports their
+   * count here — callers comparing against a surface's total child count
+   * (F2's emptied-source-column check) need the ACTUAL moved count.
+   */
   count: number
 }
 
@@ -63,6 +71,15 @@ export interface ContiguousSourceRun {
  * Resolve `ids` (recursively — root or column children) to a CONTIGUOUS run
  * of siblings on a SINGLE surface. A non-contiguous selection, an unknown id,
  * or a selection spanning two surfaces returns `null`.
+ *
+ * The run's tail is widened over the depth subtree of EVERY requested id —
+ * live-Notion research confirmed a moved (or deleted) parent always carries
+ * its deeper-depth following siblings, never orphaning them at the source
+ * (see `deleteBlocks.ts`'s `resolveDeleteRanges`, which widens each anchor
+ * the same way). Widening only the LAST id is not enough: when the ids are a
+ * parent plus a proper PREFIX of its children (`['parent', 'childA']` with
+ * `childB` following), the parent's subtree extends past the tail id and
+ * `childB` would be stranded at the source as an orphan.
  */
 export function resolveContiguousSourceRun(
   doc: ProseMirrorNode,
@@ -90,11 +107,21 @@ export function resolveContiguousSourceRun(
 
   const first = sortedByIndex[0]!
   const last = sortedByIndex[sortedByIndex.length - 1]!
+  let to = last.pos + last.node.nodeSize
+  for (const source of sortedByIndex) {
+    const { to: subtreeTo } = depthSubtreeRange(doc, source.pos)
+    to = Math.max(to, subtreeTo)
+  }
+  // Recount the surface's ACTUAL children in the (possibly widened) range —
+  // `sources.length` alone would undercount when the tail widen swept in
+  // depth-children not present in `ids`.
+  const count = surfaceChildrenInRange(doc, { from: first.pos, to }).length
+
   return {
     from: first.pos,
-    to: last.pos + last.node.nodeSize,
+    to,
     surfacePos: sourceSurfacePos,
-    count: sources.length,
+    count,
   }
 }
 

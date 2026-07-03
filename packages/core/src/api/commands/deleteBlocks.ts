@@ -11,11 +11,12 @@ import {
   topLevelBlockStartPos,
   topLevelBlockTextBounds,
 } from "../../schema/topLevelBlocks"
-import { resolveBodyBlockById } from "../../schema/bodySurface"
+import { resolveBodyBlockById, depthSubtreeRange } from "../../schema/bodySurface"
 import {
   firstSelectableIndex,
   isBlockSelectable,
 } from "../../extensions/block-selection/selectable"
+import { expandRangeOverToggleBodies } from "../../blocks/Toggle/range"
 import type { DeleteBlocksTarget } from "../types"
 
 export interface DeleteRange {
@@ -44,18 +45,39 @@ export function resolveDeleteRanges(
     const ranges = resolved
       .map((r) => r!)
       .sort((a, b) => a.pos - b.pos)
-      .map((r) => ({
-        fromIndex: r.indexInSurface,
-        toIndex: r.indexInSurface,
-        from: r.pos,
-        to: r.pos + r.node.nodeSize,
-        rootSurface: r.surfacePos === -1,
-      }))
+      .map((r) => {
+        const from = r.pos
+        const rawTo = r.pos + r.node.nodeSize
+        // Widen over a collapsed toggle's hidden body — deleteBlocks(["togId"])
+        // must take the hidden body with it, not orphan it as loose blocks.
+        const { to: toggleTo } = expandRangeOverToggleBodies(doc, from, rawTo, {
+          collapsedOnly: true,
+        })
+        // Widen over the block's DEPTH SUBTREE — live-Notion research
+        // confirmed a parent delete always carries every following block
+        // whose `depth` > the parent's, unconditionally (no promotion, no
+        // orphaning), matching the drag-reorder / wrapIntoColumns precedent.
+        // This is a strict superset of the toggle widen ABOVE for a
+        // single-anchor call like this one (same walk, minus the collapsed
+        // gate) — max() is still taken rather than dropping the toggle call,
+        // so the two stay independently correct if that ever changes.
+        const { to: depthTo } = depthSubtreeRange(doc, from)
+        return {
+          fromIndex: r.indexInSurface,
+          toIndex: r.indexInSurface,
+          from,
+          to: Math.max(toggleTo, depthTo),
+          rootSurface: r.surfacePos === -1,
+        }
+      })
     // A recursive id list can name a container (columnLayout) AND one of its
     // descendants (exactly what findBlocks hands out). The descendant's range
     // is fully contained in the container's; deleting both against pre-tr
     // positions would re-delete through stale offsets and eat into the next
-    // block. Keep outermost ranges only.
+    // block. Keep outermost ranges only. Widening runs BEFORE this filter, so
+    // it also catches a collapsed toggle's hidden body passed explicitly
+    // alongside its own toggle id — the toggle's widened range already
+    // contains it.
     return ranges.filter(
       (r) => !ranges.some((q) => q !== r && q.from <= r.from && r.to <= q.to),
     )
@@ -70,12 +92,24 @@ export function resolveDeleteRanges(
   const hi = Math.max(from.pos, to.pos)
   const hiNode = doc.nodeAt(hi)
   if (!hiNode) return []
+  // Widen over a collapsed toggle's hidden body — same rationale as the id-list
+  // branch above; a range delete ending on a collapsed toggle must not orphan it.
+  // Scans the WHOLE range (not just the tail), so an intermediate collapsed
+  // toggle whose body extends past `hi` (target.to lands mid-body) is still
+  // caught — depthSubtreeRange below, anchored only at `hi`, cannot see that.
+  const { to: toggleTo } = expandRangeOverToggleBodies(doc, lo, hi + hiNode.nodeSize, {
+    collapsedOnly: true,
+  })
+  // Widen over the TAIL block's depth subtree — a range delete ending on a
+  // generic (non-toggle) parent must carry its following deeper-depth
+  // children too. See the id-list branch above for the live-Notion citation.
+  const { to: depthTo } = depthSubtreeRange(doc, hi)
   return [
     {
       fromIndex: Math.min(from.indexInSurface, to.indexInSurface),
       toIndex: Math.max(from.indexInSurface, to.indexInSurface),
       from: lo,
-      to: hi + hiNode.nodeSize,
+      to: Math.max(toggleTo, depthTo),
       rootSurface: from.surfacePos === -1,
     },
   ]

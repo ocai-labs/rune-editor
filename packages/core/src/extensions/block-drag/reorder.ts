@@ -181,6 +181,12 @@ export function executeMoveSlice(
 
   const blockCount = slice.content.childCount
   const rangeSize = source.to - source.from
+  // Chain-safety (task #17): `dest.insertPos` is resolved against `state.doc`
+  // by the caller, which under `editor.chain()` IS the live `tr.doc` (already
+  // reflecting any prior chain steps) — so it must map through only the steps
+  // THIS call adds from here on, not the whole `tr.mapping` (which would
+  // double-count prior-chain steps the coord already includes).
+  const mapFrom = tr.mapping.maps.length
 
   // F2 special case — move INTO the column that is about to be unwrapped. When
   // the move both empties the source column AND drops the layout below 2 columns
@@ -240,9 +246,10 @@ export function executeMoveSlice(
   // 2. Map the insert boundary THROUGH the delete step rather than subtracting
   //    rangeSize manually. For a flat root move the two are identical; they
   //    DIVERGE when the delete empties a `block+` surface (PM backfills) or
-  //    when an F2 removal dissolved a whole column/layout. `tr.mapping.map`
-  //    tracks the real shift.
-  const adjustedInsertPos = tr.mapping.map(dest.insertPos, -1)
+  //    when an F2 removal dissolved a whole column/layout. `tr.mapping.slice
+  //    (mapFrom)` tracks the real shift from THIS call's own steps only (see
+  //    the chain-safety note on `mapFrom` above).
+  const adjustedInsertPos = tr.mapping.slice(mapFrom).map(dest.insertPos, -1)
   tr.insert(adjustedInsertPos, slice.content)
 
   // 3. Surface-local depth re-base of the inserted slice.

@@ -11,6 +11,7 @@ import { RUNE_BODY_BLOCK_ID_TYPES } from "../blocks/defaultBlocks"
 import {
   computeIdPatches,
   buildBackfillTransaction,
+  computeAnchoredPositions,
   type StructuralIdConfig,
 } from "./shared/structural-id"
 
@@ -80,10 +81,18 @@ export const BlockId = Extension.create({
           if (tr) view.dispatch(tr)
           return {}
         },
-        appendTransaction: (transactions, _oldState, newState) => {
+        appendTransaction: (transactions, oldState, newState) => {
           const docChanged = transactions.some((tr) => tr.docChanged)
           if (!docChanged) return null
-          const patches = computeIdPatches(newState, config)
+          // Anchor ids to blocks that already existed in oldState so a copy
+          // pasted ABOVE its original can't steal the original's id.
+          const anchored = computeAnchoredPositions(
+            oldState,
+            newState,
+            transactions,
+            config,
+          )
+          const patches = computeIdPatches(newState, config, anchored)
           return buildBackfillTransaction(newState, patches, config)
         },
       }),

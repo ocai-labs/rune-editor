@@ -26,6 +26,9 @@ describe("sanitizeRawHtml — admits the whitelisted forms verbatim", () => {
   it("<span> with an empty attr set", () => pass("<span>"))
   it("the task-list checkbox <input>", () =>
     pass('<input class="task-list-item-checkbox" checked disabled type="checkbox">'))
+  it("<br>", () => pass("<br>"))
+  it("<br/> (self-closing)", () => pass("<br/>"))
+  it("a bare <br> between two text runs", () => pass("line1<br>line2"))
 })
 
 describe("sanitizeRawHtml — neutralizes everything outside the whitelist", () => {
@@ -62,6 +65,10 @@ describe("sanitizeRawHtml — neutralizes everything outside the whitelist", () 
 
   it("<u onclick> rejected", () => {
     expect(sanitizeRawHtml("<u onclick>")).toBe("&lt;u onclick&gt;")
+  })
+
+  it("<br> carrying any attribute is rejected (empty allowed-attr set)", () => {
+    expect(sanitizeRawHtml('<br onclick="x">')).toBe('&lt;br onclick="x"&gt;')
   })
 
   it("malformed attr junk after a valid attr → whole tag rejected", () => {

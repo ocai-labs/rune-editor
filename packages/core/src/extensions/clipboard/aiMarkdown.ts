@@ -185,6 +185,80 @@ function normalizeCodeBlocks(doc: Document) {
 }
 
 /**
+ * `serializeTableMarkdown` (blocks/Table/markdown.ts) synthesizes a
+ * single-space-per-cell header row (`|   |   |`) for a header-less table —
+ * GFM pipe-table syntax has no way to express "no header" — so on re-parse
+ * markdown-it turns that phantom row into a real `<thead><tr><th>`. Left
+ * alone, PM would read that back as an actual header row the original doc
+ * never had, permanently failing the round-trip guard for every header-less
+ * table. Drop any `<thead>` whose every `<th>` is empty, but only when the
+ * table still has at least one `<tbody>` row to fall back to: an all-empty
+ * table (empty header AND no body rows) has no signal to distinguish
+ * "synthetic" from "genuinely empty header", so it is left alone and
+ * degrades to header-less on re-parse — a rare case that was already
+ * uneditable before this fix.
+ */
+function dropSyntheticEmptyTableHeader(doc: Document) {
+  for (const thead of Array.from(doc.querySelectorAll("table > thead"))) {
+    const ths = Array.from(thead.querySelectorAll("th"))
+    if (ths.length === 0) continue
+    const allEmpty = ths.every((th) => (th.textContent ?? "").trim() === "")
+    if (!allEmpty) continue
+    const hasBodyRow = thead.parentElement?.querySelector("tbody tr") != null
+    if (!hasBodyRow) continue
+    thead.remove()
+  }
+}
+
+/**
+ * markdown-it renders table-cell content BARE — `<td>line1<br>line2</td>`,
+ * never `<p>`-wrapped (verified: the table-cell context is the one place
+ * its renderer skips the paragraph wrapper it uses everywhere else). Left
+ * alone, PM's DOMParser would auto-wrap the WHOLE cell into a single
+ * `tableParagraph`, with any `<br>` surviving inside it as a `hardBreak` —
+ * one paragraph, not the STACKED-tableParagraph shape `serializeTableMarkdown`
+ * (blocks/Table/markdown.ts) uses to represent a multi-line cell on export
+ * (`parts.join("<br>")` across sibling tableParagraphs). Explicitly split
+ * each td/th's DIRECT children at every `<br>` into its own `<p>` group,
+ * dropping the `<br>`s, so `tableParagraph`'s parseDOM rule (`tag: "p"`,
+ * parent td/th) claims each line individually and the cell round-trips to
+ * N sibling tableParagraphs, matching the export shape.
+ *
+ * A cell with NO `<br>` among its direct children is a no-op — a single
+ * bare-text cell still auto-wraps into one tableParagraph as before.
+ * Leading/trailing/consecutive `<br>`s produce empty groups, kept as an
+ * empty `<p>` (an empty tableParagraph — the round-trip shape for a
+ * genuinely blank line, mirroring `cellPara("")` in the round-trip tests).
+ *
+ * Only DIRECT-child `<br>`s split — one nested inside a mark
+ * (`<strong>bold<br>text</strong>`) is untouched here; that shape converges
+ * post-parse via `TableCellNormalization` (blocks/Table/normalization.ts),
+ * the PM-level safety net for every path (not just this AI-parse path).
+ */
+function splitCellLineBreaks(doc: Document): void {
+  for (const cell of Array.from(doc.querySelectorAll("td, th"))) {
+    const children = Array.from(cell.childNodes)
+    if (!children.some((n) => n.nodeType === 1 && (n as Element).tagName === "BR")) continue
+
+    const groups: ChildNode[][] = [[]]
+    for (const child of children) {
+      if (child.nodeType === 1 && (child as Element).tagName === "BR") {
+        groups.push([])
+      } else {
+        groups[groups.length - 1]!.push(child)
+      }
+    }
+
+    while (cell.firstChild) cell.removeChild(cell.firstChild)
+    for (const group of groups) {
+      const p = doc.createElement("p")
+      for (const node of group) p.appendChild(node)
+      cell.appendChild(p)
+    }
+  }
+}
+
+/**
  * Parse the styling-aware AI markdown dialect into a complete rune doc as
  * ProseMirror JSON. The read-side inverse of `exportMarkdown`, gated by the
  * round-trip property test (api/export/__tests__/roundtrip.test.ts).
@@ -211,6 +285,8 @@ export function parseAiMarkdown(
   transformPastedHTMLDoc(dom, collectKnownBlockTags(schema))
   normalizeCodeBlocks(dom)
   unwrapLoneImageParagraphs(dom)
+  dropSyntheticEmptyTableHeader(dom)
+  splitCellLineBreaks(dom)
   // Default whitespace handling (NOT preserveWhitespace: true, unlike the paste
   // import): markdown-it's block padding must collapse — the block serializers
   // emit single trimmed lines, so preserving it would re-introduce the newline

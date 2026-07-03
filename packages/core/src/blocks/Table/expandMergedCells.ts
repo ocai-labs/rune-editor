@@ -19,6 +19,11 @@
 
 type Origin = { row: number; col: number; cell: HTMLElement }
 
+// Generous for any legitimate spreadsheet merge, but bounded so a hostile
+// clipboard span (e.g. `rowspan="99999999"`) can't force an unbounded
+// number of occupied-cell allocations in expandTable's scan loop.
+const MAX_SPAN = 1000
+
 export function expandMergedCells(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   for (const table of Array.from(doc.querySelectorAll('table'))) {
@@ -96,7 +101,8 @@ function expandTable(table: HTMLTableElement): void {
 function clampSpan(raw: string | null): number {
   if (!raw) return 1
   const n = parseInt(raw, 10)
-  return Number.isFinite(n) && n > 0 ? n : 1
+  if (!Number.isFinite(n) || n <= 0) return 1
+  return Math.min(n, MAX_SPAN)
 }
 
 function isOccupied(map: Map<number, Set<number>>, r: number, c: number): boolean {

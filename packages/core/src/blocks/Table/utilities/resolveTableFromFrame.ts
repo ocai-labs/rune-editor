@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { TableMap } from "prosemirror-tables"
+import { TableMap } from "@tiptap/pm/tables"
 import type { Node as PMNode } from "@tiptap/pm/model"
 import type { EditorView } from "@tiptap/pm/view"
 

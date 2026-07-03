@@ -6,7 +6,7 @@
 
 import { Extension, callOrReturn, getExtensionField } from "@tiptap/core"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
-import { columnResizing, tableEditing } from "prosemirror-tables"
+import { columnResizing, tableEditing } from "@tiptap/pm/tables"
 import { RuneTableView } from "./RuneTableView"
 
 const RESIZE_MIN_WIDTH = 35

@@ -13,7 +13,7 @@ import { Table } from "./block"
 import { GestureStatePlugin, gestureKey } from "../../extensions/shared/gesture-state"
 import { CellHandlePills } from "./CellHandlePills"
 import { CellHandleDrag } from "./CellHandleDrag"
-import { CellSelection } from "prosemirror-tables"
+import { CellSelection } from "@tiptap/pm/tables"
 
 let editor: Editor | null = null
 function makeEditor() {

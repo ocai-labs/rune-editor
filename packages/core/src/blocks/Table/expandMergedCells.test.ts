@@ -137,4 +137,42 @@ describe('expandMergedCells', () => {
     expect(() => expandMergedCells(html)).not.toThrow()
     expect(shape(expandMergedCells(html))).toEqual({ rows: [], allOne: true })
   })
+
+  it('caps a hostile colspan to MAX_SPAN instead of allocating unbounded cells', () => {
+    // Regression for a paste-bomb DoS: `<td colspan="99999999">` used to make
+    // expandTable allocate one Set entry per (row, col) pair up to the raw
+    // span, throwing `RangeError: Set maximum size exceeded` after several
+    // seconds of blocked main-thread work. It must now be clamped.
+    const html =
+      '<table><tbody><tr><td colspan="99999999">X</td><td>B</td></tr></tbody></table>'
+    let out = ''
+    expect(() => {
+      out = expandMergedCells(html)
+    }).not.toThrow()
+    const { rows, allOne } = shape(out)
+    // Origin cell occupies columns [0, 1000); B lands at column 1000, so the
+    // row is 1001 wide, not 99999999 + 1.
+    expect(rows).toEqual([1001])
+    expect(allOne).toBe(true)
+  }, 2000)
+
+  it('caps a hostile rowspan to MAX_SPAN instead of allocating unbounded cells', () => {
+    const html = '<table><tbody><tr><td rowspan="99999999">X</td></tr></tbody></table>'
+    expect(() => expandMergedCells(html)).not.toThrow()
+    // Source only has 1 <tr>; expandTable never invents rows, so the capped
+    // rowspan is truncated to the single existing row regardless.
+    expect(shape(expandMergedCells(html))).toEqual({ rows: [1], allOne: true })
+  }, 2000)
+
+  it('caps combined colspan+rowspan without throwing or timing out', () => {
+    const html =
+      '<table><tbody><tr><td colspan="99999999" rowspan="99999999">X</td></tr></tbody></table>'
+    expect(() => expandMergedCells(html)).not.toThrow()
+    expect(shape(expandMergedCells(html))).toEqual({ rows: [1000], allOne: true })
+  }, 2000)
+
+  it('still fully expands a legitimate small span (invariant: merged cells expand, never clamp to 1)', () => {
+    const html = '<table><tbody><tr><td rowspan="3">X</td><td>B</td></tr><tr><td>C</td></tr><tr><td>D</td></tr></tbody></table>'
+    expect(shape(expandMergedCells(html))).toEqual({ rows: [2, 2, 2], allOne: true })
+  })
 })

@@ -24,11 +24,18 @@ const { firstNestedLayout, firstLayoutToUnwrap, firstEmptyColumn, flattenNestedL
 // normalization pass — view() seed + appendTransaction — can act on them.
 // `tr.delete` / `tr.replace` can't reach these states: PM's content fitting
 // refuses to leave a `column{2,5}` / `block+` invalid. (Probed 2026-06-10.)
-function editorWithDoc(build: (schema: Editor["schema"]) => ProseMirrorNode): Editor {
+function editorWithDoc(
+  build: (schema: Editor["schema"]) => ProseMirrorNode,
+  opts?: { editable?: boolean },
+): Editor {
   const probe = new Editor({ extensions: createRuneKit() })
   const docNode = build(probe.schema)
   probe.destroy()
-  const editor = new Editor({ extensions: createRuneKit(), content: docNode.toJSON() })
+  const editor = new Editor({
+    extensions: createRuneKit(),
+    content: docNode.toJSON(),
+    ...(opts?.editable === undefined ? {} : { editable: opts.editable }),
+  })
   onTestFinished(() => {
     if (!editor.isDestroyed) editor.destroy()
   })
@@ -528,6 +535,99 @@ describe("Columns normalization — paste guard (transformPasted)", () => {
     flat.forEach((n) => names.push(n.type.name))
     expect(names).toEqual(["paragraph", "paragraph"])
     expect(caret).toBeGreaterThan(0)
+  })
+})
+
+describe("Columns normalization — editable gate (#9)", () => {
+  it("a read-only editor over a malformed 1-column layout leaves it untouched on mount", () => {
+    const editor = editorWithDoc(
+      (s) =>
+        docNode(s, [
+          para(s, "before"),
+          layoutNode(s, { id: "lay", depth: 0 }, [
+            col(s, "col_a", [para(s, "A1"), para(s, "A2")]),
+          ]),
+          para(s, "after"),
+        ]),
+      { editable: false },
+    )
+    expect(editor.isEditable).toBe(false)
+    // The mount seed (view()) is gated on editable, so the malformed doc is
+    // displayed verbatim — the 1-column layout is NOT unwrapped.
+    expect(dumpTypes(editor.state.doc)).toContain("columnLayout")
+    const rootTexts: string[] = []
+    editor.state.doc.forEach((child) => rootTexts.push(child.textContent))
+    expect(rootTexts).toEqual(["before", "A1A2", "after"])
+  })
+
+  it("an editable editor over the same doc unwraps on mount (control)", () => {
+    const editor = editorWithDoc((s) =>
+      docNode(s, [
+        para(s, "before"),
+        layoutNode(s, { id: "lay", depth: 0 }, [
+          col(s, "col_a", [para(s, "A1"), para(s, "A2")]),
+        ]),
+        para(s, "after"),
+      ]),
+    )
+    expect(editor.isEditable).toBe(true)
+    expect(dumpTypes(editor.state.doc)).not.toContain("columnLayout")
+  })
+
+  it("does not backfill a missing column id/width while read-only", () => {
+    const editor = editorWithDoc(
+      (s) =>
+        docNode(s, [
+          layoutNode(s, { id: "lay", depth: 0 }, [
+            col(s, "col_a", [para(s, "A")], 0),
+            col(s, "col_b", [para(s, "B")]),
+          ]),
+        ]),
+      { editable: false },
+    )
+    const widths: unknown[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "column") widths.push(node.attrs.width)
+      return true
+    })
+    // Width 0 is invalid and would normally clamp to 1 — read-only skips it.
+    expect(widths).toEqual([0, 1])
+  })
+
+  it("setEditable(true) alone does not re-normalize; the NEXT doc-changing transaction does", () => {
+    // Tiptap's setEditable/setOptions calls view.updateState with the SAME
+    // state (no transaction dispatched), so appendTransaction never fires
+    // from the flip itself — verified against TitleBoundary's identical
+    // gate. Normalization resumes on the next transaction that changes the
+    // doc, which re-scans and fixes the WHOLE doc, not just the new edit.
+    const editor = editorWithDoc(
+      (s) =>
+        docNode(s, [
+          para(s, "before"),
+          layoutNode(s, { id: "lay", depth: 0 }, [
+            col(s, "col_a", [para(s, "A1"), para(s, "A2")]),
+          ]),
+          para(s, "after"),
+        ]),
+      { editable: false },
+    )
+    expect(dumpTypes(editor.state.doc)).toContain("columnLayout")
+
+    editor.setEditable(true)
+    // No transaction fired yet — still unnormalized immediately after the flip.
+    expect(dumpTypes(editor.state.doc)).toContain("columnLayout")
+
+    // Any doc-changing transaction (a plain text insert, standing in for a
+    // real user edit) triggers appendTransaction, which now passes the
+    // editable gate and normalizes the whole doc in the same pass.
+    editor.commands.command(({ tr, dispatch }) => {
+      if (dispatch) dispatch(tr.insertText("!", 1))
+      return true
+    })
+    expect(dumpTypes(editor.state.doc)).not.toContain("columnLayout")
+    const rootTexts: string[] = []
+    editor.state.doc.forEach((child) => rootTexts.push(child.textContent))
+    expect(rootTexts).toEqual(["!before", "A1", "A2", "after"])
   })
 })
 

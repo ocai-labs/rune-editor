@@ -145,6 +145,15 @@ export function serializeInlineContent(
       return
     }
 
+    if (child.type.name === "hardBreak") {
+      // Bare tag, both dialects — a hardBreak reads honestly as a line break
+      // rather than gluing the surrounding text together (previously
+      // dropped entirely). Not markdown-escaped: it's a literal HTML tag,
+      // same footing as the raw-HTML mark contracts.
+      parts.push("<br>")
+      return
+    }
+
     if (child.isText && child.text != null) {
       parts.push(wrapWithMarks(child.text, child.marks, dialect))
     }

@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest"
 import { Editor } from "@tiptap/core"
 import { createRuneKit } from "@ocai/rune-core"
-import { readActive } from "./InlineToolbar"
+import { readActive, readCurrentTextSelectionBlock } from "./InlineToolbar"
 
 const setup = (html: string) => {
   return new Editor({
@@ -102,6 +102,72 @@ describe("readActive", () => {
     expect(a.isStrike).toBe(false)
     expect(a.isCode).toBe(false)
     expect(a.isLink).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("readCurrentTextSelectionBlock", () => {
+  it("resolves the root paragraph a selection sits in", () => {
+    const editor = setup("<p>hello world</p>")
+    editor.commands.setTextSelection({ from: 1, to: 6 })
+    const block = readCurrentTextSelectionBlock(editor)
+    expect(block?.type).toBe("paragraph")
+    editor.destroy()
+  })
+
+  it("resolves the COLUMN CHILD, not the columnLayout, for a selection inside a column (data-loss regression)", () => {
+    // Before the fix, `$from.node(1)` reported the whole columnLayout for an
+    // in-column caret — the ••• menu's Delete/Duplicate/Color/Turn-into then
+    // targeted the layout instead of the paragraph, and Delete wiped both
+    // columns. Mirrors the SM-3 fix already applied to
+    // SuggestionMenuController (nearestBodyBlock skips the structural
+    // `column` node and lands on the body block inside it).
+    const editor = setup("<p>placeholder</p>")
+    editor.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "columnLayout",
+          attrs: { id: "cl1", depth: 0 },
+          content: [
+            {
+              type: "column",
+              attrs: { id: "colL", width: 1 },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "L0" },
+                  content: [{ type: "text", text: "left text" }],
+                },
+              ],
+            },
+            {
+              type: "column",
+              attrs: { id: "colR", width: 1 },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "R0" },
+                  content: [{ type: "text", text: "right text" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    let from = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === "left text") {
+        from = pos
+        return false
+      }
+      return true
+    })
+    editor.commands.setTextSelection({ from, to: from + "left".length })
+    const block = readCurrentTextSelectionBlock(editor)
+    expect(block?.id).toBe("L0")
+    expect(block?.type).toBe("paragraph")
     editor.destroy()
   })
 })

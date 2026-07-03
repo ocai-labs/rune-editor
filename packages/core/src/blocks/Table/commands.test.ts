@@ -8,7 +8,7 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { Editor } from "@tiptap/core"
 import Document from "@tiptap/extension-document"
 import Text from "@tiptap/extension-text"
-import { CellSelection } from "prosemirror-tables"
+import { CellSelection } from "@tiptap/pm/tables"
 import { isTableHeaderRow, isTableHeaderColumn } from "./TableCommands"
 import { TextSelection } from "@tiptap/pm/state"
 import { Paragraph } from "../Paragraph/block"
@@ -353,11 +353,15 @@ describe("Table commands", () => {
 // We don't want Tiptap's default baseKeymap (Enter→splitBlock) to mask the
 // handler's own return value — assertions here pin TableCommands' contract,
 // not the full editor chain. Real-keymap behavior is covered by e2e (Task 9).
-// Shift-modified keys (e.g. Shift+Enter) aren't bound by TableCommands, so
-// the lookup misses and the helper returns false — matching the plan's intent
-// that our handler must NOT intercept Shift+Enter.
-function pressKeyDown(editor: Editor, key: string, opts: { shiftKey?: boolean } = {}): boolean {
-  const lookup = opts.shiftKey ? `Shift-${key}` : key
+// Shift-Enter and Mod-Enter ARE bound by TableCommands (#21 — a hardBreak
+// must never land in a cell; both always split the tableParagraph instead,
+// matching Enter's own semantics) — see "Shift/Mod-Enter in cell" below.
+function pressKeyDown(
+  editor: Editor,
+  key: string,
+  opts: { shiftKey?: boolean; modKey?: boolean } = {},
+): boolean {
+  const lookup = opts.modKey ? `Mod-${key}` : opts.shiftKey ? `Shift-${key}` : key
   const ext = editor.extensionManager.extensions.find((e) => e.name === "tableCommands")
   if (!ext) throw new Error("tableCommands extension not found")
   const shortcuts = (ext.config.addKeyboardShortcuts as (() => Record<string, () => boolean>) | undefined)?.call({
@@ -433,9 +437,52 @@ describe("TableCommands — Enter in cell", () => {
     editor.destroy()
   })
 
-  it("Shift+Enter inside a cell returns false (hard-break path falls through)", () => {
+  it("Shift+Enter inside a cell splits the tableParagraph (never inserts a hardBreak)", () => {
     const editor = makeEditor()
     editor.commands.insertTable({ rows: 2, cols: 2 })
+    moveToFirstParagraphAtRow(editor, 0)
+    editor.commands.insertContent("ab")
+    // Caret at the START of "ab" — splitting here yields an empty "before"
+    // paragraph and "ab" as the "after" paragraph.
+    editor.commands.setTextSelection(firstTableParagraphPos(editor))
+    const before = cellPositions(editor).length
+    const handled = pressKeyDown(editor, "Enter", { shiftKey: true })
+    expect(handled).toBe(true)
+    // Split the cell's ONE tableParagraph into two — no hardBreak, cell
+    // count (table shape) unchanged.
+    expect(cellPositions(editor).length).toBe(before)
+    let hardBreaks = 0
+    let paraTexts: string[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "hardBreak") hardBreaks += 1
+      if (node.type.name === "tableParagraph") paraTexts.push(node.textContent)
+      return true
+    })
+    expect(hardBreaks).toBe(0)
+    expect(paraTexts[0]).toBe("")
+    expect(paraTexts[1]).toBe("ab")
+    editor.destroy()
+  })
+
+  it("Mod+Enter inside a cell also splits the tableParagraph (never inserts a hardBreak)", () => {
+    const editor = makeEditor()
+    editor.commands.insertTable({ rows: 2, cols: 2 })
+    moveToFirstParagraphAtRow(editor, 0)
+    editor.commands.insertContent("ab")
+    editor.commands.setTextSelection(firstTableParagraphPos(editor))
+    const handled = pressKeyDown(editor, "Enter", { modKey: true })
+    expect(handled).toBe(true)
+    let hardBreaks = 0
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "hardBreak") hardBreaks += 1
+      return true
+    })
+    expect(hardBreaks).toBe(0)
+    editor.destroy()
+  })
+
+  it("Shift+Enter outside any cell returns false (handler falls through)", () => {
+    const editor = makeEditor()
     const handled = pressKeyDown(editor, "Enter", { shiftKey: true })
     expect(handled).toBe(false)
     editor.destroy()
@@ -640,7 +687,7 @@ describe("TableCommands + TableMouseSelection — integration (no cross-channel 
 })
 
 // Helpers for axis selection in duplicate/clear tests.
-import { TableMap } from "prosemirror-tables"
+import { TableMap } from "@tiptap/pm/tables"
 
 function selectFullColumnAt(editor: Editor, col: number): boolean {
   const tableNode = editor.state.doc.firstChild!

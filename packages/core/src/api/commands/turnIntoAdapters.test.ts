@@ -245,6 +245,34 @@ describe("atom to inline adapter", () => {
   })
 })
 
+describe("atom to atom adapter", () => {
+  it("divider to divider is handled by the same-type adapter, not getAdapter", () => {
+    // Sanity: getAdapter("atom","atom",...) is only reached for a TYPE change;
+    // same-type conversions short-circuit in getAdapter itself.
+    const editor = createTestEditor()
+    editor.commands.setContent([{ type: "divider", attrs: { id: "d1" } }])
+    const adapter = getAdapter("atom", "atom", "divider", "divider")
+    const result = adapter(editor, editor.state.doc.firstChild!, { type: "divider" }, editor.schema)
+    expect(result!.attrsOnly).toBe(true)
+  })
+
+  it("image to divider converts instead of throwing (no atom->atom adapter was registered)", () => {
+    const editor = createTestEditor()
+    editor.commands.setContent([
+      { type: "image", attrs: { id: "img1", src: "https://example.com/x.png" } },
+    ])
+    const adapter = getAdapter("atom", "atom", "image", "divider")
+    const result = adapter(
+      editor,
+      editor.state.doc.firstChild!,
+      { type: "divider" },
+      editor.schema,
+    )
+    expect(result).not.toBeNull()
+    expect(result!.node.type.name).toBe("divider")
+  })
+})
+
 describe("anything to container adapter", () => {
   it("paragraph to table produces a default-shape table at source depth", () => {
     const editor = createTestEditor()

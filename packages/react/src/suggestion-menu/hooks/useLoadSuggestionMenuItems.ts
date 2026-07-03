@@ -24,13 +24,22 @@ export function useLoadSuggestionMenuItems<T>(
     currentRequest.current = requestId;
     setLoadingState(hasLoaded.current ? "loading" : "loading-initial");
 
-    getItems(query).then((result) => {
-      if (currentRequest.current !== requestId) return; // stale — drop
-      setItems(result);
-      setUsedQuery(query);
-      hasLoaded.current = true;
-      setLoadingState("loaded");
-    });
+    getItems(query)
+      .then((result) => {
+        if (currentRequest.current !== requestId) return; // stale — drop
+        setItems(result);
+        setUsedQuery(query);
+        hasLoaded.current = true;
+        setLoadingState("loaded");
+      })
+      .catch(() => {
+        if (currentRequest.current !== requestId) return; // stale — drop
+        // A rejected load (e.g. host getItems network error) settles into
+        // "loaded" with whatever items are already on screen rather than
+        // spinning forever — mirrors RuneEmojiPicker's fall-back contract.
+        hasLoaded.current = true;
+        setLoadingState("loaded");
+      });
     // Intentionally not cleaning up — stale-request guard in the .then
     // handles races; a manual AbortController would double-guard.
   }, [query, getItems, reloadKey]);

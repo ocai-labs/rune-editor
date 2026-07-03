@@ -14,6 +14,7 @@ import { collectKnownBlockTags } from "./knownBlockTags"
 import { transformPastedHTMLDoc } from "./transformPastedHTML"
 import { clipboardTextParser } from "./clipboardTextParser"
 import { transformPastedImageHTML } from "../../blocks/Image/transformPastedImageHTML"
+import { unwrapLoneImageParagraphs } from "./markdownToDoc"
 
 /**
  * Tiptap/PM `handlePaste` prop. Inspects clipboardData MIMEs and
@@ -154,16 +155,52 @@ function readVSCodeLanguage(data: DataTransfer): string | null {
 }
 
 /**
+ * markdown-it's HTML output pretty-prints one top-level block per line, so
+ * `dom.body`'s direct children are interleaved with bare `"\n"` TEXT nodes
+ * (`<p>a</p>\n<p>b</p>\n…`) — formatting artifacts, not content. `parseSlice`
+ * (unlike full-doc `parse`) builds its ROOT context with `type: null` (PM's
+ * "open left" root, since the slice's edges aren't validated against the
+ * schema) instead of `doc`. That null-typed root's whitespace classification
+ * falls through to a DOM-parent check instead of `doc`'s always-block
+ * `inlineContent`, and — because this schema registers `hardBreak` as
+ * `linebreakReplacement` (Tiptap's StarterKit default) — PM converts that
+ * bare newline into a real `hardBreak`, then wraps it in a fresh paragraph
+ * to keep it schema-valid. Net effect: a `<paragraph><hardBreak/></paragraph>`
+ * ghost block appears between the first two top-level nodes of ANY
+ * multi-block Markdown paste (reproduced with plain paragraphs, no images
+ * involved). `parse()` never hits this (its root context is always typed
+ * `doc`), so `markdownToDoc` doesn't need this step. Stripping the
+ * whitespace-only text nodes that sit directly under `dom.body` (never
+ * touching whitespace nested inside a block's own content) removes the
+ * artifact at the source.
+ */
+function stripBodyWhitespaceTextNodes(dom: Document): void {
+  for (const node of Array.from(dom.body.childNodes)) {
+    if (node.nodeType === 3 && node.textContent?.replace(/\s/g, "") === "") {
+      node.remove()
+    }
+  }
+}
+
+/**
  * Markdown → PM slice via the SAME schema-only transform core the headless
  * `markdownToDoc` import path uses, plus the live-view image step (paste can
  * upload). Shared by the plain-text Markdown branch and VS Code's `markdown`
  * mode so the two never drift.
+ *
+ * Also runs `unwrapLoneImageParagraphs`, same as `markdownToDoc` — parity,
+ * not a paste-only concern. `parseSlice`'s open boundaries only cover the
+ * first/last top-level node, so any image NOT at the very start/end of the
+ * pasted slice hits the exact same stray-empty-`<p>` artifact full-doc parse
+ * does (see markdownToDoc.ts's docstring on the helper).
  */
 function markdownToSlice(view: EditorView, editor: Editor, text: string): Slice {
   const dom = new DOMParser().parseFromString(markdownToHtml(text), "text/html")
   transformPastedHTMLDoc(dom, collectKnownBlockTags(view.state.schema), (d) =>
     transformPastedImageHTML(d, view, editor),
   )
+  unwrapLoneImageParagraphs(dom)
+  stripBodyWhitespaceTextNodes(dom)
   return PMDOMParser.fromSchema(view.state.schema).parseSlice(dom.body, {
     preserveWhitespace: true,
   })

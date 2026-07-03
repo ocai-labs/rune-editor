@@ -50,6 +50,7 @@ import "@tiptap/extension-strike"
 import "@tiptap/extension-code"
 import "@tiptap/extension-link"
 import {
+  nearestBodyBlock,
   openBlockActionsDropdown,
   type ColorName,
 } from "@ocai/rune-core"
@@ -775,15 +776,22 @@ function useCurrentTextSelectionBlock(
   })
 }
 
-function readCurrentTextSelectionBlock(
+// Exported for unit testing (mirrors readActive below). Resolves via
+// `nearestBodyBlock` — the same surface-aware resolver SuggestionMenuController
+// uses (SM-3) — instead of a raw `$from.node(1)`, which reports the whole
+// columnLayout for an in-column caret ($from.depth === 3 there: doc >
+// columnLayout > column > textblock) rather than the column's paragraph.
+export function readCurrentTextSelectionBlock(
   editor: Editor,
 ): { id: string; type: string } | null {
   const selection = editor.state.selection
   if (!(selection instanceof TextSelection)) return null
 
-  const node = selection.$from.depth >= 1 ? selection.$from.node(1) : null
-  const id = node?.attrs.id
-  return node && typeof id === "string" ? { id, type: node.type.name } : null
+  const nearest = nearestBodyBlock(editor, selection.$from)
+  const id = nearest?.node.attrs.id
+  return nearest && typeof id === "string"
+    ? { id, type: nearest.node.type.name }
+    : null
 }
 
 function sameCurrentTextSelectionBlock(

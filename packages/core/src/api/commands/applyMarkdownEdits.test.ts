@@ -185,13 +185,65 @@ describe("applyMarkdownEdits — inline edits", () => {
 // ── normalization ladder ───────────────────────────────────────────────────
 
 describe("applyMarkdownEdits — normalization ladder", () => {
-  it("matches a double-space needle against a single-space haystack (tier 2)", () => {
+  // "cafe" with an acute accent, written via explicit \u escapes in both
+  // forms below (a literal accented char retyped in source risks silently
+  // varying its own normalization, which would defeat the point of this
+  // test). NFC is "caf\u00e9" (4 chars, precomposed); NFD is "cafe\u0301"
+  // (5 chars: base "e" + combining acute accent, U+0301) -- the shape macOS
+  // commonly produces.
+  it("composes an NFD haystack to match an NFC needle (tier 2, canonical equivalence)", () => {
+    const editor = editorWith([para("p", [text("cafe\u0301 today")])]) // NFD in doc
+    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "caf\u00e9", newStr: "coffee" }] })) // NFC needle
+    expect(findBlock(editor, "p")!.textContent).toBe("coffee today")
+  })
+
+  it("matches an NFD needle against an NFC haystack (tier 2, canonical equivalence, reverse)", () => {
+    const editor = editorWith([para("p", [text("caf\u00e9 today")])]) // NFC in doc
+    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "cafe\u0301", newStr: "coffee" }] })) // NFD needle
+    expect(findBlock(editor, "p")!.textContent).toBe("coffee today")
+  })
+
+  it("preserves surrounding text and marks across a canonical-equivalence match", () => {
+    const editor = editorWith([
+      para("p", [text("bold", [{ type: "bold" }]), text(" cafe\u0301 today")]),
+    ])
+    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "caf\u00e9", newStr: "coffee" }] }))
+    const block = findBlock(editor, "p")!
+    expect(block.textContent).toBe("bold coffee today")
+    expect(marksOnText(block, "bold")).toEqual(["bold"])
+  })
+
+  // q + U+0301 has NO precomposed form — unlike e + U+0301, NFC returns the
+  // pair unchanged as TWO code units. Regression: the canonicalize branch
+  // used to write that 2-unit result into ONE chars/map slot, so `map` (which
+  // is indexed by the normalized string's UTF-16 offsets) desynced and every
+  // match at/after the cluster spliced a shifted source range — silent block
+  // corruption reported as ok. Same shape for emoji + U+FE0F (VS16 is \p{M}).
+  it("matches after a non-composing base+mark cluster (q+U+0301) without desyncing the map", () => {
+    const editor = editorWith([para("p", [text("q\u0301 then cafe\u0301 today")])]) // NFD e\u0301 forces tier 2
+    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "caf\u00e9", newStr: "coffee" }] }))
+    expect(findBlock(editor, "p")!.textContent).toBe("q\u0301 then coffee today")
+  })
+
+  it("matches after an emoji + variation selector (U+FE0F, a \\p{M} mark on a symbol)", () => {
+    const editor = editorWith([para("p", [text("\u2764\ufe0f cafe\u0301 today")])])
+    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "caf\u00e9", newStr: "coffee" }] }))
+    expect(findBlock(editor, "p")!.textContent).toBe("\u2764\ufe0f coffee today")
+  })
+
+  it("splices a matched span CONTAINING a non-composing cluster verbatim", () => {
+    const editor = editorWith([para("p", [text("say q\u0301 caf\u00e9 now")])]) // NFC in doc
+    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "q\u0301 cafe\u0301", newStr: "done" }] })) // NFD needle
+    expect(findBlock(editor, "p")!.textContent).toBe("say done now")
+  })
+
+  it("matches a double-space needle against a single-space haystack (tier 3)", () => {
     const editor = editorWith([para("p", [text("a b")])])
     expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "a  b", newStr: "c" }] }))
     expect(findBlock(editor, "p")!.textContent).toBe("c")
   })
 
-  it("matches a single-space needle against a double-space haystack (tier 2, reverse)", () => {
+  it("matches a single-space needle against a double-space haystack (tier 3, reverse)", () => {
     // A code block preserves the literal double space (a paragraph would
     // collapse it and trip the lossless guard).
     const editor = editorWith([
@@ -201,32 +253,32 @@ describe("applyMarkdownEdits — normalization ladder", () => {
     expect(findBlock(editor, "c")!.textContent).toBe("z")
   })
 
-  it("folds an NBSP needle to match a normal-space haystack (tier 2, whitespace collapse)", () => {
+  it("folds an NBSP needle to match a normal-space haystack (tier 3, whitespace collapse)", () => {
     // The needle carries a real U+00A0 (written as \u00A0 so it is visible and
-    // stable in source — a literal NBSP is indistinguishable from a space). The
+    // stable in source -- a literal NBSP is indistinguishable from a space). The
     // exact tier cannot match it against the ordinary space in the haystack; JS's
-    // \s matches NBSP, so tier 2's whitespace collapse folds it (NOT the
+    // \s matches NBSP, so tier 3's whitespace collapse folds it (NOT the
     // smart-quote tier).
     const editor = editorWith([para("p", [text("alpha beta")])])
     expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "alpha\u00A0beta", newStr: "gamma" }] }))
     expect(findBlock(editor, "p")!.textContent).toBe("gamma")
   })
 
-  it("folds smart quotes to match straight quotes (tier 3)", () => {
+  it("folds smart quotes to match straight quotes (tier 4)", () => {
     const editor = editorWith([para("p", [text('say "hello" now')])])
     expectOk(
-      applyMarkdownEdits(editor, { edits: [{ oldStr: "“hello”", newStr: '"hi"' }] }),
+      applyMarkdownEdits(editor, { edits: [{ oldStr: "\u201Chello\u201D", newStr: '"hi"' }] }),
     )
     expect(findBlock(editor, "p")!.textContent).toBe('say "hi" now')
   })
 
-  it("case-folds as a last resort (tier 4)", () => {
+  it("case-folds as a last resort (tier 5)", () => {
     const editor = editorWith([para("p", [text("Hello World")])])
     expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "hello world", newStr: "Goodbye" }] }))
     expect(findBlock(editor, "p")!.textContent).toBe("Goodbye")
   })
 
-  it("resolves at the tightest tier: unique at exact wins over ambiguous-at-tier-2", () => {
+  it("resolves at the tightest tier: unique at exact wins over ambiguous-at-tier-3", () => {
     // p1 has one space (exact match); p2 has two (would also match once
     // whitespace collapses). Exact tier finds exactly one → p1, never reaching
     // the looser tier where both match.
@@ -257,6 +309,22 @@ describe("applyMarkdownEdits — locate errors", () => {
     // Nothing applied.
     expect(findBlock(editor, "p1")!.textContent).toBe("hello world")
     expect(findBlock(editor, "p2")!.textContent).toBe("hello there")
+  })
+
+  it("advises only quoting more context when oldStr is ambiguous WITHIN a blockId-scoped block", () => {
+    // The candidate pool is already scoped to "p" (one block), so the "pass a
+    // blockId" half of the generic advice is misleading — a blockId was given.
+    const editor = editorWith([para("p", [text("hello hello")])])
+    const res = applyMarkdownEdits(editor, {
+      edits: [{ oldStr: "hello", newStr: "hi", blockId: "p" }],
+    })
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    expect(res.error.code).toBe("ambiguous-match")
+    expect(res.error.message).not.toContain("blockId")
+    expect(res.error.message).toContain("quote more")
+    // Nothing applied.
+    expect(findBlock(editor, "p")!.textContent).toBe("hello hello")
   })
 
   it("succeeds on the same ambiguous oldStr when a blockId scopes it", () => {
@@ -465,6 +533,47 @@ describe("applyMarkdownEdits — clear (empty newStr)", () => {
     const editor = editorWith([para("p", [text("hello world")])])
     expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "hello ", newStr: "" }] }))
     expect(findBlock(editor, "p")!.textContent).toBe("world")
+  })
+
+  it("refuses to clear a container block (table) instead of silently deleting it", () => {
+    // `node.type.create(node.attrs, null)` is content-invalid for a node whose
+    // content expression is `tableRow+` — PM's replace drops the whole block.
+    // The clear branch must gate on `node.isTextblock` and fall through to the
+    // ordinary "no block content" refusal for containers.
+    const editor = editorWith([
+      para("before", [text("intro")]),
+      {
+        type: "table",
+        attrs: { id: "tbl", depth: 0 },
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              { type: "tableHeader", content: [{ type: "tableParagraph", content: [text("Name")] }] },
+              { type: "tableHeader", content: [{ type: "tableParagraph", content: [text("Age")] }] },
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [
+              { type: "tableCell", content: [{ type: "tableParagraph", content: [text("Alice")] }] },
+              { type: "tableCell", content: [{ type: "tableParagraph", content: [text("30")] }] },
+            ],
+          },
+        ],
+      },
+      para("after", [text("outro")]),
+    ])
+    const chunk = exportMarkdownWithChunks(editor).chunks.find((c) => c.blockId === "tbl")!.text
+    const res = applyMarkdownEdits(editor, {
+      edits: [{ oldStr: chunk, newStr: "", blockId: "tbl" }],
+    })
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    expect(res.error.code).toBe("invalid-input")
+    const table = findBlock(editor, "tbl")
+    expect(table).not.toBeNull()
+    expect(table!.type.name).toBe("table")
   })
 
   it("keeps a batch with a clear + a normal edit atomic (one undo step)", () => {

@@ -21,6 +21,7 @@ import {
   type RuneBlock,
   type RuneBlockInput,
 } from "../../index"
+import type { RuneColumnsBlock } from "../../blocks/Columns/block"
 
 function makeEditor(content: unknown = { type: "doc", content: [] }) {
   const element = document.createElement("div")
@@ -41,6 +42,21 @@ function makeEditor(content: unknown = { type: "doc", content: [] }) {
 
 function ids(editor: Editor) {
   return getDocument(editor).map((block) => block.id)
+}
+
+// Chain-safety fixture (task #17): a 5-token paragraph inserted at doc start
+// shifts every later position by +5. Under `editor.chain()`, `state.doc` IS
+// the live, already-mutated `tr.doc` (it reflects prior chain steps) — so a
+// command resolving a position from `state.doc` and applying it to `tr`
+// UNMAPPED is chain-safe; one that re-maps it through the WHOLE `tr.mapping`
+// double-counts those prior steps. The tests tagged "chain-safety" below pin
+// that contract for both the always-safe commands (insertBlocks, deleteBlocks,
+// updateBlock, indentBlock) and the ones that needed the `tr.mapping.slice
+// (mapFrom)` fix (moveBlocks, turnInto, wrapIntoColumns, splitListBlock).
+const PRE = {
+  type: "paragraph",
+  attrs: { id: "PRE", depth: 0 },
+  content: [{ type: "text", text: "PRE" }],
 }
 
 describe("commands.insertBlocks", () => {
@@ -428,6 +444,26 @@ describe("commands.insertBlocks", () => {
         sourceUrl: "https://source.example/a.png",
       },
     ])
+    destroy()
+  })
+
+  it("chain-safety: inserts after 'a', chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    editor
+      .chain()
+      .insertContentAt(0, PRE)
+      .insertBlocks([{ type: "paragraph", id: "X", depth: 0, text: "X" }], {
+        at: { id: "a", side: "after" },
+      })
+      .run()
+    expect(ids(editor)).toEqual(["PRE", "a", "X", "b"])
     destroy()
   })
 })
@@ -854,6 +890,39 @@ describe("commands.updateBlock", () => {
     editor.destroy()
     element.remove()
   })
+
+  it("chain-safety: updates 'a', chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    editor.chain().insertContentAt(0, PRE).updateBlock("a", { text: "NEW" }).run()
+    const blocks = getDocument(editor) as Array<{ id: string; text?: string }>
+    expect(ids(editor)).toEqual(["PRE", "a", "b"])
+    expect(blocks.find((b) => b.id === "a")?.text).toBe("NEW")
+    expect(blocks.find((b) => b.id === "PRE")?.text).toBe("PRE")
+    destroy()
+  })
+
+  it("chain-safety: target removed by a prior deleteRange no-ops (no throw)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    const run = () =>
+      editor.chain().deleteRange({ from: 0, to: 3 }).updateBlock("a", { text: "NEW" }).run()
+    expect(run).not.toThrow()
+    expect(ids(editor)).toEqual(["b"])
+    destroy()
+  })
 })
 
 describe("commands.deleteBlocks", () => {
@@ -938,6 +1007,20 @@ describe("commands.deleteBlocks", () => {
       ),
     ).toBe(false)
     warn.mockRestore()
+    destroy()
+  })
+
+  it("chain-safety: deletes 'a', chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    editor.chain().insertContentAt(0, PRE).deleteBlocks(["a"]).run()
+    expect(ids(editor)).toEqual(["PRE", "b"])
     destroy()
   })
 })
@@ -1094,6 +1177,92 @@ describe("commands.moveBlocks", () => {
   it("accepts partial RuneBlock values for updateBlock", () => {
     const _partial: Partial<RuneBlock> = { text: "typed" }
     expect(_partial).toEqual({ text: "typed" })
+  })
+
+  it("chain-safety: moves 'c' before 'a', chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b", "c"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    editor.chain().insertContentAt(0, PRE).moveBlocks(["c"], { id: "a", side: "before" }).run()
+    expect(ids(editor)).toEqual(["PRE", "c", "a", "b"])
+    destroy()
+  })
+
+  it("chain-safety: moves 'd' before 'b', chained after a prior deleteBlocks (shrinking step)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b", "c", "d"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    editor.chain().deleteBlocks(["a"]).moveBlocks(["d"], { id: "b", side: "before" }).run()
+    expect(ids(editor)).toEqual(["d", "b", "c"])
+    destroy()
+  })
+
+  it("chain-safety: no-ops (no throw) when its target was deleted by a prior chained step", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b", "c"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    const run = () =>
+      editor.chain().deleteBlocks(["b"]).moveBlocks(["b"], { id: "a", side: "after" }).run()
+    expect(run).not.toThrow()
+    expect(ids(editor)).toEqual(["a", "c"])
+    destroy()
+  })
+
+  it("chain-safety: F2 unwrap branch (move into a surviving column) survives a chained prior step", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { id: "r1", depth: 0 }, content: [{ type: "text", text: "root-1" }] },
+        {
+          type: "columnLayout",
+          attrs: { id: "lay", depth: 0 },
+          content: [
+            {
+              type: "column",
+              attrs: { id: "col_a", width: 1 },
+              content: [
+                { type: "paragraph", attrs: { id: "a1", depth: 0 }, content: [{ type: "text", text: "A1" }] },
+              ],
+            },
+            {
+              type: "column",
+              attrs: { id: "col_b", width: 1 },
+              content: [
+                { type: "paragraph", attrs: { id: "b1", depth: 0 }, content: [{ type: "text", text: "B1" }] },
+              ],
+            },
+          ],
+        },
+        { type: "paragraph", attrs: { id: "r2", depth: 0 }, content: [{ type: "text", text: "root-2" }] },
+      ],
+    })
+    editor
+      .chain()
+      .insertContentAt(0, PRE)
+      .moveBlocks(["a1"], { columnId: "col_b", at: "end" })
+      .run()
+    // col_a empties -> the layout unwraps (F2); "content stays put" at the
+    // layout's original slot, now shifted by PRE. The F2 branch never used
+    // `tr.mapping` (it reads `tr.doc` directly, still safe pre-fix) — this
+    // pins that it stays correct once chained after a position-shifting step.
+    expect(getDocument(editor).some((b) => b.type === "columnLayout")).toBe(false)
+    expect(ids(editor)).toEqual(["PRE", "r1", "b1", "a1", "r2"])
+    destroy()
   })
 })
 
@@ -1316,5 +1485,190 @@ describe("commands.indentBlock / outdentBlock", () => {
       expect(doc.map((b) => b.depth)).toEqual([2, 1, 1])
       destroy()
     })
+  })
+
+  it("chain-safety: indents 'b', chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor(docWithBlocks([
+      { type: "paragraph", id: "a", text: "A" },
+      { type: "paragraph", id: "b", text: "B" },
+    ]))
+    editor.chain().insertContentAt(0, PRE).indentBlock("b").run()
+    const blocks = getDocument(editor)
+    expect(blocks.find((b) => b.id === "b")?.depth).toBe(1)
+    expect(blocks.find((b) => b.id === "a")?.depth).toBe(0)
+    destroy()
+  })
+})
+
+describe("commands.turnInto — chain safety (task #17)", () => {
+  it("turns 'b' into a heading, chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    const run = () =>
+      editor
+        .chain()
+        .insertContentAt(0, PRE)
+        .turnInto("b", { type: "heading", props: { level: 2 } } as never)
+        .run()
+    expect(run).not.toThrow()
+    const blocks = getDocument(editor)
+    expect(blocks.find((b) => b.id === "b")?.type).toBe("heading")
+    expect(ids(editor)).toEqual(["PRE", "a", "b"])
+    destroy()
+  })
+
+  it("turns 'c' into a heading, chained after a prior deleteBlocks (shrinking step)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b", "c"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    editor
+      .chain()
+      .deleteBlocks(["a"])
+      .turnInto("c", { type: "heading", props: { level: 2 } } as never)
+      .run()
+    const blocks = getDocument(editor)
+    expect(ids(editor)).toEqual(["b", "c"])
+    expect(blocks.find((b) => b.id === "c")?.type).toBe("heading")
+    destroy()
+  })
+
+  it("no-ops (no throw) when its target was deleted by a prior chained step", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: ["a", "b"].map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    })
+    const run = () =>
+      editor
+        .chain()
+        .deleteBlocks(["b"])
+        .turnInto("b", { type: "heading", props: { level: 2 } } as never)
+        .run()
+    expect(run).not.toThrow()
+    expect(ids(editor)).toEqual(["a"])
+    destroy()
+  })
+})
+
+describe("commands.wrapIntoColumns — chain safety (task #17)", () => {
+  function flatDoc(blockIds: string[]) {
+    return {
+      type: "doc" as const,
+      content: blockIds.map((id) => ({
+        type: "paragraph",
+        attrs: { id, depth: 0 },
+        content: [{ type: "text", text: id.toUpperCase() }],
+      })),
+    }
+  }
+
+  function layoutOf(editor: Editor): RuneColumnsBlock | undefined {
+    return getDocument(editor).find(
+      (b): b is RuneColumnsBlock => b.type === "columnLayout",
+    )
+  }
+
+  it("wraps 'a' + 'c' into a 2-column layout, chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor(flatDoc(["a", "b", "c"]))
+    editor
+      .chain()
+      .insertContentAt(0, PRE)
+      .wrapIntoColumns(["c"], { id: "a", side: "right" })
+      .run()
+    const layout = layoutOf(editor)
+    expect(layout).toBeDefined()
+    expect(layout!.columns.map((c) => c.children.map((ch) => ch.id))).toEqual([["a"], ["c"]])
+    expect(ids(editor)).toEqual(["PRE", layout!.id, "b"])
+    destroy()
+  })
+
+  it("wraps 'b' + 'd' into a 2-column layout, chained after a prior deleteBlocks (shrinking step)", () => {
+    const { editor, destroy } = makeEditor(flatDoc(["a", "b", "c", "d"]))
+    editor.chain().deleteBlocks(["a"]).wrapIntoColumns(["d"], { id: "b", side: "right" }).run()
+    const layout = layoutOf(editor)
+    expect(layout).toBeDefined()
+    expect(layout!.columns.map((c) => c.children.map((ch) => ch.id))).toEqual([["b"], ["d"]])
+    expect(ids(editor)).toEqual([layout!.id, "c"])
+    destroy()
+  })
+
+  it("no-ops (no throw) when its wrap target was deleted by a prior chained step", () => {
+    const { editor, destroy } = makeEditor(flatDoc(["a", "b", "c"]))
+    const run = () =>
+      editor.chain().deleteBlocks(["a"]).wrapIntoColumns(["c"], { id: "a", side: "right" }).run()
+    expect(run).not.toThrow()
+    expect(layoutOf(editor)).toBeUndefined()
+    expect(ids(editor)).toEqual(["b", "c"])
+    destroy()
+  })
+})
+
+describe("commands.splitListBlock — chain safety (task #17)", () => {
+  it("splits a bulletList at the cursor, chained after insertContentAt(0)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: [
+        { type: "bulletList", attrs: { id: "li", depth: 0 }, content: [{ type: "text", text: "AB" }] },
+      ],
+    })
+    // PRE (5 tokens) shifts the doc; the split point ("between A and B", pos 2
+    // pre-shift) lands at pos 7 post-shift.
+    editor.chain().insertContentAt(0, PRE).setTextSelection(7).splitListBlock().run()
+    const lists = getDocument(editor).filter(
+      (b): b is Extract<RuneBlock, { type: "bulletList" }> => b.type === "bulletList",
+    )
+    expect(ids(editor)[0]).toBe("PRE")
+    expect(lists.length).toBe(2)
+    expect(lists[0]).toMatchObject({ id: "li", text: "A" })
+    expect(lists[1]!.id).not.toBe("li")
+    expect(lists[1]).toMatchObject({ text: "B" })
+    destroy()
+  })
+
+  it("splits a bulletList at the cursor, chained after a prior deleteBlocks (shrinking step)", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { id: "junk", depth: 0 }, content: [{ type: "text", text: "J" }] },
+        { type: "bulletList", attrs: { id: "li", depth: 0 }, content: [{ type: "text", text: "AB" }] },
+      ],
+    })
+    // Deleting "junk" (3 tokens) shrinks the doc; the split point ("between A
+    // and B") is pos 2 against the POST-delete doc.
+    editor.chain().deleteBlocks(["junk"]).setTextSelection(2).splitListBlock().run()
+    const lists = getDocument(editor).filter(
+      (b): b is Extract<RuneBlock, { type: "bulletList" }> => b.type === "bulletList",
+    )
+    expect(lists.length).toBe(2)
+    expect(lists[0]).toMatchObject({ id: "li", text: "A" })
+    expect(lists[1]).toMatchObject({ text: "B" })
+    destroy()
+  })
+
+  it("no-ops (no throw) when the prior chained step removes the list the selection was in", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: [
+        { type: "bulletList", attrs: { id: "li", depth: 0 }, content: [{ type: "text", text: "solo" }] },
+      ],
+    })
+    const run = () => editor.chain().deleteBlocks(["li"]).splitListBlock().run()
+    expect(run).not.toThrow()
+    expect(getDocument(editor).some((b) => b.type === "bulletList")).toBe(false)
+    destroy()
   })
 })

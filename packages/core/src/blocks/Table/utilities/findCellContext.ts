@@ -5,7 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model"
-import { TableMap } from "prosemirror-tables"
+import { TableMap } from "@tiptap/pm/tables"
 
 export function findCellBefore($pos: ResolvedPos): ResolvedPos | null {
   for (let d = $pos.depth; d > 0; d--) {

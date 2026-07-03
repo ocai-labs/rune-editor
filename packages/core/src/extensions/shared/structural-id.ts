@@ -6,6 +6,7 @@
 
 import type { EditorState, Transaction } from "@tiptap/pm/state"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
+import { Mapping } from "@tiptap/pm/transform"
 import { INTERNAL_NORMALIZATION_META } from "../internal-meta"
 
 // Shared structural-id backfill, extracted from extensions/block-id.ts so
@@ -30,8 +31,11 @@ import { INTERNAL_NORMALIZATION_META } from "../internal-meta"
 // returns null, so no further tr is dispatched.
 //
 // Collision handling: a matching node whose id is null OR collides with an
-// already-seen id of the same attr gets a freshly generated id. First
-// writer of a given id keeps it; later duplicates are regenerated. This is
+// already-seen id of the same attr gets a freshly generated id. When the
+// caller supplies `anchoredPositions` (nodes that carried their id in the old
+// doc), those survivors keep their id and a colliding NEWLY inserted copy is
+// the one regenerated — so pasting a copy ABOVE its original no longer steals
+// the original's id. Without anchors, first-in-doc-order keeps the id. This is
 // what catches duplicate-block (Cmd-D) and cross-document paste.
 
 export interface StructuralIdConfig {
@@ -47,13 +51,37 @@ export type StructuralIdPatch = { pos: number; id: string }
 export function computeIdPatches(
   state: EditorState,
   config: StructuralIdConfig,
+  anchoredPositions?: ReadonlySet<number>,
 ): StructuralIdPatch[] {
   const { attrName, nodePredicate, generateId } = config
   const seen = new Set<string>()
+  const claimed = new Set<number>()
   const patches: StructuralIdPatch[] = []
 
+  // Pass 1 (only when survivor anchors are supplied): let each node that
+  // carried its id in the OLD doc claim that id BEFORE doc-order assignment,
+  // so a colliding freshly-inserted copy — not the pre-existing block — is
+  // the one regenerated. First anchored occurrence per id wins (guards a
+  // degenerate old doc that itself held a duplicate).
+  if (anchoredPositions && anchoredPositions.size) {
+    state.doc.descendants((node, pos) => {
+      if (!nodePredicate(node)) return true
+      if (!anchoredPositions.has(pos)) return true
+      const id = node.attrs[attrName] as string | null
+      if (id && !seen.has(id)) {
+        seen.add(id)
+        claimed.add(pos)
+      }
+      return true
+    })
+  }
+
+  // Pass 2: doc-order assignment. A claimed survivor keeps its id untouched;
+  // every other node with a null or already-seen id is regenerated. With no
+  // anchors this is identical to the original single-pass behavior.
   state.doc.descendants((node, pos) => {
     if (!nodePredicate(node)) return true
+    if (claimed.has(pos)) return true
     const existing = node.attrs[attrName] as string | null
     if (existing && !seen.has(existing)) {
       seen.add(existing)
@@ -67,6 +95,41 @@ export function computeIdPatches(
   })
 
   return patches
+}
+
+/**
+ * Positions in `newState.doc` that carry an id inherited from a node already
+ * present in `oldState.doc` — the "survivors." A duplicate id must be
+ * regenerated on the NEWLY inserted copy, never on the survivor. Feed the
+ * result to `computeIdPatches` as `anchoredPositions`.
+ *
+ * Bias +1 when mapping a survivor's start position is required: pasting a copy
+ * ABOVE the original inserts content exactly at the survivor's start boundary,
+ * and only +1 tracks the node past that insertion instead of latching onto the
+ * pasted copy. With no anchors, `computeIdPatches` falls back to
+ * first-in-doc-order (correct for initial load / setContent, which have no
+ * meaningful oldState to anchor against).
+ */
+export function computeAnchoredPositions(
+  oldState: EditorState,
+  newState: EditorState,
+  transactions: readonly Transaction[],
+  config: Pick<StructuralIdConfig, "attrName" | "nodePredicate">,
+): Set<number> {
+  const { attrName, nodePredicate } = config
+  const mapping = new Mapping()
+  for (const tr of transactions) mapping.appendMapping(tr.mapping)
+  const anchored = new Set<number>()
+  oldState.doc.descendants((node, oldPos) => {
+    if (!nodePredicate(node)) return true
+    const id = node.attrs[attrName] as string | null
+    if (id == null) return true
+    const newPos = mapping.map(oldPos, 1)
+    const at = newState.doc.nodeAt(newPos)
+    if (at && nodePredicate(at) && at.attrs[attrName] === id) anchored.add(newPos)
+    return true
+  })
+  return anchored
 }
 
 export function buildBackfillTransaction(

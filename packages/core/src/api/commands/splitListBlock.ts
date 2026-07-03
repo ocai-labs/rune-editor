@@ -58,6 +58,11 @@ export function splitListBlockImpl(): (args: {
     if (!dispatch) return true
 
     const tr = state.tr
+    // Chain-safety (task #17): `$from.pos` is resolved from `state.selection`,
+    // which under `editor.chain()` IS the live `tr.doc` — so it must map
+    // through only the steps THIS call adds below (the optional
+    // `deleteSelection()`), not the whole `tr.mapping`.
+    const mapFrom = tr.mapping.maps.length
     if (
       (state.selection instanceof TextSelection ||
         state.selection instanceof AllSelection) &&
@@ -66,7 +71,7 @@ export function splitListBlockImpl(): (args: {
       tr.deleteSelection()
     }
 
-    tr.split(tr.mapping.map($from.pos), 1, [
+    tr.split(tr.mapping.slice(mapFrom).map($from.pos), 1, [
       { type: block.type, attrs: newAttrs },
     ])
     dispatch(tr.scrollIntoView())

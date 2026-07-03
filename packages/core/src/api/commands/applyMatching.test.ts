@@ -8,6 +8,7 @@ import { describe, it, expect } from "vitest"
 import type { Editor, JSONContent } from "@tiptap/core"
 import type { Node as PMNode } from "@tiptap/pm/model"
 import { undo } from "@tiptap/pm/history"
+import { EditorState } from "@tiptap/pm/state"
 import { createTestEditor } from "../../test-utils/createTestEditor"
 import type { RuneCommandResult } from "../result"
 import { applyMatching, type ApplyMatchingData } from "./applyMatching"
@@ -518,6 +519,53 @@ describe("applyMatching — block-kind turnInto", () => {
     expect(findBlock(editor, "b")!.type.name).toBe("bulletList")
   })
 
+  it("does not count a block whose turnInto no-ops at apply time (columnLayout no-nesting guard)", () => {
+    // canTurnInto (the cheap pre-filter) only rejects CONTAINER sources, so a
+    // paragraph target of columnLayout passes it — but applyTurnIntoTr's
+    // no-nesting guard then refuses the actual conversion. count/changedBlockIds
+    // must reflect the refusal, not the pre-filter pass.
+    const editor = editorWith([para("p1", [text("hi")])])
+    const data = expectOk(
+      applyMatching(editor, {
+        where: { blockType: "paragraph" },
+        set: { turnInto: { type: "columnLayout" } },
+      }),
+    )
+    expect(data.count).toBe(0)
+    expect(data.changedBlockIds).toEqual([])
+    expect(findBlock(editor, "p1")!.type.name).toBe("paragraph")
+  })
+
+  it("does not count a block whose turnInto no-ops on invalid target props (illegal heading level)", () => {
+    const editor = editorWith([para("p1", [text("hi")])])
+    const data = expectOk(
+      applyMatching(editor, {
+        where: { blockType: "paragraph" },
+        set: { turnInto: { type: "heading", props: { level: 99 } } },
+      }),
+    )
+    expect(data.count).toBe(0)
+    expect(data.changedBlockIds).toEqual([])
+    expect(findBlock(editor, "p1")!.type.name).toBe("paragraph")
+  })
+
+  it("still counts a block via blockColor even when its turnInto part no-ops (combined set)", () => {
+    const editor = editorWith([para("p1", [text("hi")])])
+    const data = expectOk(
+      applyMatching(editor, {
+        where: { blockType: "paragraph" },
+        set: {
+          blockColor: { kind: "background", name: "blue" },
+          turnInto: { type: "columnLayout" },
+        },
+      }),
+    )
+    expect(data.count).toBe(1)
+    expect(data.changedBlockIds).toEqual(["p1"])
+    expect(findBlock(editor, "p1")!.attrs.backgroundColor).toBe("blue")
+    expect(findBlock(editor, "p1")!.type.name).toBe("paragraph")
+  })
+
   it("reverts a bulk turnInto with ONE undo (single transaction, block-kind)", () => {
     const editor = editorWith([
       para("p1", [text("Alpha")]),
@@ -645,5 +693,28 @@ describe("applyMatching — scope and gates", () => {
     editor.setEditable(false)
     const err = expectErr(applyMatching(editor, { where: { mark: "code" }, set: { mark: { type: "bold" } } }))
     expect(err.code).toBe("not-editable")
+  })
+
+  it("does not inflate count for a matching range on an id-less block (never applied)", () => {
+    // An id-less body block is never written to `perBlock` (nothing to key
+    // `changedBlockIds` on), so `total` must not count its ranges either —
+    // otherwise `count` overstates ranges the transaction never touches.
+    // BlockId's appendTransaction plugin backfills ids on every DISPATCHED
+    // transaction, so an id-less committed block is constructed here by
+    // installing an EditorState directly (bypassing dispatch, and thus the
+    // plugin) rather than through the public content-setting commands.
+    const editor = editorWith([para("p", [text("x")])])
+    const schema = editor.schema
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", { depth: 0 }, [schema.text("hi", [schema.mark("code")])]),
+    ])
+    editor.view.updateState(EditorState.create({ schema, doc }))
+    expect(editor.state.doc.firstChild!.attrs.id).toBeFalsy()
+
+    const data = expectOk(
+      applyMatching(editor, { where: { mark: "code" }, set: { mark: { type: "bold" } } }),
+    )
+    expect(data.count).toBe(0)
+    expect(data.changedBlockIds).toEqual([])
   })
 })

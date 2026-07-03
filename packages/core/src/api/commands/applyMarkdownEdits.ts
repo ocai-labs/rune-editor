@@ -177,9 +177,14 @@ function applyOneEdit(
     if (matches.length === 0) continue
     if (matches.length > 1) {
       const blockIds = [...new Set(matches.map((m) => m.cand.blockId))]
+      // A blockId was already given: the candidate pool is already scoped to
+      // that one block, so "pass a blockId" is misleading — only quoting more
+      // context can disambiguate further.
+      const advice =
+        blockId !== undefined ? "quote more surrounding context" : "pass a blockId or quote more context"
       return runeCommandError(
         "ambiguous-match",
-        `Edit ${index}: oldStr matches ${matches.length} locations across ${blockIds.length} block(s); pass a blockId or quote more context.`,
+        `Edit ${index}: oldStr matches ${matches.length} locations across ${blockIds.length} block(s); ${advice}.`,
         { editIndex: index, oldStr, blockIds },
       )
     }
@@ -240,10 +245,27 @@ function applyMatch(
   // markdown prefix like `- ` or `# ` survives) is not empty here and falls
   // through to the normal re-parse below, which reproduces the block from its
   // surviving syntax.
+  //
+  // Gated on `isTextblock`: a container's content expression (e.g. table's
+  // `tableRow+`) rejects `null` content outright, so `create` would either
+  // throw or (via `replaceWith`) leave PM to drop the whole node as
+  // content-invalid — silent data loss reported as ok:true. Containers refuse
+  // directly here (rather than falling through to the re-parse below): an
+  // empty markdown fragment doesn't re-parse to NO blocks — PM's DOMParser
+  // fills the doc schema's required `block+` content with a synthesized empty
+  // paragraph, which would otherwise hit the "different type" structural-swap
+  // branch and silently replace the container with that empty paragraph.
   if (editedStripped.trim() === "") {
-    const cleared = node.type.create(node.attrs, null, node.marks)
-    tr.replaceWith(pos, pos + node.nodeSize, cleared)
-    return runeCommandOk({ blockId })
+    if (node.isTextblock) {
+      const cleared = node.type.create(node.attrs, null, node.marks)
+      tr.replaceWith(pos, pos + node.nodeSize, cleared)
+      return runeCommandOk({ blockId })
+    }
+    return runeCommandError(
+      "invalid-input",
+      `Edit ${index}: newStr produced no block content.`,
+      { editIndex: index, blockId },
+    )
   }
 
   const resultBlocks = parseBlocks(editedStripped, schema)
@@ -350,17 +372,28 @@ interface TierOpts {
   smartQuotes: boolean
   caseFold: boolean
   trim: boolean
+  /** Compose Unicode-canonically-equivalent sequences (NFD → NFC) so decomposed
+   * text (e.g. macOS's "e" + combining acute accent) matches its precomposed
+   * spelling and vice versa. See `normalizeWithMap`. */
+  canonicalize: boolean
 }
 
 // Cumulative loosening: each tier adds one relaxation on top of the previous.
-// 1 exact · 2 collapse whitespace runs (JS \s, so NBSP & other Unicode spaces
-// fold here too) · 3 + smart quotes · 4 + trim & case-fold (last resort).
+// 1 exact · 2 + Unicode canonical equivalence (NFD→NFC composition — the two
+// spellings are the same text, not a relaxation of it, so it sits right after
+// exact) · 3 + collapse whitespace runs (JS \s, so NBSP & other Unicode spaces
+// fold here too) · 4 + smart quotes · 5 + trim & case-fold (last resort).
 const TIERS: readonly TierOpts[] = [
-  { collapseWs: false, smartQuotes: false, caseFold: false, trim: false },
-  { collapseWs: true, smartQuotes: false, caseFold: false, trim: false },
-  { collapseWs: true, smartQuotes: true, caseFold: false, trim: false },
-  { collapseWs: true, smartQuotes: true, caseFold: true, trim: true },
+  { collapseWs: false, smartQuotes: false, caseFold: false, trim: false, canonicalize: false },
+  { collapseWs: false, smartQuotes: false, caseFold: false, trim: false, canonicalize: true },
+  { collapseWs: true, smartQuotes: false, caseFold: false, trim: false, canonicalize: true },
+  { collapseWs: true, smartQuotes: true, caseFold: false, trim: false, canonicalize: true },
+  { collapseWs: true, smartQuotes: true, caseFold: true, trim: true, canonicalize: true },
 ]
+
+/** Unicode general category M (combining marks) — e.g. U+0301 COMBINING ACUTE
+ * ACCENT, the second half of a decomposed "e" + accent pair. */
+const COMBINING_MARK = /\p{M}/u
 
 function foldSmartQuote(ch: string): string {
   switch (ch) {
@@ -404,6 +437,25 @@ function normalizeWithMap(
       continue
     }
     lastWasCollapsedSpace = false
+    if (opts.canonicalize && chars.length > 0 && COMBINING_MARK.test(ch)) {
+      // Compose onto the PREVIOUS output char via NFC — decomposed input (a
+      // base char immediately followed by one or more combining marks)
+      // collapses to its precomposed spelling, so NFC and NFD text match.
+      // When it composes (e+◌́ → é) the marks fold into the ONE output char
+      // at the base's original index, like `collapseWs`'s space-run folding
+      // above. But when NO precomposed form exists (q+◌́, Arabic harakat,
+      // Hebrew niqqud, emoji+VS16 — U+FE0F is \p{M}) NFC returns MULTIPLE
+      // code units, and `map` is indexed by `norm`'s UTF-16 offsets — so
+      // each unit past the first needs its own chars/map slot or every
+      // match at/after this cluster reads a shifted source index.
+      const composed = (chars[chars.length - 1]! + ch).normalize("NFC")
+      chars[chars.length - 1] = composed[0]!
+      for (let k = 1; k < composed.length; k++) {
+        chars.push(composed[k]!)
+        map.push(i)
+      }
+      continue
+    }
     if (opts.smartQuotes) ch = foldSmartQuote(ch)
     if (opts.caseFold) ch = ch.toLowerCase()
     // toLowerCase can widen a char (rare); map every output char to source `i`.

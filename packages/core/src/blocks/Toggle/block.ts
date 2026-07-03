@@ -256,6 +256,6 @@ export const Toggle = createBlockSpec({
 // flattener in `flatten.ts` remains internal to the clipboard pipeline.
 export { ToggleBodyPlugin, toggleBodyKey } from "./plugin"
 export type { ToggleBodyOptions } from "./plugin"
-export { findCollapsedToggleContaining, toggleBodyRange } from "./range"
+export { findCollapsedToggleContaining, toggleBodyRange, expandRangeOverToggleBodies } from "./range"
 export type { CollapsedToggleContainingResult } from "./range"
 export { expandCollapsedToggles } from "./expandSlice"

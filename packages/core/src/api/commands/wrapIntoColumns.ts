@@ -42,15 +42,6 @@ import type { WrapIntoColumnsTarget } from "../types"
 //
 // One transaction, `addToHistory: true` (the default) — wrap/add + the F2
 // emptied-source-column removal undo as ONE step.
-//
-// NOTE on the move core: the dragged run is removed via `removeMoveSource`
-// (the move core's removal half, which owns the F2 column-removal/unwrap
-// machinery), but the insert half deliberately does NOT go through
-// `executeMoveSlice`: that core maps `dest.insertPos` through the WHOLE
-// `tr.mapping`, so it can only be the FIRST doc-mutating op of a tr — and the
-// wrap/add destination is a surface that does not exist before this command
-// creates it. Constructing the layout/column node with the moved content and
-// landing it in one `replaceWith`/`insert` keeps the tr atomic instead.
 
 export type ResolvedWrapIntoColumns =
   | {
@@ -224,6 +215,12 @@ function applyWrap(
   const runNodes = surfaceChildrenInRange(tr.doc, r.run)
   if (runNodes.length === 0) return false
 
+  // Chain-safety (task #17): `r.targetPos`/`r.targetTo` are resolved against
+  // `state.doc`, which under `editor.chain()` IS the live `tr.doc` — so they
+  // must map through only the steps THIS call adds below, not the whole
+  // `tr.mapping` (which would double-count prior-chain steps).
+  const mapFrom = tr.mapping.maps.length
+
   // Move-core removal half: deletes [from,to), or — F2 — removes the emptied
   // source column / unwraps its layout ("content stays put").
   removeMoveSource(tr, { from: r.run.from, to: r.run.to }, r.emptiedSourceColumn)
@@ -236,8 +233,8 @@ function applyWrap(
   // today via resolveWrapIntoColumns (the target is a root block outside the
   // run, which no removal/unwrap path can displace), but the hardening is
   // required posture — same as moveBlocks' throwaway-tr probe.
-  const mappedTargetPos = tr.mapping.map(r.targetPos, -1)
-  const mappedTargetTo = tr.mapping.map(r.targetTo, -1)
+  const mappedTargetPos = tr.mapping.slice(mapFrom).map(r.targetPos, -1)
+  const mappedTargetTo = tr.mapping.slice(mapFrom).map(r.targetTo, -1)
   const targetNode = tr.doc.nodeAt(mappedTargetPos)
   if (!targetNode || targetNode.attrs.id !== r.targetId) {
     tr.setMeta("preventDispatch", true)
@@ -284,13 +281,18 @@ function applyAddColumnExternal(
   const runNodes = surfaceChildrenInRange(tr.doc, r.run)
   if (runNodes.length === 0) return false
 
+  // Chain-safety (task #17): see the matching note in `applyWrap` — `r.layoutPos`
+  // is resolved against `state.doc` (== live `tr.doc` under `editor.chain()`),
+  // so it maps through only this call's own steps.
+  const mapFrom = tr.mapping.maps.length
+
   removeMoveSource(tr, { from: r.run.from, to: r.run.to }, r.emptiedSourceColumn)
 
   // Post-removal type + identity recheck (symmetric with applyWrap's). See
   // the comment there: the tr has already mutated, so a failure must set
   // `preventDispatch` or Tiptap's shared-tr dispatch ships the deletion alone.
   // Unreachable today via resolveWrapIntoColumns.
-  const mappedLayoutPos = tr.mapping.map(r.layoutPos, -1)
+  const mappedLayoutPos = tr.mapping.slice(mapFrom).map(r.layoutPos, -1)
   const layoutNow = tr.doc.nodeAt(mappedLayoutPos)
   if (
     !layoutNow ||

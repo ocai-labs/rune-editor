@@ -95,6 +95,20 @@ export class MultiBlockSelection extends Selection {
       headBlockIndex = Math.max(minSelectable, headBlockIndex)
     }
 
+    // Upper clamp — the other half of this being the single enforcement
+    // point. A caller passing an index `>= childCount` (an off-by-one, or a
+    // stale index after the doc shrank underneath it) previously walked
+    // straight into `parent.child(i)` below and threw a RangeError. Clamping
+    // both boundaries keeps `loIdx <= hiIdx` automatically (each is derived
+    // from Math.min/Math.max of two already-clamped values), so no separate
+    // sanity check is needed. A genuinely empty surface (`childCount === 0`)
+    // has no valid index at all — that precondition belongs to the caller
+    // (every present call site checks `firstSelectableIndex(doc) < N` first)
+    // and is unchanged by this clamp.
+    const maxIdx = Math.max(0, parent.childCount - 1)
+    anchorBlockIndex = Math.min(maxIdx, anchorBlockIndex)
+    headBlockIndex = Math.min(maxIdx, headBlockIndex)
+
     const forward = headBlockIndex >= anchorBlockIndex
     const loIdx = Math.min(anchorBlockIndex, headBlockIndex)
     const hiIdx = Math.max(anchorBlockIndex, headBlockIndex)

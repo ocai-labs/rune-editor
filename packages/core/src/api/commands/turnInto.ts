@@ -87,6 +87,13 @@ export interface ApplyTurnIntoResult {
   rejected: number
 }
 
+/**
+ * Chain-safety (task #17): `sources[].pos` must be valid against `tr.doc` AT
+ * ENTRY — the `mapFrom` invariant. Under `editor.chain()`, `state.doc` IS the
+ * live `tr.doc` (already reflecting prior chain steps), so a caller resolving
+ * sources from `state.doc` satisfies this for free; positions must NOT be
+ * pre-mapped through a mapping the caller built itself.
+ */
 export function applyTurnIntoTr(
   editor: Editor,
   tr: Transaction,
@@ -99,9 +106,10 @@ export function applyTurnIntoTr(
   let accepted = 0
   let rejected = 0
   let firstAcceptedPos: number | null = null
+  const mapFrom = tr.mapping.maps.length
 
   for (const source of sources) {
-    const currentPos = tr.mapping.map(source.pos)
+    const currentPos = tr.mapping.slice(mapFrom).map(source.pos)
     const currentNode = tr.doc.nodeAt(currentPos)
     if (!currentNode || currentNode.attrs.id !== source.node.attrs.id) {
       rejected++

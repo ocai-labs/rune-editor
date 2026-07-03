@@ -264,6 +264,24 @@ describe("editor.commands.turnInto", () => {
     expect(block.attrs.latex).toBe("\\frac{1}{2}")
   })
 
+  it("converts an atom source to a different atom target instead of throwing (image -> divider)", () => {
+    // Regression: turnIntoAdapters had no "atom->atom" adapter registered,
+    // so canTurnInto (which only rejects container sources) let an atom
+    // source through and getAdapter threw uncaught.
+    const editor = createTestEditor()
+    editor.commands.setContent([
+      { type: "image", attrs: { id: "img1", src: "https://example.com/x.png" } },
+    ])
+    let ok = false
+    expect(() => {
+      ok = editor.commands.turnInto("img1", { type: "divider" })
+    }).not.toThrow()
+    expect(ok).toBe(true)
+    const block = editor.state.doc.firstChild!
+    expect(block.type.name).toBe("divider")
+    expect(block.attrs.id).toBe("img1")
+  })
+
   it("turnInto to equationBlock honors explicit latex in target.props over source extraction", () => {
     const editor = createTestEditor()
     editor.commands.setContent([

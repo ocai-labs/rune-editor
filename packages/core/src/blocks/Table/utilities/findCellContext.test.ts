@@ -10,7 +10,7 @@ import Document from "@tiptap/extension-document"
 import Text from "@tiptap/extension-text"
 import { Paragraph } from "../../Paragraph/block"
 import { Table } from "../block"
-import { TableMap } from "prosemirror-tables"
+import { TableMap } from "@tiptap/pm/tables"
 import { findCellBefore, findCellContext } from "./findCellContext"
 
 let editor: Editor | null = null

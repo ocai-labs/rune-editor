@@ -326,6 +326,18 @@ describe("serializeInlineContent", () => {
     ).toBe("energy is $E = mc^2$")
   })
 
+  it("serializes hardBreak as a bare <br> (no longer dropped/glued)", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          { type: "text", text: "line1" },
+          { type: "hardBreak" },
+          { type: "text", text: "line2" },
+        ],
+      }),
+    ).toBe("line1<br>line2")
+  })
+
   it("returns empty string for empty content", () => {
     expect(inlineFromEditor({})).toBe("")
   })

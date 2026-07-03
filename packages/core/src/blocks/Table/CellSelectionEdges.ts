@@ -7,7 +7,7 @@
 import { Extension } from "@tiptap/core"
 import { Decoration, DecorationSet } from "@tiptap/pm/view"
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state"
-import { CellSelection, TableMap } from "prosemirror-tables"
+import { CellSelection, TableMap } from "@tiptap/pm/tables"
 import { findCellContext } from "./utilities/findCellContext"
 import { gestureKey } from "../../extensions/shared/gesture-state"
 

@@ -17,7 +17,7 @@ import {
   PILL_DROPDOWN_META,
   cellHandlePillsKey,
 } from "./CellHandlePills"
-import { CellSelection, TableMap } from "prosemirror-tables"
+import { CellSelection, TableMap } from "@tiptap/pm/tables"
 import { gestureKey } from "../../extensions/shared/gesture-state"
 
 let editor: Editor | null = null

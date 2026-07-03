@@ -502,6 +502,58 @@ export function surfaceChildrenInRange(
 }
 
 /**
+ * Resolve the position range of a body block's DEPTH SUBTREE — the run of
+ * subsequent sibling blocks ON THE BLOCK'S OWN SURFACE whose `depth` attr is
+ * strictly greater than the block's own, terminating at the first sibling
+ * whose `depth <= block.depth`, or the surface's boundary. Generic,
+ * type-agnostic counterpart of `Toggle/range.ts`'s `toggleBodyRange`: flat-
+ * schema indentation is a `depth` attribute on ANY body block, not a toggle-
+ * only concept, and the walk is identical — this is the same "consecutive
+ * following siblings with depth > mine" rule `wrapIntoColumns`'s `targetTo`
+ * widening and `list-shared/dragChainRange.ts` also implement (the latter
+ * additionally gates on list-type siblings; this one does not — a delete or
+ * move must carry a depth-subtree regardless of the children's block type,
+ * per live-Notion research: internal design notes).
+ *
+ * `pos` must be the position immediately before the block (the "before"
+ * position). Returns an empty range at `pos + node.nodeSize` for a bogus pos.
+ */
+export function depthSubtreeRange(
+  doc: ProseMirrorNode,
+  pos: number,
+): { from: number; to: number; isEmpty: boolean } {
+  const node = doc.nodeAt(pos)
+  if (!node) return { from: pos, to: pos, isEmpty: true }
+  const parentDepth = typeof node.attrs.depth === "number" ? node.attrs.depth : 0
+  const from = pos + node.nodeSize
+
+  const surface = surfaceAt(doc, pos)
+  if (!surface) return { from, to: from, isEmpty: true }
+
+  // Find the block's own index on its surface by walking to `pos`.
+  let offset = surface.start
+  let selfIdx = -1
+  for (let i = 0; i < surface.node.childCount; i++) {
+    if (offset === pos) {
+      selfIdx = i
+      break
+    }
+    offset += surface.node.child(i).nodeSize
+  }
+  if (selfIdx === -1) return { from, to: from, isEmpty: true }
+
+  let widened = 0
+  for (let i = selfIdx + 1; i < surface.node.childCount; i++) {
+    const sib = surface.node.child(i)
+    const sibDepth = typeof sib.attrs.depth === "number" ? sib.attrs.depth : 0
+    if (sibDepth <= parentDepth) break
+    widened += sib.nodeSize
+  }
+  const to = from + widened
+  return { from, to, isEmpty: from === to }
+}
+
+/**
  * Resolve a `column` node by its (`col_`-prefixed) id. Read-only, generic:
  * scans the doc for a `column` whose `id` attr matches, returning its position
  * + node, or `null`. The column-target commands (`insertBlocks` /

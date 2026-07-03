@@ -70,6 +70,31 @@ describe("MultiBlockSelection — create + getters", () => {
     expect(sel.blockNodes).toHaveLength(6)
     editor.destroy()
   })
+
+  // `create` is documented as the single enforcement point for block-selection
+  // index bounds (the `minSelectable` lower clamp lives here) — but only the
+  // lower bound is actually clamped. A caller passing `hi >= childCount`
+  // (an off-by-one from a caller, or a stale index after a doc shrink) walks
+  // straight into `parent.child(hi)` at the `afterHi` loop and throws.
+  it("BUG regression: hi >= childCount is clamped, not a RangeError", () => {
+    const editor = makeEditor() // 6 blocks, valid indices 0..5
+    let sel: MultiBlockSelection | undefined
+    expect(() => {
+      sel = MultiBlockSelection.create(editor.state.doc, 0, 6)
+    }).not.toThrow()
+    expect(sel!.blockIndices).toEqual([0, 5])
+    editor.destroy()
+  })
+
+  it("BUG regression: both indices beyond childCount clamp to the last block", () => {
+    const editor = makeEditor() // 6 blocks, valid indices 0..5
+    let sel: MultiBlockSelection | undefined
+    expect(() => {
+      sel = MultiBlockSelection.create(editor.state.doc, 9, 12)
+    }).not.toThrow()
+    expect(sel!.blockIndices).toEqual([5, 5])
+    editor.destroy()
+  })
 })
 
 describe("MultiBlockSelection — eq / map / content / toJSON", () => {

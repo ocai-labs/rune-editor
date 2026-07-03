@@ -5,7 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { RawCommands } from "@tiptap/core"
-import { TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state"
+import { Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state"
 import { nanoid } from "nanoid"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex } from "./selectable"
@@ -16,7 +16,9 @@ import {
   resolveBodyBlockById,
   surfaceBlockTextBoundsAtPos,
   surfaceChildrenAt,
+  surfaceChildrenInRange,
 } from "../../schema/bodySurface"
+import { expandRangeOverToggleBodies } from "../../blocks/Toggle/range"
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -215,7 +217,13 @@ export function blockSelectionCommands(): Partial<RawCommands> {
           // block's text (column-local or root). The old root-only
           // topLevelBlockTextBounds(doc, lo) landed the caret on the wrong ROOT
           // block for a column-local MBS — same fix as the Enter key.
-          tr.setSelection(TextSelection.create(state.doc, sel.firstBlockTextEnd))
+          //
+          // `firstBlockTextEnd` assumes a TEXTBLOCK first block; a divider or
+          // columnLayout first block makes it a non-text position, and a raw
+          // TextSelection.create there builds a dead caret (PM warns, doesn't
+          // throw) instead of failing loudly. Selection.near finds the nearest
+          // valid cursor position instead — same guard as the Enter keymap.
+          tr.setSelection(Selection.near(state.doc.resolve(sel.firstBlockTextEnd), 1))
           dispatch(tr)
         }
         return true
@@ -232,7 +240,12 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         // column surface; column normalization backfills the E2 paragraph and
         // remaps the selection). `lo` is surface-local in both cases.
         const rootSurface = sel.surface === state.doc
-        tr.delete(sel.from, sel.to)
+        // Widen over any collapsed toggle's hidden body — otherwise deleting
+        // just the (visible) toggle title orphans its body as loose blocks.
+        const { to } = expandRangeOverToggleBodies(state.doc, sel.from, sel.to, {
+          collapsedOnly: true,
+        })
+        tr.delete(sel.from, to)
         setSelectionAfterDelete(tr, state.schema, lo, rootSurface)
         dispatch(tr)
         return true
@@ -243,31 +256,43 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         const sel = state.selection
         if (sel instanceof MultiBlockSelection) {
           if (!dispatch) return true
-          const [lo, hi] = sel.blockIndices
+          const [lo] = sel.blockIndices
+          // Widen over EVERY toggle's owned body in the selection — collapsed
+          // OR expanded. Reparenting corrupts an expanded toggle's body too:
+          // inserting the clone at the (unwidened) sel.to boundary lands it
+          // BETWEEN the toggle and its body, and toggleBodyRange reassigns
+          // the body to the clone on the next read either way.
+          const widened = expandRangeOverToggleBodies(state.doc, sel.from, sel.to, {
+            collapsedOnly: false,
+          })
+          // Surface-aware: gathers the widened range's nodes on the MBS's OWN
+          // surface (root OR a column). The old `sel.blockNodes` stopped at
+          // the visible selection boundary, leaving a toggle's hidden body
+          // (higher surface index, un-selected) out of the clone set.
+          const surfaceNodes = surfaceChildrenInRange(state.doc, {
+            from: sel.from,
+            to: widened.to,
+          })
           // Pre-stamp duplicates with fresh ids. If we left collisions for
           // BlockId's appendTransaction to clean up, its setNodeMarkup steps
           // would land at our newLo's positionBefore — DEL_SIDE on that
           // boundary collapses MultiBlockSelection.map back to a TextSelection
           // via Selection.near. Stamping here keeps BlockId out of the way
           // and the post-dispatch MBS intact.
-          //
-          // Surface-aware: `sel.blockNodes` are the selected nodes on the MBS's
-          // OWN surface (root OR a column). The old `state.doc.child(i)` by
-          // surface-LOCAL index cloned the wrong ROOT block for a column-local
-          // MBS and grafted it into the column.
-          const nodes = sel.blockNodes.map((src) =>
+          const nodes = surfaceNodes.map((src) =>
             src.type.create({ ...src.attrs, id: nanoid(8) }, src.content, src.marks),
           )
-          const insertAt = sel.to
+          const insertAt = widened.to
           tr.insert(insertAt, nodes)
-          // The copies occupy the next (hi-lo+1) slots in the SAME surface.
-          // Resolve that surface in the mapped doc so the restored MBS targets
-          // the copies, not root blocks at those indices.
+          // The copies occupy the next `nodes.length` slots in the SAME
+          // surface, right after the widened original run. Resolve that
+          // surface in the mapped doc so the restored MBS targets the
+          // copies, not root blocks at those indices.
           const surface = surfaceChildrenAt(tr.doc, insertAt)
           const $surface =
             surface && surface.pos !== -1 ? tr.doc.resolve(surface.start) : undefined
-          const newLo = hi + 1
-          const newHi = hi + 1 + (hi - lo)
+          const newLo = lo + nodes.length
+          const newHi = newLo + nodes.length - 1
           tr.setSelection(MultiBlockSelection.create(tr.doc, newLo, newHi, $surface))
           dispatch(tr)
           return true
@@ -278,17 +303,34 @@ export function blockSelectionCommands(): Partial<RawCommands> {
           // root-only `$pos.index(0)` resolved an in-column caret to the
           // enclosing columnLayout and duplicated the WHOLE layout. Resolve
           // the caret's containing block on its own surface — the duplicate
-          // lands right after it, inside the same column. The copy keeps the
-          // source id; BlockId's backfill re-stamps the collision (a caret
-          // restore is immune to the MBS-collapse hazard the MBS branch
-          // pre-stamps for).
+          // lands right after it, inside the same column.
           const bounds = surfaceBlockTextBoundsAtPos(state.doc, sel.from)
           if (!bounds) return false
-          const block = bounds.node
-          const insertAt = bounds.from - 1 + block.nodeSize
+          const blockFrom = bounds.from - 1
+          const blockTo = blockFrom + bounds.node.nodeSize
           const offsetInBlock = sel.from - bounds.from
-          tr.insert(insertAt, block)
-          // Caret in the duplicate at the same intra-block offset.
+          // Widen the same way as the MBS branch: a toggle under the caret
+          // (collapsed or expanded) must duplicate together with its body,
+          // never split from it.
+          const widened = expandRangeOverToggleBodies(state.doc, blockFrom, blockTo, {
+            collapsedOnly: false,
+          })
+          const surfaceNodes = surfaceChildrenInRange(state.doc, {
+            from: blockFrom,
+            to: widened.to,
+          })
+          // Fresh-stamp every clone (mirrors the MBS branch) — duplicating a
+          // toggle's body alongside it means more than one node can collide
+          // with its original now, not just the single-node case BlockId's
+          // backfill used to handle alone.
+          const nodes = surfaceNodes.map((src) =>
+            src.type.create({ ...src.attrs, id: nanoid(8) }, src.content, src.marks),
+          )
+          const insertAt = widened.to
+          tr.insert(insertAt, nodes)
+          // Caret in the duplicate of the caret's own block — always the
+          // FIRST node in `nodes` (surfaceChildrenInRange preserves document
+          // order) — at the same intra-block offset.
           const newCaret = insertAt + 1 + offsetInBlock
           tr.setSelection(TextSelection.create(tr.doc, newCaret))
           dispatch(tr)

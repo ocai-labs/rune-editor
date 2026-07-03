@@ -5,8 +5,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 /**
- * Flatten <details>/<Notion-toggle> subtrees in `doc` IN PLACE into a
- * flat sequence of top-level block-level elements:
+ * Flatten <details> subtrees in `doc` IN PLACE into a flat sequence of
+ * top-level block-level elements:
  *   - the title element (<p> or <hN>) tagged with `data-rune-toggle-title="1"`,
  *     `data-rune-toggle-level`, `data-rune-toggle-expanded`
  *   - the body's block-level children, each tagged with
@@ -19,6 +19,23 @@
  * because both layers consume `data-rune-paste-depth` and the list
  * flattener walks `<ul>/<ol>` only — it ignores body blocks introduced
  * by us.
+ *
+ * `<details>` (standards-based — GitHub and others) is the ONLY shape
+ * detected here. A `.notion-selectable.notion-header-block` /
+ * `.notion-toggle` heuristic used to also be matched, on the theory that it
+ * caught Notion's toggle markup, but a live capture of REAL Notion clipboard
+ * HTML (desktop app AND web, see
+ * internal design notes
+ * #4) showed it is clean semantic HTML with ZERO `.notion-*` classes — a
+ * Notion toggle copies as `<ul><li><p>summary</p><p>body</p></li></ul>`, and
+ * even a toggle-HEADING copies as a bare `<hN>` indistinguishable from a
+ * plain heading (Notion itself discards the toggle-ness on copy). The
+ * `.notion-*` selector was therefore dead against any real Notion paste, and
+ * the only thing it could do was mis-toggle-ify a plain heading from some
+ * OTHER, non-Notion source that happened to emit those class names with no
+ * disclosure/aria signal. Removed; if a "this HTML came from Notion" signal
+ * is ever needed, key on the trailing `<!-- notionvc: … -->` comment, never
+ * on `.notion-*` classes.
  */
 export function transformToggleHTML(doc: Document): void {
   // Walk outermost-first; recursion happens inside `flattenOne`.
@@ -30,37 +47,10 @@ export function transformToggleHTML(doc: Document): void {
 }
 
 function pickRootToggle(doc: Document): HTMLElement | null {
-  // <details> not inside a notion-toggle wrapper. Document order from
-  // querySelectorAll already guarantees outermost-first; nested <details>
-  // are handled by flattenOne's recursion at the body-element loop.
-  const detailsCandidates = Array.from(doc.querySelectorAll("details")) as HTMLDetailsElement[]
-  for (const d of detailsCandidates) {
-    if (d.closest(notionToggleSelector()) == null) return d
-  }
-  // Notion toggle: header-block with aria-expanded inside
-  const notionCandidates = Array.from(
-    doc.querySelectorAll<HTMLElement>(notionToggleSelector()),
-  )
-  for (const n of notionCandidates) {
-    if (!isInsideNotionToggle(n)) return n
-  }
-  return null
-}
-
-function notionToggleSelector(): string {
-  return [
-    ".notion-selectable.notion-header-block",
-    ".notion-toggle",
-  ].join(", ")
-}
-
-function isInsideNotionToggle(el: HTMLElement): boolean {
-  let p = el.parentElement
-  while (p) {
-    if (p.matches(notionToggleSelector())) return true
-    p = p.parentElement
-  }
-  return false
+  // Document order from querySelector already guarantees outermost-first;
+  // nested <details> are handled by flattenOne's recursion at the
+  // body-element loop.
+  return doc.querySelector("details")
 }
 
 function flattenOne(doc: Document, root: HTMLElement, depthOffset: number): void {
@@ -75,7 +65,7 @@ function flattenOne(doc: Document, root: HTMLElement, depthOffset: number): void
 
   for (const body of bodyEls) {
     // If body is itself a toggle, flatten it inline with depth+1.
-    if (body.matches("details") || body.matches(notionToggleSelector())) {
+    if (body.matches("details")) {
       const stash = doc.createElement("div")
       doc.body.appendChild(stash)
       stash.appendChild(body)
@@ -99,64 +89,32 @@ interface Extracted {
   bodyEls: HTMLElement[]
 }
 
+// `root` is always a `<details>` here — `pickRootToggle` and `flattenOne`'s
+// recursion (`body.matches("details")`) never hand this anything else, now
+// that the Notion-class heuristic is gone.
 function extractTitleAndBody(doc: Document, root: HTMLElement): Extracted {
   // <details>: summary first child, others are body.
-  if (root.tagName.toLowerCase() === "details") {
-    const summary = root.querySelector(":scope > summary")
-    const innerHead = summary?.querySelector("h1, h2, h3, h4, h5, h6")
-    const titleEl =
-      innerHead != null
-        ? (doc.importNode(innerHead, true) as HTMLElement)
-        : (() => {
-            const p = doc.createElement("p")
-            p.innerHTML = summary?.innerHTML ?? ""
-            return p
-          })()
-    const level = headingLevelFromTag(titleEl.tagName)
-    if (level === 0 && titleEl.tagName !== "P") {
-      const p = doc.createElement("p")
-      p.innerHTML = titleEl.innerHTML
-      titleEl.replaceWith(p)
-    }
-    const expanded = (root as HTMLDetailsElement).open
-    const bodyEls: HTMLElement[] = []
-    for (const child of Array.from(root.children)) {
-      if (child === summary) continue
-      if (child instanceof HTMLElement) bodyEls.push(child)
-    }
-    return { titleEl, level, expanded, bodyEls }
-  }
-  // Notion variant.
-  const head =
-    root.querySelector("h1, h2, h3, h4, h5, h6") ?? root.querySelector("p, span")
-  let titleEl: HTMLElement
-  if (head && /^H[1-6]$/.test(head.tagName)) {
-    titleEl = doc.importNode(head, true) as HTMLElement
-  } else {
-    titleEl = doc.createElement("p")
-    titleEl.innerHTML = head?.innerHTML ?? ""
-  }
+  const summary = root.querySelector(":scope > summary")
+  const innerHead = summary?.querySelector("h1, h2, h3, h4, h5, h6")
+  const titleEl =
+    innerHead != null
+      ? (doc.importNode(innerHead, true) as HTMLElement)
+      : (() => {
+          const p = doc.createElement("p")
+          p.innerHTML = summary?.innerHTML ?? ""
+          return p
+        })()
   const level = headingLevelFromTag(titleEl.tagName)
-  const expanded =
-    root.querySelector("[aria-expanded='true']") != null ||
-    root.getAttribute("aria-expanded") === "true"
+  if (level === 0 && titleEl.tagName !== "P") {
+    const p = doc.createElement("p")
+    p.innerHTML = titleEl.innerHTML
+    titleEl.replaceWith(p)
+  }
+  const expanded = (root as HTMLDetailsElement).open
   const bodyEls: HTMLElement[] = []
-  // Heuristic: any element inside the toggle that contains block-level
-  // children other than the title is the body container. We collect
-  // direct block-level descendants of those containers.
-  const bodyContainer =
-    // First [id] descendant that isn't a DIRECT child of root. Written as an
-    // explicit walk rather than `[id]:not(:scope > [id])` — `:scope` inside
-    // `:not()` is rejected by some selector engines (e.g. nwsapi/jsdom).
-    Array.from(root.querySelectorAll("[id]")).find((el) => el.parentElement !== root) ??
-    Array.from(root.querySelectorAll("div")).reverse().find((d) => {
-      return Array.from(d.children).some((c) => /^(P|UL|OL|H[1-6]|PRE|TABLE|DIV|DETAILS)$/.test(c.tagName))
-    }) ?? null
-  if (bodyContainer) {
-    for (const child of Array.from(bodyContainer.children)) {
-      if (child === head) continue
-      if (child instanceof HTMLElement) bodyEls.push(child)
-    }
+  for (const child of Array.from(root.children)) {
+    if (child === summary) continue
+    if (child instanceof HTMLElement) bodyEls.push(child)
   }
   return { titleEl, level, expanded, bodyEls }
 }

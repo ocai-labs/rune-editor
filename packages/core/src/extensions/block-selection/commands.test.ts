@@ -14,6 +14,7 @@ import { Paragraph, Heading, Table } from "../../blocks"
 import { BlockId } from "../block-id"
 import { BlockSelection, blockSelectionKey } from "./index"
 import { MultiBlockSelection } from "./MultiBlockSelection"
+import { createTestEditor } from "../../test-utils/createTestEditor"
 
 function makeEditor(content?: unknown) {
   const element = document.createElement("div")
@@ -105,6 +106,24 @@ describe("commands.clearBlockSelection", () => {
     const ok = editor.commands.clearBlockSelection()
     expect(ok).toBe(false)
     editor.destroy()
+  })
+
+  // Same firstBlockTextEnd hazard as the Enter keymap: the first selected
+  // block being a divider (leaf, no interior text position) hands
+  // TextSelection.create a position outside any textblock — PM warns and
+  // builds a dead caret instead of throwing.
+  it("dead-caret regression: first block is a divider (not a textblock)", () => {
+    const editor = createTestEditor()
+    editor.commands.setContent([
+      { type: "divider" },
+      { type: "paragraph", content: [{ type: "text", text: "after" }] },
+    ] as never)
+    editor.commands.setBlockSelection({ from: 0, to: 0 })
+    const ok = editor.commands.clearBlockSelection()
+    expect(ok).toBe(true)
+    const sel = editor.state.selection
+    expect(sel).toBeInstanceOf(TextSelection)
+    expect(sel.$from.parent.inlineContent).toBe(true)
   })
 })
 

@@ -13,7 +13,7 @@ import { Table } from "./block"
 import { GestureStatePlugin } from "../../extensions/shared/gesture-state"
 import { CellHandlePills } from "./CellHandlePills"
 import { TableExtendButtons } from "./TableExtendButtons"
-import { TableMap } from "prosemirror-tables"
+import { TableMap } from "@tiptap/pm/tables"
 import { findCellContext } from "./utilities/findCellContext"
 import { gestureKey } from "../../extensions/shared/gesture-state"
 

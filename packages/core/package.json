@@ -17,7 +17,11 @@
     "access": "public"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map",
+    "!dist/**/*.test.*",
+    "!dist/**/__tests__/**",
+    "!dist/**/test-utils/**"
   ],
   "scripts": {
     "build": "vite build",
@@ -49,8 +53,7 @@
     "@tiptap/suggestion": "^3.22.4",
     "markdown-it": "^14.2.0",
     "markdown-it-task-lists": "^2.1.1",
-    "nanoid": "^5.1.9",
-    "prosemirror-tables": "^1.6.4"
+    "nanoid": "^5.1.9"
   },
   "license": "MPL-2.0",
   "author": "Ocean AI, LLC <oss@oceanai.so>",

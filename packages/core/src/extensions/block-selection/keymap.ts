@@ -5,7 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { Editor } from "@tiptap/core"
-import { TextSelection } from "@tiptap/pm/state"
+import { Selection, TextSelection } from "@tiptap/pm/state"
 import type { ResolvedPos } from "@tiptap/pm/model"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex, isBlockSelectable } from "./selectable"
@@ -218,10 +218,17 @@ function handleEnter(editor: Editor): boolean {
   const sel = editor.state.selection
   if (!(sel instanceof MultiBlockSelection)) return false
   // Collapse to a caret at the end of the first selected block's text, on the
-  // MBS's own surface (column-local or root).
+  // MBS's own surface (column-local or root). `firstBlockTextEnd` assumes a
+  // TEXTBLOCK first block; when it isn't (a divider — leaf, no interior text
+  // position — or a columnLayout — structural, its content-end boundary isn't
+  // inside a textblock either), a raw `TextSelection.create` there doesn't
+  // throw, it just warns and builds a dead caret with no inline-content
+  // parent, silently swallowing subsequent typing. `Selection.near` finds the
+  // nearest VALID cursor position instead — same guard idiom as
+  // Toggle/plugin.ts's ArrowDown redirect and Divider's moveAcrossDividerRun.
   editor.view.dispatch(
     editor.state.tr.setSelection(
-      TextSelection.create(editor.state.doc, sel.firstBlockTextEnd),
+      Selection.near(editor.state.doc.resolve(sel.firstBlockTextEnd), 1),
     ),
   )
   return true

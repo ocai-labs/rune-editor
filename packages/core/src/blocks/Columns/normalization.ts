@@ -23,6 +23,17 @@ import { normalizeDepthAt } from "../../api/depth"
 // view()+appendTransaction shape so seed content (built via
 // EditorState.create, no transaction) is normalized too.
 //
+// EDITABLE GATE: both the view() seed pass and appendTransaction are gated
+// on the editor being editable (view.editable / editor.isEditable) — mirrors
+// TitleBoundary's guard (blocks/Title/boundary.ts). A read-only editor must
+// display a malformed doc verbatim rather than silently rewriting it on
+// mount; a host that persists getDocument() would otherwise capture
+// structure the user never wrote. Flipping `editable` back on does NOT
+// itself re-run normalization (Tiptap's setEditable/setOptions calls
+// view.updateState with the SAME state — no transaction, so
+// appendTransaction never fires); normalization resumes on the NEXT
+// doc-changing transaction after the flip, same as TitleBoundary.
+//
 // Task 2 rules (both pure):
 //   1. id backfill — every `column` node gets a `col_<nanoid(8)>` id via
 //      the shared structural-id helper (second consumer after block-id).
@@ -398,6 +409,7 @@ export const ColumnsNormalization = Extension.create({
   name: "columnsNormalization",
 
   addProseMirrorPlugins() {
+    const editor = this.editor
     return [
       new Plugin({
         key: new PluginKey("rune-columns-normalization"),
@@ -409,11 +421,23 @@ export const ColumnsNormalization = Extension.create({
         },
         // Seed-content pass (no transaction fires appendTransaction).
         view: (view) => {
-          const tr = normalizeColumns(view.state)
-          if (tr) view.dispatch(tr)
+          // A read-only editor must not author structure. Skip the mount seed
+          // (otherwise displaying a malformed / legacy / hand-authored doc —
+          // a 1-column layout, a nested layout, an empty column, a missing
+          // col id/width — read-only would silently rewrite it, and a host
+          // that later persists getDocument() would capture the injected
+          // structure). Mirrors TitleBoundary's guard (boundary.ts). Once the
+          // editor becomes editable, this pass no longer applies (view()
+          // fires once, at mount) — the appendTransaction guard below picks
+          // normalization back up on the next doc-changing transaction.
+          if (view.editable) {
+            const tr = normalizeColumns(view.state)
+            if (tr) view.dispatch(tr)
+          }
           return {}
         },
         appendTransaction: (transactions, _oldState, newState) => {
+          if (!editor.isEditable) return null
           const docChanged = transactions.some((tr) => tr.docChanged)
           if (!docChanged) return null
           return normalizeColumns(newState)

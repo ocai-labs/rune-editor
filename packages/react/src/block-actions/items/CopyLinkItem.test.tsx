@@ -131,6 +131,28 @@ describe("CopyLinkItem", () => {
     })
   })
 
+  it("fires onCopyLink ok=false when navigator.clipboard is undefined (insecure context)", async () => {
+    const editor = makeEditor()
+    const blockId = firstBlockId(editor)
+    Object.assign(navigator, { clipboard: undefined })
+    const onCopyLink = vi.fn()
+    render(
+      <CopyLinkItem
+        editor={editor}
+        blockId={blockId}
+        mbsBlockCount={1}
+        buildBlockLink={({ blockId }) => `/p?block=${blockId}`}
+        onCopyLink={onCopyLink}
+        onAfterCopy={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy link to block/i }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(onCopyLink).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: false, blockId, url: `/p?block=${blockId}` }),
+    )
+  })
+
   it("does not call clipboard when disabled", async () => {
     const editor = makeEditor()
     const buildBlockLink = vi.fn(({ blockId }: { blockId: string }) => `/p?block=${blockId}`)
