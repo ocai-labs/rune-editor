@@ -1,5 +1,19 @@
 # @ocai/rune-react
 
+## 0.19.0
+
+### Minor Changes
+
+- e003ee1: Blocks inside columns are now first-class across the board. Every feature that resolved blocks by id against the doc root has been migrated to the column-aware `bodySurface` contract: the media popover and the entire media import pipeline (upload/embed write-back, import-state retention, paste-HTML imports, natural-dimension backfill, file-drop targeting), the resize commit (no more silent snap-back inside columns), numbered/bulleted list numbering (per-column restart, no more "0." markers), collapsed-toggle copy, the turn-into menu, `setBlockSelection` by id, and `insertBlocks` `{id, side}` / numeric-boundary targets. Cross-surface drags now rescale `contentWidth` so a resized image keeps its pixel size when moved between root and columns, and the depth-rebase walker reaches blocks dropped into column interiors. New public export: `forEachBodySurface`. A contract test now allowlists the root-only `topLevelBlocks` helpers so this bug class cannot silently return.
+- 31df67c: Production-bug audit: 19 fixes spanning packaging, core, and the AI tools. All `prosemirror-tables` imports now route through `@tiptap/pm/tables`, eliminating the duplicate-ProseMirror hazard that made bugs appear only in downstream installs. Deleting or moving a block by id now carries its depth-subtree — indented children travel with the parent instead of being orphaned (Notion parity), including collapsed-toggle bodies, which also no longer leak on cut or duplicate. Tables: pasted `rowspan`/`colspan` are capped, in-cell line breaks are canonicalized to stacked paragraphs (Shift/Mod-Enter splits; markdown export emits `<br>`), and header-less tables round-trip losslessly. `apply_edits` gains a Unicode-canonical (NFC/NFD) match tier; AI tool failures surface as structured results instead of throwing. Also fixed: paste-above id theft, markdown-paste stray paragraphs, in-column toolbar targeting, and a chain-safety position-mapping bug shared by four commands. Published tarballs are trimmed to runtime files only.
+
+### Patch Changes
+
+- Updated dependencies [6774850]
+- Updated dependencies [e003ee1]
+- Updated dependencies [31df67c]
+  - @ocai/rune-core@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes

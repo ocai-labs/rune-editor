@@ -1,5 +1,21 @@
 # @ocai/rune-core
 
+## 0.19.0
+
+### Minor Changes
+
+- e003ee1: Blocks inside columns are now first-class across the board. Every feature that resolved blocks by id against the doc root has been migrated to the column-aware `bodySurface` contract: the media popover and the entire media import pipeline (upload/embed write-back, import-state retention, paste-HTML imports, natural-dimension backfill, file-drop targeting), the resize commit (no more silent snap-back inside columns), numbered/bulleted list numbering (per-column restart, no more "0." markers), collapsed-toggle copy, the turn-into menu, `setBlockSelection` by id, and `insertBlocks` `{id, side}` / numeric-boundary targets. Cross-surface drags now rescale `contentWidth` so a resized image keeps its pixel size when moved between root and columns, and the depth-rebase walker reaches blocks dropped into column interiors. New public export: `forEachBodySurface`. A contract test now allowlists the root-only `topLevelBlocks` helpers so this bug class cannot silently return.
+- 31df67c: Production-bug audit: 19 fixes spanning packaging, core, and the AI tools. All `prosemirror-tables` imports now route through `@tiptap/pm/tables`, eliminating the duplicate-ProseMirror hazard that made bugs appear only in downstream installs. Deleting or moving a block by id now carries its depth-subtree — indented children travel with the parent instead of being orphaned (Notion parity), including collapsed-toggle bodies, which also no longer leak on cut or duplicate. Tables: pasted `rowspan`/`colspan` are capped, in-cell line breaks are canonicalized to stacked paragraphs (Shift/Mod-Enter splits; markdown export emits `<br>`), and header-less tables round-trip losslessly. `apply_edits` gains a Unicode-canonical (NFC/NFD) match tier; AI tool failures surface as structured results instead of throwing. Also fixed: paste-above id theft, markdown-paste stray paragraphs, in-column toolbar targeting, and a chain-safety position-mapping bug shared by four commands. Published tarballs are trimmed to runtime files only.
+
+### Patch Changes
+
+- 6774850: Four contract fixes from the 2026-07 block-contract audit, each covered by a new regression test:
+
+  - **Column ids survive paste-above.** The Columns normalization id backfill now passes anchored positions (mapped through the transaction's structural steps) to `computeIdPatches`, matching what BlockId already did for body blocks. Previously, pasting a copy of a column layout above the original let the copy steal the original's column ids, silently redirecting any consumer holding a column id (`insertBlocks({ columnId })`, `moveBlocks`, AI tools) to the copy.
+  - **Headless editors get block ids.** The BlockId seed pass moved from a ProseMirror plugin `view()` hook (which never fires for `new Editor({ element: null })` — headless editors attach no PM plugins at all) to `onBeforeCreate`, which pre-patches `options.content` before parsing. Seed content in SSR/CLI/worker editors now gets null ids filled and duplicate ids resolved; already-id'd content is left untouched.
+  - **List blocks round-trip through `getHTML()`.** `bulletList` / `numberedList` / `taskList` now declare parse rules for their own wrapper markup (as Callout/Toggle/Image already did), so re-parsing `getHTML()` output preserves the list type plus `start` and `checked` instead of degrading every item to a plain paragraph.
+  - **Equation wrapper no longer leaks a raw `latex="…"` attribute** in `getHTML()` output; the LaTeX source stays only on the inner `data-latex` attribute.
+
 ## 0.18.0
 
 ### Minor Changes
