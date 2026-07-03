@@ -60,6 +60,80 @@ function fixture() {
   return editor
 }
 
+/**
+ * Fixture: paragraph r1 · columnLayout[ col_a[a1] · col_b[b1] · col_c[c1] ] · r2.
+ * Three single-child columns — selecting the LAST column's entire content
+ * exercises the F2/delete parity ≥2-survivor path (delete the column node,
+ * layout stays put at 2 columns), as opposed to `fixture()`'s 2-column layout
+ * which exercises the <2-survivor unwrap path.
+ *
+ * Seeded via the `content` option (mirrors `reorder.test.ts`'s `twoImages`)
+ * rather than a post-construction `replaceWith` dispatch: this test exercises
+ * `undo()`, and a seed `replaceWith` sits in the SAME history group as the
+ * delete under test (both fire synchronously, no real time between them),
+ * so one undo would revert past the seed too. `content` builds the initial
+ * doc via `EditorState.create` — no transaction, nothing to undo into.
+ */
+function fixture3Col() {
+  return createTestEditor({
+    kit: { suggestionMenus: false },
+    content: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { id: "r1", depth: 0 },
+          content: [{ type: "text", text: "root-1" }],
+        },
+        {
+          type: "columnLayout",
+          attrs: { id: "lay3", depth: 0 },
+          content: [
+            {
+              type: "column",
+              attrs: { id: "col_a", width: 1 },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "a1", depth: 0 },
+                  content: [{ type: "text", text: "A1" }],
+                },
+              ],
+            },
+            {
+              type: "column",
+              attrs: { id: "col_b", width: 1 },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "b1", depth: 0 },
+                  content: [{ type: "text", text: "B1" }],
+                },
+              ],
+            },
+            {
+              type: "column",
+              attrs: { id: "col_c", width: 1 },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "c1", depth: 0 },
+                  content: [{ type: "text", text: "C1" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          attrs: { id: "r2", depth: 0 },
+          content: [{ type: "text", text: "root-2" }],
+        },
+      ],
+    },
+  })
+}
+
 /** Select exactly the column child `childId` as a column-local single-block MBS. */
 function selectColumnChild(
   editor: ReturnType<typeof createTestEditor>,
@@ -173,17 +247,44 @@ describe("MBS command sanity — column-local MBS (cut/copy/delete)", () => {
     expect(getDocument(editor).map((b) => b.id)).toEqual(["r1", "lay", "r2"])
   })
 
-  it("delete: emptying a column (all its blocks) leaves an E2 reseed paragraph (not move; F2 is move-only)", () => {
+  it("delete: emptying a column (all its blocks) unwraps the layout, matching F2 move-out (Notion parity)", () => {
     const editor = fixture()
     selectColumnRange(editor, "b1", "b2") // all of col_b
     editor.commands.deleteBlockSelection()
-    // F2 says move-out empties+removes; delete is NOT a move — column survives
-    // with an E2-seeded empty paragraph. Layout stays (still 2 columns).
-    const ids = columnChildIds(editor, "col_b")
-    expect(ids.length).toBe(1)
-    expect(["b1", "b2"]).not.toContain(ids[0])
-    expect(getDocument(editor).map((b) => b.id)).toEqual(["r1", "lay", "r2"])
+    // Delete now matches F2's move-out contract: emptying col_b's only
+    // sibling column (col_a) drops the layout below 2 columns, so it
+    // unwraps — col_a's children splice to root. E2's reseed is no longer
+    // reachable via this command; it remains the safety net for non-command
+    // paths (paste / setContent / collab).
+    const doc = getDocument(editor)
+    expect(doc.map((b) => b.type)).not.toContain("columnLayout")
+    expect(doc.map((b) => b.id)).toEqual(["r1", "a1", "r2"])
+    // The post-delete selection is a valid TextSelection landed inside the
+    // doc — no thrown errors from the layout-level replace.
+    const sel = editor.state.selection
+    expect(sel).toBeInstanceOf(TextSelection)
+    expect(sel.from).toBeGreaterThanOrEqual(0)
+    expect(sel.from).toBeLessThanOrEqual(editor.state.doc.content.size)
+  })
+
+  it("delete: emptying the LAST of 3 columns removes just that column; layout survives at 2 columns", () => {
+    const editor = fixture3Col()
+    selectColumnRange(editor, "c1", "c1") // all of col_c
+    editor.commands.deleteBlockSelection()
+
+    const layout = layoutOf(editor)
+    expect(layout).toBeDefined()
+    expect(layout!.columns.map((c) => c.id)).toEqual(["col_a", "col_b"])
+    // Other columns' content untouched.
     expect(columnChildIds(editor, "col_a")).toEqual(["a1"])
+    expect(columnChildIds(editor, "col_b")).toEqual(["b1"])
+    expect(getDocument(editor).map((b) => b.id)).toEqual(["r1", "lay3", "r2"])
+
+    // One undo restores everything.
+    editor.commands.undo()
+    const restored = layoutOf(editor)
+    expect(restored!.columns.map((c) => c.id)).toEqual(["col_a", "col_b", "col_c"])
+    expect(columnChildIds(editor, "col_c")).toEqual(["c1"])
   })
 
   it("moveBlockUp: column MBS moves the block WITHIN its column; root order unchanged", () => {

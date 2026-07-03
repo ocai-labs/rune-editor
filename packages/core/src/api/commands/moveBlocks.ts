@@ -235,9 +235,12 @@ export function resolveEmptiedSourceColumnForMove(
 /**
  * Resolve the F2 emptied-source-column payload: walk up from the column to its
  * enclosing `columnLayout`, count the columns that survive the removal, and
- * pick the lone survivor when exactly one remains.
+ * pick the lone survivor when exactly one remains. Exported so the
+ * block-selection `deleteBlockSelection` command can reuse the SAME payload
+ * shape `removeMoveSource` expects — a delete that empties a column removes it
+ * (or unwraps the layout) exactly like a move-out (F2 delete/move parity).
  */
-function resolveEmptiedSourceColumn(
+export function resolveEmptiedSourceColumn(
   doc: ProseMirrorNode,
   columnPos: number,
 ): EmptiedSourceColumn | null {

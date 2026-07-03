@@ -11,7 +11,8 @@ import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex } from "./selectable"
 import { blockSelectionKey, type BlockSelectionPluginMeta } from "./plugin"
 import { setSelectionAfterDelete } from "../../api/commands/deleteBlocks"
-import { executeReorder } from "../block-drag/reorder"
+import { resolveEmptiedSourceColumn } from "../../api/commands/moveBlocks"
+import { executeReorder, removeMoveSource, type EmptiedSourceColumn } from "../block-drag/reorder"
 import {
   resolveBodyBlockById,
   surfaceBlockTextBoundsAtPos,
@@ -245,7 +246,29 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         const { to } = expandRangeOverToggleBodies(state.doc, sel.from, sel.to, {
           collapsedOnly: true,
         })
-        tr.delete(sel.from, to)
+        // F2/delete parity (Notion): when the (widened) range covers a
+        // column's ENTIRE content, the delete must remove the column itself
+        // in the SAME transaction — a 3-column layout becomes 2 columns; a
+        // 2-column layout unwraps to flat root blocks. A bare `tr.delete`
+        // over a column's whole content can never drop the layout below its
+        // `column{2,MAX}` floor (PM backfills an empty column instead), so
+        // this reuses the F2 move machinery (`resolveEmptiedSourceColumn` +
+        // `removeMoveSource`) — the same payload shape a move-out computes —
+        // rather than leaning on E2's reseed, which stays the safety net for
+        // non-command paths only (paste / setContent / collab).
+        let emptiedSourceColumn: EmptiedSourceColumn | null = null
+        if (!rootSurface && sel.surface.type.name === "column") {
+          const columnPos = sel.$anchor.before(sel.$anchor.depth)
+          const columnNode = sel.surface
+          if (sel.from === columnPos + 1 && to === columnPos + columnNode.nodeSize - 1) {
+            emptiedSourceColumn = resolveEmptiedSourceColumn(state.doc, columnPos)
+          }
+        }
+        if (emptiedSourceColumn) {
+          removeMoveSource(tr, { from: sel.from, to }, emptiedSourceColumn)
+        } else {
+          tr.delete(sel.from, to)
+        }
         setSelectionAfterDelete(tr, state.schema, lo, rootSurface)
         dispatch(tr)
         return true
