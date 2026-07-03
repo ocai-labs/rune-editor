@@ -85,6 +85,25 @@ export const NumberedList = createBlockSpec({
     return t.create(attrs, content, defaults.marks)
   },
   parseDOM: [
+    // Round-trip rune's own getHTML output: renderDOM emits the outer
+    // `.rune-numbered-list` div carrying id/depth AND data-start (the
+    // `start` prop's renderHTML lands on the outer div, not the inner
+    // <p>). contentElement points PM at the inner <p> so the shared
+    // inline content is taken from THERE — without it, the Paragraph
+    // rule would claim the inner <p> as a sibling node, degrading the
+    // block to a plain paragraph and dropping `start` along with it.
+    // `start` needs its own getAttrs because the prop declares no
+    // parseHTML of its own (parseListStart already reads data-start
+    // directly off the matched element, so it works unchanged here).
+    {
+      tag: "div.rune-block.rune-numbered-list",
+      priority: 60,
+      getAttrs: (el) => ({ start: parseListStart(el as HTMLElement) }),
+      contentElement: (node: globalThis.Node) => {
+        const el = node as HTMLElement
+        return el.querySelector(":scope > .rune-block-content > p") ?? el
+      },
+    },
     {
       tag: "ol > li",
       priority: 51,

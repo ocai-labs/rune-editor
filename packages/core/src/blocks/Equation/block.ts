@@ -25,7 +25,7 @@ export const Equation = createBlockSpec({
   indent: { mode: "numeric", maxDepth: 0 },
   meta: { defining: false },
   props: {
-    latex: { default: "" },
+    latex: { default: "", renderHTML: () => ({}) },
   },
   schemaContext: {
     input: {

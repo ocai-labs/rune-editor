@@ -207,6 +207,24 @@ export const TaskList = createBlockSpec({
     return t.create(attrs, content, defaults.marks)
   },
   parseDOM: [
+    // Round-trip rune's own getHTML output: renderDOM emits the outer
+    // `.rune-task-list` div carrying id/depth/checked (data-checked,
+    // from the `checked` prop's renderHTML). contentElement points PM at
+    // the inner <p> so the shared inline content is taken from THERE —
+    // without it, the Paragraph rule would claim the inner <p> as a
+    // sibling node, degrading the block to a plain paragraph. No extra
+    // getAttrs needed: `checked`'s own parseHTML already falls back to
+    // reading `data-checked` off the matched element when it finds
+    // neither a paste marker nor a checkbox <input> descendant — exactly
+    // the case here, since renderDOM's live markup uses a <button>.
+    {
+      tag: "div.rune-block.rune-task-list",
+      priority: 60,
+      contentElement: (node: globalThis.Node) => {
+        const el = node as HTMLElement
+        return el.querySelector(":scope > .rune-block-content > p") ?? el
+      },
+    },
     {
       tag: "li",
       priority: 60,

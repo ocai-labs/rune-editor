@@ -49,16 +49,16 @@ describe("BulletList block — schema + storage", () => {
     editor.destroy()
   })
 
-  it("exposes parseDOM as a single ul > li rule that reads paste depth", () => {
+  it("exposes the ul > li external-paste rule (after the round-trip div rule) that reads paste depth", () => {
     const editor = makeEditor()
     const ext = getBulletListExtension(editor) as BulletListExtensionConfig
     const rules = ext.config.parseHTML?.()
     const li = document.createElement("li")
     li.setAttribute("data-rune-paste-depth", "2")
 
-    expect(rules).toHaveLength(1)
-    expect(rules?.[0]).toMatchObject({ tag: "ul > li" })
-    expect(rules?.[0]?.getAttrs?.(li)).toMatchObject({ depth: 2 })
+    expect(rules).toHaveLength(2)
+    expect(rules?.[1]).toMatchObject({ tag: "ul > li" })
+    expect(rules?.[1]?.getAttrs?.(li)).toMatchObject({ depth: 2 })
 
     editor.destroy()
   })

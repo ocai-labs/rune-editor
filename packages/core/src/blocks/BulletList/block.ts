@@ -51,6 +51,21 @@ export const BulletList = createBlockSpec({
     return t.create(attrs, content, defaults.marks)
   },
   parseDOM: [
+    // Round-trip rune's own getHTML output: renderDOM emits the outer
+    // `.rune-bullet-list` div carrying id/depth (data-id/data-depth, read
+    // by the factory's shared attr parseHTML off this same matched
+    // element). contentElement points PM at the inner <p> so the shared
+    // inline content is taken from THERE — without it, PM would walk the
+    // outer div's children and let the Paragraph rule claim the inner <p>
+    // as a sibling node, degrading the block to a plain paragraph.
+    {
+      tag: "div.rune-block.rune-bullet-list",
+      priority: 60,
+      contentElement: (node: globalThis.Node) => {
+        const el = node as HTMLElement
+        return el.querySelector(":scope > .rune-block-content > p") ?? el
+      },
+    },
     {
       tag: "ul > li",
       priority: 51,

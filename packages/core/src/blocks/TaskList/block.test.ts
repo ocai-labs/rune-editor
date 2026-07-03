@@ -213,7 +213,7 @@ describe("TaskList block — parseDOM", () => {
     const li = document.createElement("li")
     li.textContent = "plain"
 
-    expect(ext.config?.parseHTML?.()[0]?.getAttrs?.(li)).toBe(false)
+    expect(ext.config?.parseHTML?.()[1]?.getAttrs?.(li)).toBe(false)
 
     editor.destroy()
   })
@@ -228,7 +228,7 @@ describe("TaskList block — parseDOM", () => {
     li.setAttribute("data-rune-paste-depth", "2")
     li.textContent = "nested"
 
-    expect(ext.config?.parseHTML?.()[0]?.getAttrs?.(li)).toMatchObject({
+    expect(ext.config?.parseHTML?.()[1]?.getAttrs?.(li)).toMatchObject({
       checked: false,
       depth: 2,
     })

@@ -163,9 +163,9 @@ describe("NumberedList block", () => {
     const li = document.createElement("li")
     li.setAttribute("data-start", "5")
     li.setAttribute("data-rune-paste-depth", "2")
-    expect(rules).toHaveLength(1)
-    expect(rules?.[0]).toMatchObject({ tag: "ol > li" })
-    expect(rules?.[0]?.getAttrs?.(li)).toMatchObject({ start: 5, depth: 2 })
+    expect(rules).toHaveLength(2)
+    expect(rules?.[1]).toMatchObject({ tag: "ol > li" })
+    expect(rules?.[1]?.getAttrs?.(li)).toMatchObject({ start: 5, depth: 2 })
 
     const s = storage(editor)
     const node = s.fromInput?.({

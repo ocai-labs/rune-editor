@@ -12,6 +12,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import { nanoid } from "nanoid"
 import {
   computeIdPatches,
+  computeAnchoredPositions,
   type StructuralIdConfig,
 } from "../../extensions/shared/structural-id"
 import { INTERNAL_NORMALIZATION_META } from "../../extensions/internal-meta"
@@ -286,8 +287,20 @@ export function unwrapLayoutInTr(
  * (rationale in the module header). Each structural rule recomputes from the
  * CURRENT `tr.doc` and loops until stable, so folded position shifts never
  * corrupt a later mutation.
+ *
+ * `anchorCtx` (present only from appendTransaction, absent for the mount seed)
+ * carries the incoming `oldState` + `transactions` so the id pass can anchor
+ * a column id to the pre-existing column that carried it — mirroring BlockId
+ * (extensions/block-id.ts). Without it, `computeIdPatches` falls back to
+ * first-in-doc-order and a copy pasted ABOVE its original steals the
+ * original's column id. The mount seed (initial load / setContent) has no
+ * meaningful oldState to anchor against, so it passes none — identical to
+ * BlockId's view() pass.
  */
-function normalizeColumns(state: EditorState): Transaction | null {
+function normalizeColumns(
+  state: EditorState,
+  anchorCtx?: { oldState: EditorState; transactions: readonly Transaction[] },
+): Transaction | null {
   const tr = state.tr
   let changed = false
   const schema = state.schema
@@ -365,9 +378,40 @@ function normalizeColumns(state: EditorState): Transaction | null {
   // appendTransactions and risk recursing into this pass). computeIdPatches
   // reads only `.doc`, so a minimal { doc } shim is a faithful reuse of the
   // shared helper without building a full EditorState.
+  //
+  // Anchoring: survivor columns (present in oldState, carried their id into
+  // newState) must keep their id so a colliding copy pasted ABOVE the original
+  // is the one regenerated — never the original. computeAnchoredPositions
+  // returns positions in `state.doc` (== newState.doc, the doc BEFORE this
+  // pass's structural steps). The structural rules above (no-nesting, unwrap,
+  // E2) may have shifted node boundaries by adding steps to `tr`, so each
+  // anchor must be mapped through `tr.mapping` — which at this point holds
+  // EXACTLY those structural steps (the tr starts empty; id/width are the only
+  // passes still to run and they haven't mapped yet) — to land in tr.doc
+  // coordinates. In the common paste-above case no structural step fires, so
+  // tr.mapping is identity and the map is a no-op; the mapping only bites when
+  // a malformed paste (e.g. an empty column padded by E2) shifts the survivor.
+  // Bias +1 matches computeAnchoredPositions' own bias: it tracks a column
+  // past content inserted exactly at its start boundary rather than latching
+  // onto the inserted copy.
+  let anchored: ReadonlySet<number> | undefined
+  if (anchorCtx) {
+    const rawAnchors = computeAnchoredPositions(
+      anchorCtx.oldState,
+      state,
+      anchorCtx.transactions,
+      ID_CONFIG,
+    )
+    if (rawAnchors.size) {
+      const mapped = new Set<number>()
+      for (const pos of rawAnchors) mapped.add(tr.mapping.map(pos, 1))
+      anchored = mapped
+    }
+  }
   const idPatches = computeIdPatches(
     { doc: tr.doc } as EditorState,
     ID_CONFIG,
+    anchored,
   )
   for (const { pos, id } of idPatches) {
     const node = tr.doc.nodeAt(pos)
@@ -436,11 +480,11 @@ export const ColumnsNormalization = Extension.create({
           }
           return {}
         },
-        appendTransaction: (transactions, _oldState, newState) => {
+        appendTransaction: (transactions, oldState, newState) => {
           if (!editor.isEditable) return null
           const docChanged = transactions.some((tr) => tr.docChanged)
           if (!docChanged) return null
-          return normalizeColumns(newState)
+          return normalizeColumns(newState, { oldState, transactions })
         },
       }),
     ]

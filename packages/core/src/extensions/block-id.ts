@@ -4,8 +4,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { Extension } from "@tiptap/core"
-import { Plugin, PluginKey } from "@tiptap/pm/state"
+import { Extension, createDocument } from "@tiptap/core"
+import { EditorState, Plugin, PluginKey } from "@tiptap/pm/state"
 import { nanoid } from "nanoid"
 import { RUNE_BODY_BLOCK_ID_TYPES } from "../blocks/defaultBlocks"
 import {
@@ -17,6 +17,15 @@ import {
 
 const BLOCK_ID_META = "rune/block-id-injected"
 
+function buildIdConfig(types: ReadonlySet<string>): StructuralIdConfig {
+  return {
+    attrName: "id",
+    nodePredicate: (node) => types.has(node.type.name),
+    generateId: () => nanoid(8),
+    extraMeta: [BLOCK_ID_META],
+  }
+}
+
 // BlockId is purely a runtime concern: it fills the `id` attribute
 // that createBlockSpec declares on every rune block. Schema ownership
 // moved into the factory — this extension does NOT add the attribute
@@ -24,17 +33,38 @@ const BLOCK_ID_META = "rune/block-id-injected"
 //
 // Two run sites, same logic:
 //
-//   1. onCreate — walks the initial doc once. The initial EditorState
-//      is built without any transaction, so appendTransaction never
-//      fires for seed content. Without this pass every block loaded
-//      from initialContent would stay id=null until the user typed.
+//   1. onBeforeCreate — patches the seed CONTENT, before Tiptap's own
+//      createDoc() parses it, instead of patching the doc/state after the
+//      fact. This is the only synchronous, mount-independent seed point
+//      Tiptap 3.22 offers: a headless editor (`element: null`, the
+//      documented SSR path) never mounts an EditorView, so it never attaches
+//      ANY ProseMirror plugin (`state.plugins` stays permanently empty —
+//      plugins are wired in by `reconfigure()` inside `createView()`, itself
+//      only reachable through `mount()`) and never emits "create" (also only
+//      emitted from inside `mount()`) — so neither a plugin's view()/state
+//      .init() nor the Tiptap onCreate() lifecycle hook ever runs for it.
+//      Even a MOUNTED editor emits "create" asynchronously
+//      (`window.setTimeout(..., 0)`), so onCreate can't be relied on to have
+//      run by the time a caller synchronously reads editor.state right after
+//      `new Editor(...)`. onBeforeCreate is the one hook Tiptap invokes
+//      synchronously in both modes — before the schema has parsed the seed
+//      content — so we parse a throwaway doc from that same content
+//      ourselves (schema is already built by this point), run the identical
+//      backfill against it, and — only if it produced patches — splice the
+//      patched JSON back into `editor.options.content` so the real
+//      createDoc() parses the corrected version next. Content that's already
+//      fully/uniquely id'd yields no patches, so it's left untouched.
 //   2. appendTransaction — fills ids introduced by any doc-changing
 //      transaction (new blocks from Enter, paste with id collisions,
 //      setContent, etc.).
 //
-// Both emit transactions tagged with BLOCK_ID_META (so the plugin
-// doesn't loop on its own output) and addToHistory=false (so undo
-// never reveals an id-less intermediate state).
+// Both run the same computeIdPatches/buildBackfillTransaction pair (see
+// ./shared/structural-id). The appendTransaction output is tagged with
+// BLOCK_ID_META (so the plugin doesn't loop on its own output) and
+// addToHistory=false (so undo never reveals an id-less intermediate state);
+// the onBeforeCreate pass never dispatches a transaction onto a live editor
+// at all, so those meta flags are moot there — it only reads `tr.doc` off a
+// throwaway EditorState to get the patched JSON.
 //
 // Paste handling: when a block arrives via paste with an id that
 // collides with an existing block in the doc, we generate a fresh id.
@@ -51,36 +81,35 @@ export const BlockId = Extension.create({
     }
   },
 
+  onBeforeCreate() {
+    const types = new Set(this.options.types as string[])
+    const config = buildIdConfig(types)
+    const { content, parseOptions, enableContentCheck } = this.editor.options
+    let doc
+    try {
+      doc = createDocument(content, this.editor.schema, parseOptions, {
+        errorOnInvalidContent: enableContentCheck,
+      })
+    } catch {
+      // Invalid content: Tiptap's own createDoc() re-parses this exact
+      // content right after we return and reports it the normal way
+      // (contentError) — nothing here to backfill against.
+      return
+    }
+    const throwaway = EditorState.create({ doc, schema: this.editor.schema })
+    const patches = computeIdPatches(throwaway, config)
+    const tr = buildBackfillTransaction(throwaway, patches, config)
+    if (tr) this.editor.options.content = tr.doc.toJSON()
+  },
+
   addProseMirrorPlugins() {
     const types = new Set(this.options.types as string[])
     const pluginKey = new PluginKey("rune-block-id")
-
-    // First consumer of the shared structural-id backfill. Same params as
-    // the original inline logic: scan body-block id types, generate via
-    // nanoid(8), and tag BLOCK_ID_META on the output tr (a signal kept for
-    // parity; looping is prevented by patch-convergence, not this meta).
-    const config: StructuralIdConfig = {
-      attrName: "id",
-      nodePredicate: (node) => types.has(node.type.name),
-      generateId: () => nanoid(8),
-      extraMeta: [BLOCK_ID_META],
-    }
+    const config = buildIdConfig(types)
 
     return [
       new Plugin({
         key: pluginKey,
-        // view() fires once right after the editor view is mounted.
-        // The initial EditorState arrives via EditorState.create (no
-        // transaction), so appendTransaction never sees seed content
-        // — dispatch a one-time backfill here instead. Tagged
-        // addToHistory=false so undo can't strand the doc in an
-        // id-less state.
-        view(view) {
-          const patches = computeIdPatches(view.state, config)
-          const tr = buildBackfillTransaction(view.state, patches, config)
-          if (tr) view.dispatch(tr)
-          return {}
-        },
         appendTransaction: (transactions, oldState, newState) => {
           const docChanged = transactions.some((tr) => tr.docChanged)
           if (!docChanged) return null
