@@ -1,5 +1,27 @@
 # @ocai/rune-react
 
+## 0.19.1
+
+### Patch Changes
+
+- e89dce2: Column-delete follow-ups to #392:
+
+  - **Caret lands in surviving content**: after a delete empties a column, the caret previously overshot into the root block following the layout (every 2→1 unwrap with trailing content, and last-column deletes). The emptied-column path now resolves a landing block by stable id before the removal and re-finds it after — next column's first block, previous column's last block, or the unwrap survivor's last block.
+  - **Cmd+X parity**: cutting a column's entire content now removes the column (3→2) or unwraps the layout (2→1) exactly like Delete, through the same shared `applyMbsDelete` path, with the same caret landing. The clipboard still carries the cut content.
+
+- a35f075: Deleting a block selection that covers a column's entire content now removes the column itself, matching Notion: in a 3-column layout the emptied column disappears (layout becomes 2 columns), and emptying a column of a 2-column layout unwraps the layout so the surviving column's blocks land flat at root. The removal reuses the F2 move-out machinery (`removeMoveSource` / `unwrapLayoutInTr`) inside the same transaction, so one undo restores the column and its content together. Both the side-menu grip Delete and keyboard Backspace/Delete on a block selection share the path. Partial deletes (the column keeps at least one block) are unchanged, and the E2 empty-column reseed remains the safety net for non-command arrivals (paste / setContent / collab).
+- 57fd812: Four production bug fixes from the 2026-07 codebase review:
+
+  - **depth/id survive HTML round-trips**: blocks whose parseDOM matches an inner element (paragraph, heading, blockquote, audio, table of contents) lost `depth` and `id` on `getHTML()` → `setContent()` because the attrs live on the outer `.rune-block` wrapper. The factory's shared attr parser now falls back to `closest(".rune-block")`.
+  - **Markdown blockquotes and loose lists no longer corrupt**: markdown-it nests `<p>` inside `<li>`/`<blockquote>`; the paste path missed the unwrap step the AI markdown path already had, leaving empty ghost blocks and stray paragraphs (loose task lists lost checkbox state entirely). `normalizeInlineContainers` now runs in the shared `transformPastedHTMLDoc` for paste, `markdownToDoc`, and AI paths alike.
+  - **Table header switches no longer freeze**: the "Header row"/"Header column" switches read header state through a snapshot whose equality check never changed on a size-preserving toggle; they now own a transaction-current subscription.
+  - **`turn_into` reports honestly**: the AI tool returned every requested id in `changedBlockIds` even when some sources were rejected; it now doc-compares each target and reports only blocks that actually converted.
+
+- Updated dependencies [e89dce2]
+- Updated dependencies [a35f075]
+- Updated dependencies [57fd812]
+  - @ocai/rune-core@0.19.1
+
 ## 0.19.0
 
 ### Minor Changes
