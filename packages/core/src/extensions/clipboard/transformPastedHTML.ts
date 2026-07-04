@@ -13,6 +13,40 @@ import { transformPastedImageHTML } from "../../blocks/Image/transformPastedImag
 
 type ListKind = "bullet" | "numbered" | "task"
 
+/**
+ * rune's `blockquote` and its list blocks hold `inline*` (flat schema — no
+ * nested paragraph). markdown-it (and some copy sources) wrap "loose"
+ * content in `<p>` inside `blockquote`/`li` and pad it with whitespace-only
+ * text nodes. Left alone, PM splits the inner paragraph OUT of the block and
+ * the pad-whitespace re-parses as a stray hardBreak/paragraph. Unwrap each
+ * `<p>` to its inline children and drop whitespace-only text nodes directly
+ * under the container, so the block receives the clean inline run it
+ * expects — the round-trip inverse of the block serializers' single-line
+ * output. Shared by the paste pipeline and the headless
+ * `markdownToDoc`/`parseAiMarkdown` imports (all route through
+ * `transformPastedHTMLDoc`, below).
+ *
+ * Gated on the container actually having a `<p>` child: a real paste source
+ * can hand us a genuinely whitespace-only `<li>` (no `<p>` involved at all —
+ * e.g. an intentionally blank list item copied from another app), and that
+ * content must survive untouched. Only when a `<p>` is present — the loose-
+ * list/blockquote shape this function exists to fix — do the whitespace-only
+ * siblings around it count as padding to drop.
+ */
+export function normalizeInlineContainers(doc: Document) {
+  for (const el of Array.from(doc.querySelectorAll("blockquote, li"))) {
+    const hasParagraphChild = Array.from(el.children).some((c) => c.tagName === "P")
+    if (!hasParagraphChild) continue
+    for (const child of Array.from(el.childNodes)) {
+      if (child.nodeType === 3 /* text */) {
+        if ((child.textContent ?? "").trim() === "") el.removeChild(child)
+      } else if (child.nodeType === 1 && (child as Element).tagName === "P") {
+        ;(child as Element).replaceWith(...Array.from(child.childNodes))
+      }
+    }
+  }
+}
+
 function flattenLists(doc: Document) {
   const rootLists = Array.from(doc.body.querySelectorAll("ul, ol")).filter(
     (list) => list.parentElement?.closest("ul, ol") == null,
@@ -100,10 +134,10 @@ export function transformPastedHTML(html: string, view: EditorView, editor: Edit
 
 /**
  * Schema-only core of the paste transform, mutating `doc` in place. Runs
- * every preprocessing step that depends solely on the schema (toggle
- * flatten, inline-code rewrite, list flatten, unknown-block degrade), so
- * it stays usable WITHOUT a live EditorView — this is what the headless
- * `markdownToDoc` import path calls.
+ * every preprocessing step that depends solely on the schema (inline-
+ * container normalize, toggle flatten, inline-code rewrite, list flatten,
+ * unknown-block degrade), so it stays usable WITHOUT a live EditorView —
+ * this is what the headless `markdownToDoc` import path calls.
  *
  * `transformImages` is the one step that needs a live view + editor
  * (image upload routing + Notion image-wrapper rewrite). The paste path
@@ -115,6 +149,13 @@ export function transformPastedHTMLDoc(
   knownBlockTags: Set<string>,
   transformImages?: (doc: Document) => void,
 ): void {
+  // Must run before flattenLists: markdown-it (and some copy sources) nest
+  // a `<p>` inside `blockquote`/`li` for "loose" content — rune's blockquote
+  // and list blocks are flat inline* textblocks, so PM's DOMParser would
+  // otherwise split that `<p>` out (ghost empty block + de-nested stray
+  // paragraph), and a loose task item's checkbox `<input>` would sit inside
+  // the `<p>` where flattenLists' direct-child scan can't see it.
+  normalizeInlineContainers(doc)
   transformToggleHTML(doc)
   transformInlineCodeHTML(doc)
   flattenLists(doc)

@@ -116,8 +116,66 @@ describe("markdownToDoc — headless Markdown import", () => {
     // If the JSON were schema-invalid, the Editor would throw on construction.
     expect(editor.state.doc.childCount).toBeGreaterThan(0)
     expect(editor.state.doc.textContent).toContain("Heading")
-    expect(editor.state.doc.textContent).toContain("quote")
+    // "quote" must live IN the blockquote block itself, not a de-nested
+    // stray paragraph sitting next to an emptied blockquote.
+    let quoteInBlockquote = false
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "blockquote" && node.textContent.includes("quote")) {
+        quoteInBlockquote = true
+      }
+    })
+    expect(quoteInBlockquote).toBe(true)
     editor.destroy()
+  })
+
+  // markdown-it nests `<p>` inside `<li>`/`<blockquote>` for "loose" content;
+  // rune's blockquote/list blocks are flat inline* textblocks, so left alone
+  // PM's DOMParser splits that `<p>` out — a ghost empty block followed by a
+  // stray de-nested paragraph. `normalizeInlineContainers` (transformPastedHTML.ts)
+  // unwraps the `<p>` before flattenLists ever sees it.
+  describe("loose blockquote / list content lands in the block, not de-nested (regression)", () => {
+    it("a single-line blockquote is ONE blockquote block holding the text", () => {
+      const doc = markdownToDoc("> hello\n", schema())
+      const quotes = nodesOfType(doc, "blockquote")
+      expect(quotes.length).toBe(1)
+      expect(quotes[0]?.content?.[0]?.text).toBe("hello")
+      // No stray de-nested paragraph anywhere in the doc.
+      expect(nodesOfType(doc, "paragraph").length).toBe(0)
+    })
+
+    it("a loose bullet list (`- a\\n\\n- b`) yields two clean bulletList blocks", () => {
+      const doc = markdownToDoc("- a\n\n- b\n", schema())
+      const bullets = nodesOfType(doc, "bulletList")
+      expect(bullets.length).toBe(2)
+      expect(bullets[0]?.content?.[0]?.text).toBe("a")
+      expect(bullets[1]?.content?.[0]?.text).toBe("b")
+    })
+
+    it("a loose numbered list (`1. a\\n\\n2. b`) yields two clean numberedList blocks", () => {
+      const doc = markdownToDoc("1. a\n\n2. b\n", schema())
+      const items = nodesOfType(doc, "numberedList")
+      expect(items.length).toBe(2)
+      expect(items[0]?.content?.[0]?.text).toBe("a")
+      expect(items[1]?.content?.[0]?.text).toBe("b")
+    })
+
+    it("a loose task list (`- [ ] a\\n\\n- [x] b`) yields two taskList blocks with correct checked state", () => {
+      const doc = markdownToDoc("- [ ] a\n\n- [x] b\n", schema())
+      const tasks = nodesOfType(doc, "taskList")
+      expect(tasks.length).toBe(2)
+      expect(tasks[0]?.attrs?.checked).toBe(false)
+      expect(tasks[0]?.content?.[0]?.text?.trim()).toBe("a")
+      expect(tasks[1]?.attrs?.checked).toBe(true)
+      expect(tasks[1]?.content?.[0]?.text?.trim()).toBe("b")
+    })
+
+    it("[control] a tight bullet list (`- a\\n- b`, no blank line) is unaffected", () => {
+      const doc = markdownToDoc("- a\n- b\n", schema())
+      const bullets = nodesOfType(doc, "bulletList")
+      expect(bullets.length).toBe(2)
+      expect(bullets[0]?.content?.[0]?.text).toBe("a")
+      expect(bullets[1]?.content?.[0]?.text).toBe("b")
+    })
   })
 
   it("yields a valid (non-empty) doc for empty input", () => {

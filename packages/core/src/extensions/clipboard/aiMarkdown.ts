@@ -139,27 +139,6 @@ function unwrapLoneImageParagraphs(doc: Document) {
 }
 
 /**
- * rune's `blockquote` and its list blocks hold `inline*` (flat schema — no
- * nested paragraph). markdown-it wraps their content in `<p>` (loose lists /
- * blockquotes) and pads it with newlines. Left alone, PM splits the inner
- * paragraph OUT of the block and the pad-newlines re-parse as stray hardBreaks.
- * Unwrap each `<p>` to its inline children and drop whitespace-only text nodes
- * directly under the container, so the block receives the clean inline run it
- * expects — the round-trip inverse of the block serializers' single-line output.
- */
-function normalizeInlineContainers(doc: Document) {
-  for (const el of Array.from(doc.querySelectorAll("blockquote, li"))) {
-    for (const child of Array.from(el.childNodes)) {
-      if (child.nodeType === 3 /* text */) {
-        if ((child.textContent ?? "").trim() === "") el.removeChild(child)
-      } else if (child.nodeType === 1 && (child as Element).tagName === "P") {
-        ;(child as Element).replaceWith(...Array.from(child.childNodes))
-      }
-    }
-  }
-}
-
-/**
  * markdown-it renders a fenced/indented code block as `<pre><code
  * class="language-x">body\n</code></pre>` — with a trailing newline the fence
  * grammar always appends, and an inner `<code>` that rune's inline `code` mark
@@ -281,7 +260,7 @@ export function parseAiMarkdown(
   parseHTML: ParseHTML = browserParseHTML,
 ): JSONContent {
   const dom = parseHTML(aiMarkdownToHtml(markdown))
-  normalizeInlineContainers(dom)
+  // normalizeInlineContainers runs first thing inside transformPastedHTMLDoc.
   transformPastedHTMLDoc(dom, collectKnownBlockTags(schema))
   normalizeCodeBlocks(dom)
   unwrapLoneImageParagraphs(dom)

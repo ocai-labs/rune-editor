@@ -117,3 +117,183 @@ describe("getHTML → setContent round-trip", () => {
     expect(b.state.doc.child(0).textContent).toBe("hi")
   })
 })
+
+// Regression coverage for a third bug: blocks whose parseDOM matches an
+// INNER semantic element (paragraph's <p>, heading's <hN>, blockquote,
+// audio's <audio>/<iframe>, tableOfContents' content div, …) lost `depth`
+// (and `id`) on a getHTML() → setContent() round-trip. renderDOM always
+// stamps `data-id` / `data-depth` on the outer `.rune-block` wrapper, but
+// the factory's shared `id` / `depth` parseHTML read them off the MATCHED
+// element only — for these blocks that's the inner element, which never
+// carries the attrs. Fixed in createSpec.ts by falling back to the
+// nearest `.rune-block` ancestor.
+describe("depth/id round-trip through inner-element parse rules", () => {
+  it("paragraph keeps depth AND id through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "paragraph",
+        attrs: { id: "p-depth", depth: 2 },
+        content: [{ type: "text", text: "hello" }],
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+    expect(b.state.doc.child(0).attrs.id).toBe("p-depth")
+  })
+
+  it("heading keeps depth AND id through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "heading",
+        attrs: { id: "h-depth", depth: 2, level: 3 },
+        content: [{ type: "text", text: "heading" }],
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+    expect(b.state.doc.child(0).attrs.id).toBe("h-depth")
+  })
+
+  it("blockquote keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "blockquote",
+        attrs: { id: "bq-depth", depth: 2 },
+        content: [{ type: "text", text: "quote" }],
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+
+  it("audio (direct asset) keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "audio",
+        attrs: {
+          id: "aud-depth",
+          depth: 2,
+          sourceType: "asset",
+          src: "https://cdn.example.com/demo.mp3",
+          title: "Asset audio",
+        },
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).type.name).toBe("audio")
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+
+  it("tableOfContents keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      { type: "tableOfContents", attrs: { id: "toc-depth", depth: 2 } },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).type.name).toBe("tableOfContents")
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+
+  // Controls — these blocks' parseDOM matches the outer `.rune-block`
+  // wrapper directly, so depth already survived before the fix. They
+  // prove the `.rune-block` ancestor fallback didn't regress the
+  // direct-match path.
+  it("[control] bulletList keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "bulletList",
+        attrs: { id: "bl-depth", depth: 2 },
+        content: [{ type: "text", text: "item" }],
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+
+  it("[control] image keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "image",
+        attrs: {
+          id: "img-depth",
+          depth: 2,
+          src: "https://example.com/a.png",
+          alt: "A",
+          width: 640,
+          height: 480,
+        },
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).type.name).toBe("image")
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+
+  it("[control] callout keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "callout",
+        attrs: { id: "co-depth", depth: 2, icon: "🔥" },
+        content: [{ type: "text", text: "hi" }],
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+
+  it("[control] toggle keeps depth through a getHTML round-trip", () => {
+    const a = fresh()
+    a.commands.setContent([
+      {
+        type: "toggle",
+        attrs: { id: "tg-depth", depth: 2 },
+        content: [{ type: "text", text: "toggle" }],
+      },
+    ])
+    const html = a.getHTML()
+
+    const b = fresh()
+    b.commands.setContent(html)
+
+    expect(b.state.doc.child(0).attrs.depth).toBe(2)
+  })
+})

@@ -342,16 +342,23 @@ function readFirstCellColor(
 }
 
 function ColMenuItems({ editor, onPick, tableStart, index }: ItemsProps) {
-  // Read inline (no useMemo) so the switch reflects header state after each
-  // transaction. The parent TableActionsDropdown subscribes through
-  // useRuneEditorState, propagating fresh props down here; with useMemo
-  // ([editor, tableStart, index]) the cached value would survive a
-  // doc-changing toggle and the switch would visually freeze.
-  const tableNode = editor.state.doc.nodeAt(tableStart - 1)
-  const isHeader =
-    tableNode && tableNode.type.name === "table"
-      ? isTableHeaderColumn(tableNode, index)
-      : false
+  // Own subscription — the parent's samePillDropdown compare only tracks
+  // {tableStart, axis, index}, which toggleTableHeaderColumn's setNodeMarkup
+  // (size-preserving, deliberately keeps the menu open) never changes, so a
+  // prop-only read would freeze the switch on the toggle transaction.
+  // Reading isHeader through its own useRuneEditorState re-runs the selector
+  // on every transaction; deps re-derives it when the dropdown re-anchors to
+  // a different pill without an intervening transaction.
+  const isHeader = useRuneEditorState(
+    editor,
+    (e) => {
+      const tableNode = e.state.doc.nodeAt(tableStart - 1)
+      return tableNode && tableNode.type.name === "table"
+        ? isTableHeaderColumn(tableNode, index)
+        : false
+    },
+    { deps: [tableStart, index] },
+  )
 
   // Bypasses onPick deliberately: toggleTableHeaderColumn uses
   // setNodeMarkup (size-preserving), so the pill widget's keyed position
@@ -421,12 +428,17 @@ function ColMenuItems({ editor, onPick, tableStart, index }: ItemsProps) {
 }
 
 function RowMenuItems({ editor, onPick, tableStart, index }: ItemsProps) {
-  // See ColMenuItems for the inline-read rationale (no useMemo).
-  const tableNode = editor.state.doc.nodeAt(tableStart - 1)
-  const isHeader =
-    tableNode && tableNode.type.name === "table"
-      ? isTableHeaderRow(tableNode, index)
-      : false
+  // See ColMenuItems for the own-subscription rationale.
+  const isHeader = useRuneEditorState(
+    editor,
+    (e) => {
+      const tableNode = e.state.doc.nodeAt(tableStart - 1)
+      return tableNode && tableNode.type.name === "table"
+        ? isTableHeaderRow(tableNode, index)
+        : false
+    },
+    { deps: [tableStart, index] },
+  )
 
   // See ColMenuItems for the onPick-bypass rationale.
   const toggleHeader = useCallback(() => {

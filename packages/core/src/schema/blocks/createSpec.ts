@@ -36,6 +36,23 @@ export const BLOCK_ATTRIBUTES = {
   depth: "data-depth",
 } as const
 
+/**
+ * Read a shared block attribute (`data-id` / `data-depth`) off the
+ * parseDOM-matched element, falling back to the nearest `.rune-block`
+ * ancestor. renderDOM always stamps these attrs on the outer `.rune-block`
+ * wrapper, but some blocks' parseDOM rules match an INNER semantic element
+ * instead (paragraph's `<p>`, heading's `<hN>`, blockquote, audio's
+ * `<audio>`/`<iframe>`, tableOfContents' content div, …) — for those, the
+ * matched element itself carries neither attr. `closest` starts at `el`
+ * itself, so blocks whose parseDOM matches the outer wrapper directly
+ * (bulletList, callout, toggle, image, …) are unaffected. Pasted external
+ * HTML has no `.rune-block` ancestor, so the fallback is a no-op there and
+ * the caller's `default` still applies.
+ */
+function readSharedBlockAttr(el: HTMLElement, attr: string): string | null {
+  return el.getAttribute(attr) ?? el.closest(".rune-block")?.getAttribute(attr) ?? null
+}
+
 // Per-block prop spec. Each prop becomes a Tiptap attribute on the node
 // the factory generates. Keep parse/renderHTML optional — most props
 // are plain data (level, listType, …) that don't need special HTML
@@ -588,7 +605,7 @@ export function createBlockSpec(config: BlockSpecConfig) {
         id: {
           default: null,
           keepOnSplit: false,
-          parseHTML: (el: HTMLElement) => el.getAttribute(BLOCK_ATTRIBUTES.id),
+          parseHTML: (el: HTMLElement) => readSharedBlockAttr(el, BLOCK_ATTRIBUTES.id),
           renderHTML: (a: Record<string, unknown>) =>
             a.id ? { [BLOCK_ATTRIBUTES.id]: a.id as string } : {},
         },
@@ -604,7 +621,7 @@ export function createBlockSpec(config: BlockSpecConfig) {
             // each block does NOT have to opt in by writing its own
             // parseDOM depth probe.
             const raw =
-              el.getAttribute(BLOCK_ATTRIBUTES.depth) ??
+              readSharedBlockAttr(el, BLOCK_ATTRIBUTES.depth) ??
               el.getAttribute("data-rune-paste-depth")
             const n = raw == null ? 0 : Number.parseInt(raw, 10)
             return Number.isFinite(n) && n >= 0 ? n : 0
