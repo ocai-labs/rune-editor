@@ -12,6 +12,7 @@ import { resolveTableFromFrame } from "./utilities/resolveTableFromFrame"
 import { findCellContext } from "./utilities/findCellContext"
 import { PLUS_SVG } from "../../extensions/side-menu/svg"
 import { gestureKey } from "../../extensions/shared/gesture-state"
+import { cellHandlePillsKey } from "./CellHandlePills"
 
 const extendButtonsKey = new PluginKey("rune-table-extend-buttons")
 
@@ -169,20 +170,31 @@ export const TableExtendButtons = Extension.create({
             }
           }
 
-          // Suppress the +col / +row buttons during a cell-drag. We set
-          // inline opacity directly because the reveal trigger above uses
-          // `:has(...:hover)` with specificity (0,5,2) — a class- or
+          // Suppress the +col / +row buttons during a cell-drag OR while a
+          // pill action menu is open. Opening a col/row pill dropdown
+          // dispatches a full-axis CellSelection (see CellHandlePills'
+          // selectFullColumn/Row); on the last column/row that selection
+          // makes activeEdgesForSelection reveal the extend button right as
+          // the menu opens — visual noise layered under the menu. Hide both
+          // buttons for the menu's lifetime (every close path dispatches a
+          // transaction, so this re-runs and restores them).
+          //
+          // We set inline opacity directly because the reveal trigger above
+          // uses `:has(...:hover)` with specificity (0,5,2) — a class- or
           // attribute-based override would need `!important` to win, which
           // is exactly the smell we removed by moving the decision to Core.
           // Inline style wins regardless of selector specificity. Also
           // disable pointer-events so the invisible button doesn't catch
           // clicks while it fades out.
-          const syncGesture = () => {
-            const dragging = gestureKey.getState(editorView.state)?.activeGesture === "cell-drag"
+          const syncSuppression = () => {
+            const state = editorView.state
+            const dragging = gestureKey.getState(state)?.activeGesture === "cell-drag"
+            const menuOpen = cellHandlePillsKey.getState(state)?.dropdown != null
+            const suppress = dragging || menuOpen
             for (const group of groups.values()) {
               for (const btn of [group.col, group.row]) {
-                btn.style.opacity = dragging ? "0" : ""
-                btn.style.pointerEvents = dragging ? "none" : ""
+                btn.style.opacity = suppress ? "0" : ""
+                btn.style.pointerEvents = suppress ? "none" : ""
               }
             }
           }
@@ -213,7 +225,7 @@ export const TableExtendButtons = Extension.create({
 
           queueMicrotask(() => {
             sync()
-            syncGesture()
+            syncSuppression()
             syncActive()
           })
 
@@ -227,7 +239,7 @@ export const TableExtendButtons = Extension.create({
           return {
             update() {
               sync()
-              syncGesture()
+              syncSuppression()
               syncActive()
             },
             destroy() {

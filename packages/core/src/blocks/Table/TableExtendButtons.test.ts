@@ -11,7 +11,7 @@ import Text from "@tiptap/extension-text"
 import { Paragraph } from "../Paragraph/block"
 import { Table } from "./block"
 import { GestureStatePlugin } from "../../extensions/shared/gesture-state"
-import { CellHandlePills } from "./CellHandlePills"
+import { CellHandlePills, PILL_DROPDOWN_META } from "./CellHandlePills"
 import { TableExtendButtons } from "./TableExtendButtons"
 import { TableMap } from "@tiptap/pm/tables"
 import { findCellContext } from "./utilities/findCellContext"
@@ -198,6 +198,40 @@ describe("TableExtendButtons", () => {
     expect(rowBtn.style.pointerEvents).toBe("none")
 
     editor.view.dispatch(editor.state.tr.setMeta(gestureKey, { activeGesture: null }))
+    expect(colBtn.style.opacity).toBe("")
+    expect(rowBtn.style.opacity).toBe("")
+    expect(colBtn.style.pointerEvents).toBe("")
+    expect(rowBtn.style.pointerEvents).toBe("")
+  })
+
+  it("suppresses extend buttons while a pill action menu is open, restores on close", async () => {
+    const editor = makeEditor()
+    editor.commands.insertTable({ rows: 2, cols: 2 })
+    await Promise.resolve()
+    const colBtn = editor.view.dom.querySelector(".rune-table-extend-col") as HTMLElement
+    const rowBtn = editor.view.dom.querySelector(".rune-table-extend-row") as HTMLElement
+    expect(colBtn.style.opacity).toBe("")
+    expect(rowBtn.style.opacity).toBe("")
+
+    // Opening a col/row pill dropdown dispatches a full-axis CellSelection;
+    // on the last column/row that would reveal the extend button right under
+    // the menu. The buttons subscribe to the same cellHandlePillsKey.dropdown
+    // state the menu opens on and hide for its lifetime.
+    editor.view.dispatch(
+      editor.state.tr.setMeta(PILL_DROPDOWN_META, {
+        open: { tableStart: 1, axis: "col", index: 0 },
+      }),
+    )
+    expect(colBtn.style.opacity).toBe("0")
+    expect(rowBtn.style.opacity).toBe("0")
+    expect(colBtn.style.pointerEvents).toBe("none")
+    expect(rowBtn.style.pointerEvents).toBe("none")
+
+    // Every close path dispatches a transaction, so the plugin re-runs and
+    // restores the buttons.
+    editor.view.dispatch(
+      editor.state.tr.setMeta(PILL_DROPDOWN_META, { close: true }),
+    )
     expect(colBtn.style.opacity).toBe("")
     expect(rowBtn.style.opacity).toBe("")
     expect(colBtn.style.pointerEvents).toBe("")
