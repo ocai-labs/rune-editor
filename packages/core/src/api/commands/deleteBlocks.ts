@@ -122,9 +122,13 @@ export function setSelectionAfterDelete(
   rootSurface = true,
 ): void {
   // Column-child (non-root) deletes: the root-index walk below is meaningless
-  // for a column surface, and column normalization will backfill an E2
-  // paragraph + remap the selection. Land a safe caret near the first deleted
-  // position (mapped through this tr) and let normalization settle the rest.
+  // for a column surface. This branch only runs for a PARTIAL column delete —
+  // the emptied-column case is handled by the caller (deleteBlockSelection /
+  // cut) via removeMoveSource + an explicit caret landing, so post-#392 no
+  // command path leaves an empty column here. A partial delete leaves the
+  // column populated (no reseed needed): land a safe caret near the first
+  // deleted position (mapped through this tr). E2's empty-column reseed remains
+  // the safety net for non-command arrivals only (paste / setContent / collab).
   if (!rootSurface) {
     const near = Selection.near(tr.doc.resolve(Math.min(tr.selection.from, tr.doc.content.size)))
     tr.setSelection(near)

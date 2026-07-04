@@ -247,9 +247,9 @@ describe("MBS command sanity — column-local MBS (cut/copy/delete)", () => {
     expect(getDocument(editor).map((b) => b.id)).toEqual(["r1", "lay", "r2"])
   })
 
-  it("delete: emptying a column (all its blocks) unwraps the layout, matching F2 move-out (Notion parity)", () => {
+  it("delete: emptying the RIGHT column (all its blocks) unwraps the layout, matching F2 move-out (Notion parity)", () => {
     const editor = fixture()
-    selectColumnRange(editor, "b1", "b2") // all of col_b
+    selectColumnRange(editor, "b1", "b2") // all of col_b (the RIGHT column)
     editor.commands.deleteBlockSelection()
     // Delete now matches F2's move-out contract: emptying col_b's only
     // sibling column (col_a) drops the layout below 2 columns, so it
@@ -259,12 +259,30 @@ describe("MBS command sanity — column-local MBS (cut/copy/delete)", () => {
     const doc = getDocument(editor)
     expect(doc.map((b) => b.type)).not.toContain("columnLayout")
     expect(doc.map((b) => b.id)).toEqual(["r1", "a1", "r2"])
-    // The post-delete selection is a valid TextSelection landed inside the
-    // doc — no thrown errors from the layout-level replace.
-    const sel = editor.state.selection
-    expect(sel).toBeInstanceOf(TextSelection)
-    expect(sel.from).toBeGreaterThanOrEqual(0)
-    expect(sel.from).toBeLessThanOrEqual(editor.state.doc.content.size)
+    // FIX 1 — the caret lands in the SURVIVING column content (a1), NOT the
+    // following root block (r2) it used to overshoot into via replaceWith's
+    // interior-position remap. Survivor col_a's last block for an emptied RIGHT
+    // column is a1.
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "a1")).toBe(true)
+  })
+
+  it("delete: emptying the LEFT column of a 2-col layout lands the caret in the survivor's LAST block (not its first)", () => {
+    // Survivor (col_b) has TWO children — the discriminating case the single-
+    // child fixtures can't expose. Emptying col_a (LEFT) unwraps to r1·b1·b2·r2;
+    // the caret must NOT overshoot to r2 AND must NOT land at the survivor's
+    // first block (b1): Notion parity lands it at the survivor's end (b2).
+    const editor = fixture()
+    selectColumnRange(editor, "a1", "a1") // all of col_a (the LEFT column)
+    editor.commands.deleteBlockSelection()
+
+    const doc = getDocument(editor)
+    expect(doc.map((b) => b.type)).not.toContain("columnLayout")
+    expect(doc.map((b) => b.id)).toEqual(["r1", "b1", "b2", "r2"])
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "b2")).toBe(true)
+    expect(caretInsideBlock(editor, "b1")).toBe(false)
+    expect(caretInsideBlock(editor, "r2")).toBe(false)
   })
 
   it("delete: emptying the LAST of 3 columns removes just that column; layout survives at 2 columns", () => {
@@ -279,12 +297,124 @@ describe("MBS command sanity — column-local MBS (cut/copy/delete)", () => {
     expect(columnChildIds(editor, "col_a")).toEqual(["a1"])
     expect(columnChildIds(editor, "col_b")).toEqual(["b1"])
     expect(getDocument(editor).map((b) => b.id)).toEqual(["r1", "lay3", "r2"])
+    // FIX 1 — the emptied column is LAST (no next column), so the caret lands in
+    // the PREVIOUS column's last block (b1), not the overshot root block r2.
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "b1")).toBe(true)
+    expect(caretInsideBlock(editor, "r2")).toBe(false)
 
     // One undo restores everything.
     editor.commands.undo()
     const restored = layoutOf(editor)
     expect(restored!.columns.map((c) => c.id)).toEqual(["col_a", "col_b", "col_c"])
     expect(columnChildIds(editor, "col_c")).toEqual(["c1"])
+  })
+
+  it("delete: emptying the FIRST of 3 columns lands the caret in the NEXT column's first block", () => {
+    const editor = fixture3Col()
+    selectColumnRange(editor, "a1", "a1") // all of col_a (first column)
+    editor.commands.deleteBlockSelection()
+
+    const layout = layoutOf(editor)
+    expect(layout!.columns.map((c) => c.id)).toEqual(["col_b", "col_c"])
+    // Next column after the emptied one is col_b → caret in its first block b1.
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "b1")).toBe(true)
+  })
+
+  it("delete: emptying the MIDDLE of 3 columns lands the caret in the NEXT column's first block", () => {
+    const editor = fixture3Col()
+    selectColumnRange(editor, "b1", "b1") // all of col_b (middle column)
+    editor.commands.deleteBlockSelection()
+
+    const layout = layoutOf(editor)
+    expect(layout!.columns.map((c) => c.id)).toEqual(["col_a", "col_c"])
+    // Next column after the emptied one is col_c → caret in its first block c1.
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "c1")).toBe(true)
+  })
+
+  it("delete: emptied-column caret landing holds with NO trailing root content (no overshoot target)", () => {
+    // Layout is the LAST root block — the pre-fix overshoot had nowhere to go
+    // (it landed on a reseeded paragraph / doc end). 3-col, emptying the LAST
+    // column, must still land in the previous column's last block.
+    const editor = createTestEditor({
+      kit: { suggestionMenus: false },
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { id: "r1", depth: 0 },
+            content: [{ type: "text", text: "root-1" }],
+          },
+          {
+            type: "columnLayout",
+            attrs: { id: "lay3", depth: 0 },
+            content: ["col_a", "col_b", "col_c"].map((cid, i) => ({
+              type: "column",
+              attrs: { id: cid, width: 1 },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: `${cid}_p`, depth: 0 },
+                  content: [{ type: "text", text: `C${i}` }],
+                },
+              ],
+            })),
+          },
+        ],
+      },
+    })
+    selectColumnRange(editor, "col_c_p", "col_c_p")
+    editor.commands.deleteBlockSelection()
+    expect(layoutOf(editor)!.columns.map((c) => c.id)).toEqual(["col_a", "col_b"])
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "col_b_p")).toBe(true)
+  })
+
+  it("delete: 2-col unwrap caret landing holds with NO trailing root content", () => {
+    // r1 · layout[col_a[a1] · col_b[b1,b2]] — no r2. Empty col_b (RIGHT) →
+    // survivor col_a[a1] unwraps; caret in a1 (survivor last), never past it.
+    const editor = createTestEditor({
+      kit: { suggestionMenus: false },
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { id: "r1", depth: 0 },
+            content: [{ type: "text", text: "root-1" }],
+          },
+          {
+            type: "columnLayout",
+            attrs: { id: "lay", depth: 0 },
+            content: [
+              {
+                type: "column",
+                attrs: { id: "col_a", width: 1 },
+                content: [
+                  { type: "paragraph", attrs: { id: "a1", depth: 0 }, content: [{ type: "text", text: "A1" }] },
+                ],
+              },
+              {
+                type: "column",
+                attrs: { id: "col_b", width: 1 },
+                content: [
+                  { type: "paragraph", attrs: { id: "b1", depth: 0 }, content: [{ type: "text", text: "B1" }] },
+                  { type: "paragraph", attrs: { id: "b2", depth: 0 }, content: [{ type: "text", text: "B2" }] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+    selectColumnRange(editor, "b1", "b2")
+    editor.commands.deleteBlockSelection()
+    expect(getDocument(editor).map((b) => b.id)).toEqual(["r1", "a1"])
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(caretInsideBlock(editor, "a1")).toBe(true)
   })
 
   it("moveBlockUp: column MBS moves the block WITHIN its column; root order unchanged", () => {

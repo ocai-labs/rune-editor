@@ -6,6 +6,7 @@
 
 import type { RawCommands } from "@tiptap/core"
 import { Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state"
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import { nanoid } from "nanoid"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex } from "./selectable"
@@ -148,6 +149,133 @@ function moveSelectedBlocks(
   return true
 }
 
+/**
+ * F2 emptied-column detection for an MBS delete/cut: when the (widened) range
+ * `[sel.from, to)` covers a `column` surface's ENTIRE content, return the
+ * emptied-source-column payload so the caller removes the column in the same
+ * transaction (delete the column node when ≥2 survive; unwrap the layout when
+ * <2 do). `null` for a root MBS, a partial column delete, or a non-column
+ * surface. Shared by `deleteBlockSelection` and the Cmd-X cut branch so both
+ * agree on the removal.
+ */
+function resolveEmptiedColumnForMbs(
+  doc: ProseMirrorNode,
+  sel: MultiBlockSelection,
+  to: number,
+): EmptiedSourceColumn | null {
+  if (sel.surface === doc || sel.surface.type.name !== "column") return null
+  const columnPos = sel.$anchor.before(sel.$anchor.depth)
+  const columnNode = sel.surface
+  if (sel.from === columnPos + 1 && to === columnPos + columnNode.nodeSize - 1) {
+    return resolveEmptiedSourceColumn(doc, columnPos)
+  }
+  return null
+}
+
+interface EmptiedColumnLanding {
+  /** Stable id of the surviving block to land the caret in (`null` = fallback). */
+  id: string | null
+  /** Which end of that block's text to land on. */
+  edge: "start" | "end"
+}
+
+/**
+ * Where the caret lands after a delete/cut empties a column (Notion parity).
+ * Resolved as a stable block ID against the PRE-removal doc so the caller can
+ * re-find it in the POST-removal doc — position mapping through the
+ * column/layout `replaceWith` overshoots interior positions to the replacement
+ * end (into the FOLLOWING root block), which is the caret-overshoot bug this
+ * avoids.
+ *
+ *   - ≥2 survivors (the emptied `column` node is deleted, the layout persists):
+ *     the nearest surviving column — the NEXT column's first block if one
+ *     follows the emptied column, else the PREVIOUS column's last block.
+ *   - <2 survivors (the layout unwraps, survivor children splice to root): the
+ *     END of the survivor's LAST block. For an emptied RIGHT column this is the
+ *     block nearest the removed column; an emptied LEFT column lands at the end
+ *     too (observed Notion behavior) rather than the survivor's first block.
+ */
+function resolveEmptiedColumnLanding(ec: EmptiedSourceColumn): EmptiedColumnLanding {
+  if (ec.remainingColumnCount < 2) {
+    const last = ec.survivor?.lastChild ?? null
+    return { id: last ? (last.attrs.id as string | null) : null, edge: "end" }
+  }
+  const { layoutNode, layoutPos, columnPos } = ec
+  let emptiedIdx = -1
+  layoutNode.forEach((child, offset, i) => {
+    if (layoutPos + 1 + offset === columnPos) emptiedIdx = i
+  })
+  if (emptiedIdx !== -1) {
+    const next = layoutNode.maybeChild(emptiedIdx + 1)
+    if (next && next.type.name === "column" && next.firstChild) {
+      return { id: next.firstChild.attrs.id as string | null, edge: "start" }
+    }
+    const prev = emptiedIdx > 0 ? layoutNode.child(emptiedIdx - 1) : null
+    if (prev && prev.type.name === "column" && prev.lastChild) {
+      return { id: prev.lastChild.attrs.id as string | null, edge: "end" }
+    }
+  }
+  return { id: null, edge: "end" }
+}
+
+/** Land the caret at the resolved emptied-column landing block in `tr.doc`. */
+function setCaretAtEmptiedColumnLanding(tr: Transaction, landing: EmptiedColumnLanding): void {
+  if (landing.id) {
+    let foundPos = -1
+    tr.doc.descendants((n, p) => {
+      if (foundPos !== -1) return false
+      if (n.attrs?.id === landing.id) {
+        foundPos = p
+        return false
+      }
+      return true
+    })
+    const node = foundPos === -1 ? null : tr.doc.nodeAt(foundPos)
+    if (node) {
+      if (node.isTextblock) {
+        const at = landing.edge === "start" ? foundPos + 1 : foundPos + 1 + node.content.size
+        tr.setSelection(TextSelection.create(tr.doc, at))
+      } else {
+        const at = landing.edge === "start" ? foundPos : foundPos + node.nodeSize
+        tr.setSelection(Selection.near(tr.doc.resolve(at), landing.edge === "start" ? 1 : -1))
+      }
+      return
+    }
+  }
+  // Fallback (a landing block that vanished — should not happen): the pre-fix
+  // mapped-near behavior, safe if imprecise.
+  tr.setSelection(Selection.near(tr.doc.resolve(Math.min(tr.selection.from, tr.doc.content.size))))
+}
+
+/**
+ * Delete an MBS's blocks over the pre-widened range `[sel.from, to)`, applying
+ * #392 F2 parity + the emptied-column caret landing. Shared by
+ * `deleteBlockSelection` (Delete / command) and the Cmd-X cut branch so a cut
+ * that empties a column removes it exactly like a delete does, landing the
+ * caret in the same surviving block. The CALLER computes `to` (delete/cut widen
+ * differently — see call sites) and dispatches the `tr` with its own meta.
+ */
+export function applyMbsDelete(
+  tr: Transaction,
+  state: EditorState,
+  sel: MultiBlockSelection,
+  to: number,
+): void {
+  const emptied = resolveEmptiedColumnForMbs(state.doc, sel, to)
+  if (emptied) {
+    // Resolve the landing block BEFORE the removal (positions are pre-removal),
+    // remove the column, then re-find the landing block by its stable id.
+    const landing = resolveEmptiedColumnLanding(emptied)
+    removeMoveSource(tr, { from: sel.from, to }, emptied)
+    setCaretAtEmptiedColumnLanding(tr, landing)
+    return
+  }
+  const [lo] = sel.blockIndices
+  const rootSurface = sel.surface === state.doc
+  tr.delete(sel.from, to)
+  setSelectionAfterDelete(tr, state.schema, lo, rootSurface)
+}
+
 export function blockSelectionCommands(): Partial<RawCommands> {
   return {
     setBlockSelection:
@@ -235,41 +363,18 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         const sel = state.selection
         if (!(sel instanceof MultiBlockSelection)) return false
         if (!dispatch) return true
-        const [lo] = sel.blockIndices
-        // Surface-aware: a column-local MBS delete uses the non-root branch of
-        // setSelectionAfterDelete (the root-index walk is meaningless on a
-        // column surface; column normalization backfills the E2 paragraph and
-        // remaps the selection). `lo` is surface-local in both cases.
-        const rootSurface = sel.surface === state.doc
         // Widen over any collapsed toggle's hidden body — otherwise deleting
         // just the (visible) toggle title orphans its body as loose blocks.
+        // `applyMbsDelete` then applies #392 F2 parity: when the widened range
+        // covers a column's ENTIRE content it removes the column (≥2 survive)
+        // or unwraps the layout (<2), landing the caret in the nearest
+        // surviving column instead of overshooting into the following root
+        // block. Shared with the Cmd-X cut branch so cut and delete land
+        // identically.
         const { to } = expandRangeOverToggleBodies(state.doc, sel.from, sel.to, {
           collapsedOnly: true,
         })
-        // F2/delete parity (Notion): when the (widened) range covers a
-        // column's ENTIRE content, the delete must remove the column itself
-        // in the SAME transaction — a 3-column layout becomes 2 columns; a
-        // 2-column layout unwraps to flat root blocks. A bare `tr.delete`
-        // over a column's whole content can never drop the layout below its
-        // `column{2,MAX}` floor (PM backfills an empty column instead), so
-        // this reuses the F2 move machinery (`resolveEmptiedSourceColumn` +
-        // `removeMoveSource`) — the same payload shape a move-out computes —
-        // rather than leaning on E2's reseed, which stays the safety net for
-        // non-command paths only (paste / setContent / collab).
-        let emptiedSourceColumn: EmptiedSourceColumn | null = null
-        if (!rootSurface && sel.surface.type.name === "column") {
-          const columnPos = sel.$anchor.before(sel.$anchor.depth)
-          const columnNode = sel.surface
-          if (sel.from === columnPos + 1 && to === columnPos + columnNode.nodeSize - 1) {
-            emptiedSourceColumn = resolveEmptiedSourceColumn(state.doc, columnPos)
-          }
-        }
-        if (emptiedSourceColumn) {
-          removeMoveSource(tr, { from: sel.from, to }, emptiedSourceColumn)
-        } else {
-          tr.delete(sel.from, to)
-        }
-        setSelectionAfterDelete(tr, state.schema, lo, rootSurface)
+        applyMbsDelete(tr, state, sel, to)
         dispatch(tr)
         return true
       },

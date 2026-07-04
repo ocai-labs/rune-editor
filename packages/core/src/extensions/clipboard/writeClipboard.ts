@@ -7,6 +7,7 @@
 import type { EditorView } from "@tiptap/pm/view"
 import { serializeBlocksForClipboard } from "./serializeBlocks"
 import { MultiBlockSelection } from "../block-selection/MultiBlockSelection"
+import { applyMbsDelete } from "../block-selection/commands"
 import { expandRangeOverToggleBodies } from "../../blocks/Toggle/range"
 
 /**
@@ -56,15 +57,22 @@ export function writeClipboard(view: EditorView, event: ClipboardEvent, cut: boo
   // MultiBlockSelection widens over any collapsed toggle's hidden body before
   // deleting — otherwise the copy above (which already expands via
   // expandCollapsedToggles) puts the body on the clipboard AND leaves it
-  // behind in the doc, duplicating it. A TextSelection cut can't straddle a
-  // toggle/body boundary this way, so it keeps the plain deleteSelection().
+  // behind in the doc, duplicating it. It then routes through the SAME
+  // emptied-column-aware delete the Delete key uses (`applyMbsDelete`): cutting
+  // a column's ENTIRE content removes the column (≥2 survive) / unwraps the
+  // layout (<2) instead of leaving an empty column + E2 reseed — the #392
+  // parity a bare `tr.delete` here bypassed — and lands the caret in the same
+  // surviving block delete does. For an emptied column the widened range
+  // reaches the column end regardless, so cut and delete route identically.
+  // A TextSelection cut can't straddle a toggle/body boundary this way, so it
+  // keeps the plain deleteSelection().
   if (cut) {
     const tr = view.state.tr
     if (sel instanceof MultiBlockSelection) {
       const { to } = expandRangeOverToggleBodies(view.state.doc, sel.from, sel.to, {
         collapsedOnly: true,
       })
-      tr.delete(sel.from, to)
+      applyMbsDelete(tr, view.state, sel, to)
     } else {
       tr.deleteSelection()
     }
