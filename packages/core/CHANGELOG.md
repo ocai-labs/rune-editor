@@ -1,5 +1,19 @@
 # @ocai/rune-core
 
+## 0.19.2
+
+### Patch Changes
+
+- 3c07c97: Hide the table +col / +row extend buttons while a pill action menu is open.
+  Opening a column/row pill dropdown dispatches a full-axis `CellSelection`; on
+  the table's last column or last row that selection made
+  `activeEdgesForSelection` reveal the extend button right under the freshly
+  opened menu — visual noise layered on the dropdown. `TableExtendButtons` now
+  suppresses both buttons (inline `opacity:0` + `pointer-events:none`, the same
+  mechanism as the existing cell-drag suppression) whenever
+  `cellHandlePillsKey.dropdown` is non-null, and restores them when the menu
+  closes. The caret/hover reveal for tables with no menu open is unchanged.
+
 ## 0.19.1
 
 ### Patch Changes
