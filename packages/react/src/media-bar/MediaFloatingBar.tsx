@@ -277,7 +277,7 @@ export function MediaFloatingBar({ editor }: MediaFloatingBarProps) {
     >
       <div
         aria-label="Block actions"
-        className="flex w-fit items-center gap-0.5 rounded-md bg-popover p-0.5 text-(--rune-gutter-fg) shadow-md ring-1 ring-foreground/10"
+        className="rune-chrome-surface flex w-fit items-center gap-0.5 rounded-md bg-popover p-0.5 text-(--rune-gutter-fg) shadow-md ring-1 ring-foreground/10"
       >
         {!collapsed && (
           <BarIconButton
@@ -309,7 +309,7 @@ export function MediaFloatingBar({ editor }: MediaFloatingBarProps) {
         <div
           role="dialog"
           aria-label="Set block alignment"
-          className="absolute end-0 top-full mt-1 flex w-fit items-center rounded-md bg-popover p-0.5 text-(--rune-gutter-fg) shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-150"
+          className="rune-chrome-surface absolute end-0 top-full mt-1 flex w-fit items-center rounded-md bg-popover p-0.5 text-(--rune-gutter-fg) shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-150"
         >
           {ALIGN_OPTIONS.map((option, index) => (
             <Fragment key={option.value}>

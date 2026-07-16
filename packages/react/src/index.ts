@@ -213,6 +213,9 @@ export { getAccentForeground } from "./lib/getAccentForeground"
 // Tailwind class string; `runeChromeClass(opts)` varies shadow/animation. A
 // non-Tailwind host uses the `.rune-chrome` plain-CSS class (style.css) instead
 // — the two paths are an either/or, both built from the --rune-chrome-* tokens.
+// Rune-owned Tailwind panels carry the stable, styling-only
+// `.rune-chrome-surface` marker; cross-stack overrides can select
+// `:is(.rune-chrome-surface, .rune-chrome)`.
 export { runeChromeClass, RUNE_CHROME_CLASS } from "./lib/runeChromeClass"
 export type { RuneChromeOptions } from "./lib/runeChromeClass"
 

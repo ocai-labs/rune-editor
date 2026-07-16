@@ -109,6 +109,9 @@ describe("MediaFloatingBar", () => {
     expect(await screen.findByLabelText("Set block alignment")).toBeInTheDocument()
     expect(screen.getByLabelText("Download")).toBeInTheDocument()
     expect(screen.getByLabelText("Open block actions menu")).toBeInTheDocument()
+    const mainPanel = screen.getByLabelText("Block actions")
+    expect(mainPanel).toHaveClass("rune-chrome-surface")
+    expect(barRoot()).not.toHaveClass("rune-chrome-surface")
     // Notion structure: the bar is an absolutely-positioned child of the
     // block's content element, not a floating portal at document level.
     expect(barRoot()!.closest(".rune-block-content")).not.toBeNull()
@@ -150,6 +153,9 @@ describe("MediaFloatingBar", () => {
       { button: 0 },
     )
     const right = await screen.findByLabelText("Right alignment")
+    expect(screen.getByRole("dialog", { name: "Set block alignment" })).toHaveClass(
+      "rune-chrome-surface",
+    )
     fireEvent.mouseDown(right, { button: 0 })
 
     expect(editor.state.doc.firstChild!.attrs.align).toBe("right")

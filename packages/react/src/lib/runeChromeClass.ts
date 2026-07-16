@@ -10,7 +10,9 @@
 // native-menu surface both consume this, and it's exported so a downstream host
 // can put rune's exact chrome on its OWN popover (Tailwind path). Non-Tailwind
 // hosts use the `.rune-chrome` plain-CSS class instead (built from the same
-// --rune-chrome-* tokens; see styles/chrome.css).
+// --rune-chrome-* tokens; see styles/chrome.css). `rune-chrome-surface` is a
+// styling-only marker on the Tailwind path; downstream visual overrides that
+// support both paths should select `:is(.rune-chrome-surface, .rune-chrome)`.
 //
 // This returns ONLY chrome utilities — no layout (z-index, width, padding,
 // flex). The caller adds its own layout and merges via cn(), e.g.
@@ -35,7 +37,7 @@ export interface RuneChromeOptions {
 // same values for color + radius. (shadow + ring are the one hand-matched pair;
 // see styles/chrome.css.)
 const BASE =
-  "rounded-lg bg-popover text-popover-foreground ring-1 ring-foreground/10 outline-hidden origin-(--radix-popover-content-transform-origin) duration-100"
+  "rune-chrome-surface rounded-lg bg-popover text-popover-foreground ring-1 ring-foreground/10 outline-hidden origin-(--radix-popover-content-transform-origin) duration-100"
 
 const SHADOW = { md: "shadow-md", lg: "shadow-lg" } as const
 

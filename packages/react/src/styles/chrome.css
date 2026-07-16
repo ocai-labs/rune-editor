@@ -9,6 +9,10 @@
    rune popover look with no Tailwind utility resolution and no dependency on
    `bg-popover`/`shadow-md` existing. Tailwind hosts use RUNE_CHROME_CLASS
    instead (runeChromeClass.ts) — the two are an either/or, documented as such.
+   Tailwind surfaces carry the styling-only `.rune-chrome-surface` marker;
+   downstream overrides covering both paths should select
+   `:is(.rune-chrome-surface, .rune-chrome)`. Do not alias this rule to the
+   marker: doing so would override Tailwind shadow variants such as `shadow-lg`.
 
    Static box only: rounded corners, popover bg/fg, hairline ring + drop shadow.
    Open/close animation is the popover library's job (Radix data-state), not
