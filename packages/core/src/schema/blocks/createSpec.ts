@@ -26,7 +26,9 @@ import {
   type RuneMarkdownBlockSerializer,
   type RuneSchemaContextPropMetadata,
   type RuneSchemaContextPropType,
+  type ShortcutHandler,
 } from "./types"
+import { getRuneKeymap, type RuneShortcutActionId } from "../../keymap"
 
 // HTML-attribute map for the attributes every rune block shares.
 // Mirrors BlockNote's `BlockAttributes` map (pm-nodes/BlockContainer.ts)
@@ -709,7 +711,23 @@ export function createBlockSpec(config: BlockSpecConfig) {
           name: `${config.type}--${ext.key}`,
           priority: ext.priority,
           addKeyboardShortcuts() {
-            return ext.keyboardShortcuts ?? {}
+            // `shortcutActions` bind under the editor's RESOLVED chords —
+            // host overrides via createRuneKit({ keymap }), defaults when the
+            // block is registered outside a kit. Literal `keyboardShortcuts`
+            // stay fixed; on a chord collision the action binding wins (the
+            // host explicitly asked for that chord).
+            const keymap = getRuneKeymap(this.editor)
+            const bound: Record<string, ShortcutHandler> = {
+              ...(ext.keyboardShortcuts ?? {}),
+            }
+            for (const [actionId, handler] of Object.entries(
+              ext.shortcutActions ?? {},
+            )) {
+              for (const key of keymap[actionId as RuneShortcutActionId]) {
+                bound[key] = handler
+              }
+            }
+            return bound
           },
           addInputRules() {
             return compileDeclarativeInputRules(ext.inputRules ?? [], this.editor)

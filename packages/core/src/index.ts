@@ -14,6 +14,27 @@ export {
 export { createRuneKit, BLOCK_COLOR_TYPES, deriveBlockColorTypes } from "./kit"
 export type { CreateRuneKitOptions, RunePlugin } from "./kit"
 
+// Remappable-shortcut registry + override channel. RUNE_SHORTCUT_ACTIONS is
+// the machine-readable source of truth for host keybinding UIs (labels +
+// default chords); hosts pass overrides via createRuneKit({ keymap }) and can
+// read the effective map back with getRuneKeymap(editor).
+export {
+  RUNE_SHORTCUT_ACTIONS,
+  RUNE_SHORTCUT_ACTION_IDS,
+  RUNE_DEFAULT_KEYMAP,
+  resolveRuneKeymap,
+  getRuneKeymap,
+  eventMatchesRuneKeys,
+  bindShortcutKeys,
+  createRuneKeymapState,
+} from "./keymap"
+export type {
+  RuneShortcutActionId,
+  RuneShortcutActionSpec,
+  RuneKeymapOverrides,
+  ResolvedRuneKeymap,
+} from "./keymap"
+
 export {
   BlockCommands,
   getDocument,

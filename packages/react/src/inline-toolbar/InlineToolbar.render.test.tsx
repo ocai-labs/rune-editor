@@ -7,19 +7,26 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { Editor } from "@tiptap/core"
 import { EditorContent } from "@tiptap/react"
-import { createRuneKit, TitleKit } from "@ocai/rune-core"
+import {
+  createRuneKit,
+  TitleKit,
+  type RuneKeymapOverrides,
+} from "@ocai/rune-core"
 import { describe, expect, it, onTestFinished } from "vitest"
 import { ComponentsContext, defaultComponents } from "../suggestion-menu/ComponentsContext"
 import { InlineToolbar } from "./InlineToolbar"
 import { reactMathNodeViews } from "../math/kitOptions"
 import { mockEditorCoords } from "../test-utils/mockEditorCoords"
 
-function createEditor(options: { reactMath?: boolean } = {}) {
+function createEditor(
+  options: { reactMath?: boolean; keymap?: RuneKeymapOverrides } = {},
+) {
   const editor = new Editor({
     element: document.createElement("div"),
-    extensions: createRuneKit(
-      options.reactMath ? { mathNodeViews: reactMathNodeViews() } : undefined,
-    ),
+    extensions: createRuneKit({
+      ...(options.reactMath ? { mathNodeViews: reactMathNodeViews() } : {}),
+      ...(options.keymap ? { keymap: options.keymap } : {}),
+    }),
   })
   mockEditorCoords(editor)
   onTestFinished(() => {
@@ -245,5 +252,66 @@ describe("InlineToolbar", () => {
     await waitFor(() =>
       expect(boldButton).toHaveAttribute("aria-pressed", "true"),
     )
+  })
+
+  // The `link` shortcut action — the one remappable chord bound as a react
+  // DOM listener rather than a PM keymap. The chord must follow the editor's
+  // resolved keymap (createRuneKit({ keymap })). Assertions read the Link
+  // trigger's aria-expanded (the linkOpen state): the panel's popover content
+  // itself never mounts under jsdom (useStableVirtualElement rejects jsdom's
+  // all-zero anchor rects). jsdom has no Mac platform marker, so
+  // prosemirror-keymap resolves Mod to Ctrl in these tests.
+  describe("link shortcut action", () => {
+    const renderToolbar = (editor: Editor) => {
+      editor.commands.setContent([
+        { type: "paragraph", attrs: { id: "p1" }, content: [{ type: "text", text: "body" }] },
+      ])
+      setSelectionAroundText(editor, "body")
+      render(
+        <ComponentsContext.Provider value={defaultComponents}>
+          <InlineToolbar editor={editor} />
+        </ComponentsContext.Provider>,
+      )
+    }
+
+    it("default: Mod-k toggles the link panel open", async () => {
+      const editor = createEditor()
+      renderToolbar(editor)
+      const linkButton = await screen.findByRole("button", { name: "Link" })
+      expect(linkButton).toHaveAttribute("aria-expanded", "false")
+
+      fireEvent.keyDown(document, { key: "k", ctrlKey: true })
+      await waitFor(() =>
+        expect(linkButton).toHaveAttribute("aria-expanded", "true"),
+      )
+    })
+
+    it("rebound: the new chord opens the panel, the default chord is dead", async () => {
+      const editor = createEditor({ keymap: { link: ["Mod-Shift-l"] } })
+      renderToolbar(editor)
+      const linkButton = await screen.findByRole("button", { name: "Link" })
+
+      fireEvent.keyDown(document, { key: "k", ctrlKey: true })
+      expect(linkButton).toHaveAttribute("aria-expanded", "false")
+
+      fireEvent.keyDown(document, { key: "l", ctrlKey: true, shiftKey: true })
+      await waitFor(() =>
+        expect(linkButton).toHaveAttribute("aria-expanded", "true"),
+      )
+    })
+
+    it("unbound: no chord opens the panel (the Link button still does)", async () => {
+      const editor = createEditor({ keymap: { link: false } })
+      renderToolbar(editor)
+      const linkButton = await screen.findByRole("button", { name: "Link" })
+
+      fireEvent.keyDown(document, { key: "k", ctrlKey: true })
+      expect(linkButton).toHaveAttribute("aria-expanded", "false")
+
+      fireEvent.mouseDown(linkButton)
+      await waitFor(() =>
+        expect(linkButton).toHaveAttribute("aria-expanded", "true"),
+      )
+    })
   })
 })

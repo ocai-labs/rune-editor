@@ -5,6 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { Extension, type CommandProps } from "@tiptap/core"
+import { bindShortcutKeys, getRuneKeymap } from "../../keymap"
 import type { ColorName } from "../../shared/color-tokens"
 import {
   CellSelection,
@@ -370,9 +371,12 @@ export const TableCommands = Extension.create({
   addKeyboardShortcuts() {
     return {
       Backspace: () => deleteTableWhenAllCellsSelected({ editor: this.editor }),
-      "Mod-Backspace": () => deleteTableWhenAllCellsSelected({ editor: this.editor }),
       Delete: () => deleteTableWhenAllCellsSelected({ editor: this.editor }),
-      "Mod-Delete": () => deleteTableWhenAllCellsSelected({ editor: this.editor }),
+      // The Mod- variants are the remappable `tableDelete` action; the plain
+      // Backspace/Delete above are fixed structural keys.
+      ...bindShortcutKeys(getRuneKeymap(this.editor).tableDelete, () =>
+        deleteTableWhenAllCellsSelected({ editor: this.editor }),
+      ),
       Tab: () => {
         const tableInfo = currentTableInfo(this.editor.state)
         if (!tableInfo) return false

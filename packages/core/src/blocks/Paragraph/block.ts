@@ -103,8 +103,8 @@ export const Paragraph = createBlockSpec({
   extensions: [
     createBlockExtension({
       key: "extras",
-      keyboardShortcuts: {
-        "Mod-Alt-0": ({ editor }) => editor.commands.setNode("paragraph"),
+      shortcutActions: {
+        blockParagraph: ({ editor }) => editor.commands.setNode("paragraph"),
       },
     }),
   ],

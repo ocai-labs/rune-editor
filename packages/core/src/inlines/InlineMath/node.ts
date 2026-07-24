@@ -5,8 +5,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { Node } from "@tiptap/core"
-import type { NodeViewRendererProps } from "@tiptap/core"
+import type { Editor, NodeViewRendererProps } from "@tiptap/core"
 import type { NodeView } from "@tiptap/pm/view"
+import { bindShortcutKeys, getRuneKeymap } from "../../keymap"
 import { MathController } from "./controller"
 import { inlineMathCommands } from "./commands"
 import { compileDeclarativeInputRules } from "../../schema/blocks/internal"
@@ -102,20 +103,21 @@ export const InlineMath = Node.create<{ nodeView?: InlineNodeViewFactory }>({
   },
 
   addKeyboardShortcuts() {
-    // Cmd/Ctrl+Shift+E. Collapsed cursor → insert empty inline math.
-    // Non-collapsed single-textblock selection → wrap as inline math.
-    // Both commands self-gate (readonly, inline-content context, single-
-    // textblock for wrap); a `false` here lets PM fall through, so a
-    // multi-block selection or readonly editor leaves the chord free for
-    // the next handler / browser default.
-    return {
-      "Mod-Shift-e": ({ editor }) => {
+    // The `inlineMath` action (default Mod-Shift-e). Collapsed cursor →
+    // insert empty inline math. Non-collapsed single-textblock selection →
+    // wrap as inline math. Both commands self-gate (readonly, inline-content
+    // context, single-textblock for wrap); a `false` here lets PM fall
+    // through, so a multi-block selection or readonly editor leaves the
+    // chord free for the next handler / browser default.
+    return bindShortcutKeys(
+      getRuneKeymap(this.editor).inlineMath,
+      ({ editor }: { editor: Editor }) => {
         if (editor.state.selection.empty) {
           return editor.commands.insertInlineMath({ latex: "" })
         }
         return editor.commands.wrapSelectionAsInlineMath()
       },
-    }
+    )
   },
 
   addInputRules() {

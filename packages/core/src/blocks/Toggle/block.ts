@@ -228,10 +228,10 @@ export const Toggle = createBlockSpec({
         { find: /^>##\s$/, replace: () => ({ type: "toggle", props: { level: 3 } }) },
         { find: /^>###\s$/, replace: () => ({ type: "toggle", props: { level: 4 } }) },
       ],
-      keyboardShortcuts: {
-        "Mod-Shift-7": ({ editor }) =>
+      shortcutActions: {
+        blockToggle: ({ editor }) =>
           editor.commands.setNode("toggle", { level: 0, expanded: false }),
-        "Mod-Alt-T": ({ editor }) => {
+        toggleCollapse: ({ editor }) => {
           const { selection } = editor.state
           const $pos = selection.$from
           for (let d = $pos.depth; d >= 0; d--) {

@@ -50,6 +50,8 @@ import "@tiptap/extension-strike"
 import "@tiptap/extension-code"
 import "@tiptap/extension-link"
 import {
+  eventMatchesRuneKeys,
+  getRuneKeymap,
   nearestBodyBlock,
   openBlockActionsDropdown,
   type ColorName,
@@ -350,15 +352,20 @@ export function InlineToolbar({
     return () => document.removeEventListener("keydown", handler, true)
   }, [open, linkOpen, turnIntoOpen])
 
-  // Cmd+K (or Ctrl+K) opens LinkMenu / LinkEditForm depending on whether
-  // the selection already carries a link mark. Only fires while the
-  // toolbar is showing.
+  // The `link` shortcut action (default Mod-k) opens LinkMenu / LinkEditForm
+  // depending on whether the selection already carries a link mark. Only
+  // fires while the toolbar is showing. The chord comes from the editor's
+  // resolved keymap (host remap via createRuneKit({ keymap })); matching
+  // delegates to prosemirror-keymap's own matcher so a DOM listener and a PM
+  // keymap can never disagree about what "Mod-k" means. An unbound action
+  // skips the listener entirely — the chord is released to the host.
   useEffect(() => {
     if (!open) return
+    const keys = getRuneKeymap(editor).link
+    if (keys.length === 0) return
     const handler = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.key.toLowerCase() !== "k") return
       if (!editor.isEditable) return
+      if (!eventMatchesRuneKeys(editor.view, e, keys)) return
       e.preventDefault()
       setColorOpen(false)
       setLinkOpen((v) => !v)

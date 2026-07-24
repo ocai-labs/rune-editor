@@ -5,9 +5,21 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import StarterKit from "@tiptap/starter-kit"
+import Bold from "@tiptap/extension-bold"
 import Code from "@tiptap/extension-code"
+import HardBreak from "@tiptap/extension-hard-break"
+import Italic from "@tiptap/extension-italic"
+import Strike from "@tiptap/extension-strike"
 import Underline from "@tiptap/extension-underline"
+import { UndoRedo } from "@tiptap/extensions"
 import Link, { isAllowedUri, type LinkOptions } from "@tiptap/extension-link"
+import {
+  bindShortcutKeys,
+  createRuneKeymapState,
+  getRuneKeymap,
+  resolveRuneKeymap,
+  type RuneKeymapOverrides,
+} from "./keymap"
 import { RUNE_BODY_BLOCKS, deriveBlockIdTypes, isFactoryBuiltBlockExtension, MediaImport, MediaPopover, CalloutEmojiPopover } from "./blocks"
 import type { RuneImportImageFile, RuneImportImageUrl, RuneImportMediaFile, RuneImportMediaUrl } from "./blocks"
 import { InlineMath, type InlineNodeViewFactory } from "./inlines"
@@ -157,6 +169,15 @@ export interface CreateRuneKitOptions {
    * still use writeRawImageUrl for the generic web-editor fallback.
    */
   importImageUrl?: RuneImportImageUrl
+  /**
+   * Remap or unbind rune's user-facing shortcut chords, keyed by registry
+   * action id (see `RUNE_SHORTCUT_ACTIONS`). `string[]` rebinds
+   * (prosemirror-keymap dialect, single chords only); `false`/`[]` unbinds —
+   * the chord is then NOT registered and the keydown bubbles out of the
+   * editor to the host's own shortcut dispatcher. Structural editing keys
+   * (Enter/Tab/Backspace/arrows/Escape/trigger chars) are not remappable.
+   */
+  keymap?: RuneKeymapOverrides
 }
 
 // Suppress slash menu inside code-like blocks (codeBlock today, any future
@@ -252,6 +273,69 @@ const RuneLink = Link.extend<LinkOptions>({
           return true
         },
     }
+  },
+})
+
+// Re-registered copies of StarterKit's shortcut-carrying extensions (their
+// bundled originals are disabled in the StarterKit config below). Identical to
+// upstream except `addKeyboardShortcuts` binds the editor's RESOLVED chords
+// (host overrides via `createRuneKit({ keymap })`, defaults otherwise) instead
+// of hardcoded ones. Upstream's belt-and-braces aliases (`Mod-B`, Cyrillic
+// `Mod-я`) are dropped deliberately: prosemirror-keymap's keyCode fallback
+// already maps CapsLock/layout variants onto the physical key's base name.
+// An unbound action registers nothing, so its chord bubbles to the host.
+const RuneBold = Bold.extend({
+  addKeyboardShortcuts() {
+    return bindShortcutKeys(getRuneKeymap(this.editor).bold, () =>
+      this.editor.commands.toggleBold(),
+    )
+  },
+})
+
+const RuneItalic = Italic.extend({
+  addKeyboardShortcuts() {
+    return bindShortcutKeys(getRuneKeymap(this.editor).italic, () =>
+      this.editor.commands.toggleItalic(),
+    )
+  },
+})
+
+const RuneStrike = Strike.extend({
+  addKeyboardShortcuts() {
+    return bindShortcutKeys(getRuneKeymap(this.editor).strike, () =>
+      this.editor.commands.toggleStrike(),
+    )
+  },
+})
+
+const RuneHardBreak = HardBreak.extend({
+  addKeyboardShortcuts() {
+    return {
+      // Shift-Enter is the fixed structural line-break key; only the
+      // Mod-Enter chord participates in remapping (the `hardBreak` action).
+      "Shift-Enter": () => this.editor.commands.setHardBreak(),
+      ...bindShortcutKeys(getRuneKeymap(this.editor).hardBreak, () =>
+        this.editor.commands.setHardBreak(),
+      ),
+    }
+  },
+})
+
+const RuneUndoRedo = UndoRedo.extend({
+  addKeyboardShortcuts() {
+    const keymap = getRuneKeymap(this.editor)
+    return {
+      ...bindShortcutKeys(keymap.undo, () => this.editor.commands.undo()),
+      ...bindShortcutKeys(keymap.redo, () => this.editor.commands.redo()),
+    }
+  },
+})
+
+const RuneUnderline = Underline.extend({
+  addKeyboardShortcuts() {
+    return bindShortcutKeys(getRuneKeymap(this.editor).underline, () =>
+      this.editor.commands.toggleUnderline(),
+    )
   },
 })
 
@@ -398,7 +482,26 @@ export function createRuneKit(options: CreateRuneKitOptions = {}): AnyExtension[
       underline: false,
       link: false,
       code: false,
+      // The shortcut-carrying bundled extensions are re-registered right
+      // below with keymap-resolved chords (see RuneBold etc. above). Keeping
+      // the re-registrations IMMEDIATELY after StarterKit preserves the
+      // schema mark rank order (bold < italic < strike < textStyle < …), so
+      // overlapping-mark DOM nesting is unchanged.
+      bold: false,
+      italic: false,
+      strike: false,
+      hardBreak: false,
+      undoRedo: false,
     }),
+    RuneBold,
+    RuneItalic,
+    RuneStrike,
+    RuneHardBreak,
+    RuneUndoRedo,
+    // Distributes the resolved keymap as `editor.storage.runeKeymap` — every
+    // remappable binding site reads it back via getRuneKeymap() inside its
+    // addKeyboardShortcuts (which Tiptap invokes after all storages exist).
+    createRuneKeymapState(resolveRuneKeymap(options.keymap)),
     ...bodyBlocks,
     ...pluginBlocks,
     ...pluginExtensions,
@@ -455,7 +558,7 @@ export function createRuneKit(options: CreateRuneKitOptions = {}): AnyExtension[
   // any text-color span sits inside it, never reaching the anchor.
   extensions.push(
     EntityRefs,
-    Underline,
+    RuneUnderline,
     // Code, re-registered (StarterKit's copy disabled above). Priority 50
     // (below textStyle's 101) makes it render INNER of an inline color span
     // — `<span data-text-color="…"><code>…</code></span>` — mirroring the
@@ -465,7 +568,15 @@ export function createRuneKit(options: CreateRuneKitOptions = {}): AnyExtension[
     // also be a link/wikiLink/internalRef (preserves existing behaviour +
     // tests), but it CAN now carry bold/italic/strike/underline and an
     // inline colour, matching Notion.
-    Code.extend({ priority: 50, excludes: "link wikiLink internalRef" }),
+    Code.extend({
+      priority: 50,
+      excludes: "link wikiLink internalRef",
+      addKeyboardShortcuts() {
+        return bindShortcutKeys(getRuneKeymap(this.editor).code, () =>
+          this.editor.commands.toggleCode(),
+        )
+      },
+    }),
     RuneLink.configure({
       openOnClick: false,
       autolink: true,

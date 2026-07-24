@@ -5,6 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { Extension } from "@tiptap/core"
+import { getRuneKeymap } from "../../keymap"
 import { blockSelectionPlugin, blockSelectionKey } from "./plugin"
 import { blockSelectionCommands } from "./commands"
 import { blockSelectionKeymap } from "./keymap"
@@ -48,6 +49,6 @@ export const BlockSelection = Extension.create({
     return blockSelectionCommands()
   },
   addKeyboardShortcuts() {
-    return blockSelectionKeymap()
+    return blockSelectionKeymap(getRuneKeymap(this.editor))
   },
 })

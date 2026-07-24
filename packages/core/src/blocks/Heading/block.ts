@@ -133,14 +133,15 @@ export const Heading = createBlockSpec({
   extensions: [
     createBlockExtension({
       key: "extras",
-      keyboardShortcuts: {
-        "Mod-Alt-1": ({ editor }) =>
+      // UI heading N = internal level N+1 (<h1> is reserved for the title).
+      shortcutActions: {
+        blockHeading1: ({ editor }) =>
           editor.commands.setNode("heading", { level: 2 }),
-        "Mod-Alt-2": ({ editor }) =>
+        blockHeading2: ({ editor }) =>
           editor.commands.setNode("heading", { level: 3 }),
-        "Mod-Alt-3": ({ editor }) =>
+        blockHeading3: ({ editor }) =>
           editor.commands.setNode("heading", { level: 4 }),
-        "Mod-Alt-4": ({ editor }) =>
+        blockHeading4: ({ editor }) =>
           editor.commands.setNode("heading", { level: 5 }),
       },
       inputRules: [

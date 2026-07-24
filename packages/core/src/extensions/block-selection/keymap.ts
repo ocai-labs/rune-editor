@@ -7,6 +7,11 @@
 import type { Editor } from "@tiptap/core"
 import { Selection, TextSelection } from "@tiptap/pm/state"
 import type { ResolvedPos } from "@tiptap/pm/model"
+import {
+  RUNE_DEFAULT_KEYMAP,
+  bindShortcutKeys,
+  type ResolvedRuneKeymap,
+} from "../../keymap"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex, isBlockSelectable } from "./selectable"
 import { blockSelectionKey, type BlockSelectionPluginMeta } from "./plugin"
@@ -17,14 +22,16 @@ import {
 
 // Tiptap's addKeyboardShortcuts handlers receive `{ editor }` and must
 // return true to mark the key consumed.
-export function blockSelectionKeymap(): Record<string, (props: { editor: Editor }) => boolean> {
+//
+// Two tiers: the un-modified structural keys (arrows/Enter/Backspace/Delete/
+// Escape — MBS navigation semantics, fixed) and the remappable Mod-chords,
+// bound under whatever the editor's resolved keymap assigns to their action
+// (host overrides via createRuneKit({ keymap }); defaults otherwise).
+export function blockSelectionKeymap(
+  keymap: ResolvedRuneKeymap = RUNE_DEFAULT_KEYMAP,
+): Record<string, (props: { editor: Editor }) => boolean> {
   return {
-    "Mod-a": ({ editor }) => handleModA(editor),
     Escape: ({ editor }) => handleEscape(editor),
-    "Mod-ArrowUp": ({ editor }) => editor.commands.moveBlockUp(),
-    "Mod-ArrowDown": ({ editor }) => editor.commands.moveBlockDown(),
-    "Mod-Shift-ArrowUp": ({ editor }) => editor.commands.moveBlockUp(),
-    "Mod-Shift-ArrowDown": ({ editor }) => editor.commands.moveBlockDown(),
     ArrowUp: ({ editor }) => handleArrow(editor, -1),
     ArrowDown: ({ editor }) => handleArrow(editor, +1),
     "Shift-ArrowUp": ({ editor }) => handleShiftArrow(editor, -1),
@@ -34,7 +41,18 @@ export function blockSelectionKeymap(): Record<string, (props: { editor: Editor 
     Enter: ({ editor }) => handleEnter(editor),
     Backspace: ({ editor }) => deleteOnBlockSelection(editor),
     Delete: ({ editor }) => deleteOnBlockSelection(editor),
-    "Mod-d": ({ editor }) => editor.commands.duplicateBlocks(),
+    ...bindShortcutKeys(keymap.selectExpand, ({ editor }: { editor: Editor }) =>
+      handleModA(editor),
+    ),
+    ...bindShortcutKeys(keymap.blockMoveUp, ({ editor }: { editor: Editor }) =>
+      editor.commands.moveBlockUp(),
+    ),
+    ...bindShortcutKeys(keymap.blockMoveDown, ({ editor }: { editor: Editor }) =>
+      editor.commands.moveBlockDown(),
+    ),
+    ...bindShortcutKeys(keymap.blockDuplicate, ({ editor }: { editor: Editor }) =>
+      editor.commands.duplicateBlocks(),
+    ),
   }
 }
 

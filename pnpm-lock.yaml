@@ -57,18 +57,33 @@ importers:
       '@tiptap/core':
         specifier: ^3.22.4
         version: 3.28.0(@tiptap/pm@3.28.0)
+      '@tiptap/extension-bold':
+        specifier: ^3.22.4
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-code':
+        specifier: ^3.22.4
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
+      '@tiptap/extension-hard-break':
+        specifier: ^3.22.4
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
+      '@tiptap/extension-italic':
         specifier: ^3.22.4
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-link':
         specifier: ^3.22.4
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)
+      '@tiptap/extension-strike':
+        specifier: ^3.22.4
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-text-style':
         specifier: ^3.22.4
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-underline':
         specifier: ^3.22.4
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
+      '@tiptap/extensions':
+        specifier: ^3.22.4
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)
       '@tiptap/pm':
         specifier: ^3.22.4
         version: 3.28.0

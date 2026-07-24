@@ -31,6 +31,7 @@
 import type { AnyExtension, Editor } from "@tiptap/core"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import type { RuneBlock } from "../../blocks"
+import type { RuneShortcutActionId } from "../../keymap"
 
 // ---------------------------------------------------------------------------
 // Block projection context (toRuneBlock recursion)
@@ -147,7 +148,20 @@ export interface DeclarativeBlockExtension {
    * has no effect on the sub-Extension's keymap priority.
    */
   priority?: number
+  /**
+   * FIXED structural bindings (Enter-in-codeBlock, divider arrow skips…),
+   * keyed by literal chord. Hosts cannot remap these. A user-facing chord
+   * (Mod-combo) belongs in `shortcutActions` instead, so the host keymap
+   * override channel reaches it.
+   */
   keyboardShortcuts?: Record<string, ShortcutHandler>
+  /**
+   * REMAPPABLE bindings, keyed by registry action id — the factory binds
+   * each handler under the chords the editor's resolved keymap assigns to
+   * that action (defaults from `RUNE_SHORTCUT_ACTIONS`, host overrides via
+   * `createRuneKit({ keymap })`). An unbound action registers nothing.
+   */
+  shortcutActions?: Partial<Record<RuneShortcutActionId, ShortcutHandler>>
   inputRules?: DeclarativeInputRule[]
 }
 
