@@ -35,6 +35,7 @@ import { getBlockSpecs } from "../../schema/blocks/registry"
 import { COLOR_NAMES } from "../../shared/color-tokens"
 import type { TurnIntoBlockInput } from "../types"
 import { addInlineMarkMerged } from "../inlineMark"
+import { isEditorAlive } from "../editorLifecycle"
 import { applyTurnIntoTr, canTurnInto } from "./turnInto"
 import {
   runeCommandError,
@@ -145,7 +146,7 @@ export function applyMatching(
   editor: Editor,
   options: ApplyMatchingOptions,
 ): RuneCommandResult<ApplyMatchingData> {
-  if (editor.isDestroyed) {
+  if (!isEditorAlive(editor)) {
     return runeCommandError("editor-destroyed", "Editor is destroyed.")
   }
   if (!editor.isEditable) {

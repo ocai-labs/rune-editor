@@ -13,6 +13,7 @@ import {
 } from "@tiptap/pm/state"
 import { clipboardTextParser } from "../extensions/clipboard/clipboardTextParser"
 import { forEachBodyBlock } from "../schema/bodySurface"
+import { isEditorAlive } from "./editorLifecycle"
 import {
   runeCommandError,
   runeCommandOk,
@@ -253,7 +254,7 @@ export function replaceSelectionText(
   editor: Editor,
   text: string,
 ): RuneCommandResult<{ changedBlockIds: string[] }> {
-  if (editor.isDestroyed) {
+  if (!isEditorAlive(editor)) {
     return runeCommandError("editor-destroyed", "Editor is destroyed.")
   }
   if (!editor.isEditable) {

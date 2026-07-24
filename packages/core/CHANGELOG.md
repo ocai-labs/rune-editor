@@ -1,5 +1,17 @@
 # @ocai/rune-core
 
+## 0.21.0
+
+### Minor Changes
+
+- 3daff52: feat(core): `createHeadlessEditor` — a genuinely headless Rune editor for bare Node/CLI/server callers
+
+  `new Editor({ element: null, ... })` (the pattern `exportMarkdownFromDoc` already used) only ever _appears_ headless: `mount()` never runs, so the extensions' own ProseMirror plugins never get wired into editor state — appendTransaction-driven invariants (new-block id backfill, list renumbering, table/column normalization) silently stop firing, and `editor.isDestroyed` permanently reports `true` (it's `editorView?.isDestroyed ?? true`, and `editorView` is never assigned) even though the editor is perfectly alive.
+
+  `createHeadlessEditor(content, options?)` fixes both: it does the same `state.reconfigure({ plugins })` step `mount()`'s `createView()` does (so appendTransaction invariants run identically to a mounted editor), and pairs with a new `isEditorAlive(editor)` — the one true liveness check, now used everywhere core previously read `editor.isDestroyed` directly (`blockColor.ts`, `inlineMark.ts`, `selection.ts`, `applyMatching.ts`, `applyMarkdownEdits.ts`). Mounted editors keep tiptap's own (already-correct) semantics unchanged.
+
+  Also self-installs `DOMParser`/`requestAnimationFrame` (via a lazily-required `linkedom`, kept out of `dist` and every consumer's module graph unless actually reached) when a bare Node process is missing them — `apply_edits`' markdown-diff engine needs _some_ DOM to parse replacement markdown, and this makes that work with zero setup from the caller. Fixed a latent `computeFitColWidth` bug (Table block) that threw instead of degrading gracefully for a never-mounted editor.
+
 ## 0.20.0
 
 ### Minor Changes

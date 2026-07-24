@@ -24,6 +24,7 @@ import { resolveBodyBlockById } from "../../schema/bodySurface"
 import { parseAiMarkdown } from "../../extensions/clipboard/aiMarkdown"
 import { markInlineContract } from "../export/markInlineContract"
 import { exportMarkdownWithChunks } from "../export/markdown"
+import { isEditorAlive } from "../editorLifecycle"
 import {
   runeCommandError,
   runeCommandOk,
@@ -76,7 +77,7 @@ export function applyMarkdownEdits(
   editor: Editor,
   options: ApplyMarkdownEditsOptions,
 ): RuneCommandResult<ApplyMarkdownEditsData> {
-  if (editor.isDestroyed) {
+  if (!isEditorAlive(editor)) {
     return runeCommandError("editor-destroyed", "Editor is destroyed.")
   }
   if (!editor.isEditable) {

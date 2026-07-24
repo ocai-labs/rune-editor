@@ -56,6 +56,8 @@ export {
   applyMatching,
   explainBlockInputRejection,
   explainBlockInputsRejection,
+  isEditorAlive,
+  createHeadlessEditor,
 } from "./api"
 export type {
   BlockIdInsertTarget,

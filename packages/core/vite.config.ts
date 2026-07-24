@@ -38,6 +38,12 @@ export default defineConfig({
         "rope-sequence",
         "w3c-keyname",
         "nanoid",
+        // Lazily `require`d by `api/headlessDom.ts` — only reached in a bare
+        // Node process missing a global `DOMParser` (a browser/jsdom host
+        // never touches this). Kept external + dynamically required so it
+        // never inflates `dist/index.js` for the common (mounted) case.
+        "linkedom",
+        "node:module",
       ],
     },
     sourcemap: "hidden",

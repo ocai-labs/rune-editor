@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core"
 import type { Attrs, MarkType, Node as PMNode } from "@tiptap/pm/model"
 import type { Transaction } from "@tiptap/pm/state"
 import { resolveBodyBlockById } from "../schema/bodySurface"
+import { isEditorAlive } from "./editorLifecycle"
 import {
   runeCommandError,
   runeCommandOk,
@@ -133,7 +134,7 @@ export function setInlineMark(
   editor: Editor,
   input: SetInlineMarkInput,
 ): RuneCommandResult<SetInlineMarkData> {
-  if (editor.isDestroyed) {
+  if (!isEditorAlive(editor)) {
     return runeCommandError("editor-destroyed", "Editor is destroyed.")
   }
   if (!editor.isEditable) {

@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core"
 import { COLOR_NAMES, type ColorName } from "../shared/color-tokens"
 import { getBlockSpecs } from "../schema"
 import { resolveBodyBlockById } from "../schema/bodySurface"
+import { isEditorAlive } from "./editorLifecycle"
 import {
   runeCommandError,
   runeCommandOk,
@@ -54,7 +55,7 @@ export function setBlockColor(
   editor: Editor,
   input: SetBlockColorInput,
 ): RuneCommandResult<SetBlockColorData> {
-  if (editor.isDestroyed) {
+  if (!isEditorAlive(editor)) {
     return runeCommandError("editor-destroyed", "Editor is destroyed.")
   }
   if (!editor.isEditable) {

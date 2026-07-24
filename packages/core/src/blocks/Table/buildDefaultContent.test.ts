@@ -338,6 +338,23 @@ describe("computeFitColWidth", () => {
       computeFitColWidth(fakeEditorWith({ proseMirrorWidth: 400, blockContentWidth: 396 }), 0),
     ).toBeUndefined()
   })
+
+  it("returns undefined for a real but never-mounted editor, instead of throwing", () => {
+    // Regression: `element: null` (createHeadlessEditor's construction mode)
+    // never assigns a real EditorView, so `editor.view` is tiptap's stub
+    // Proxy — truthy, unlike a plain `undefined`, but it THROWS on any
+    // property access outside a small whitelist (`dom` not among them: "The
+    // editor view is not available. Cannot access view['dom']."). This used
+    // to escape uncaught from insertTable's fit-to-width path the moment a
+    // headless editor inserted a table.
+    const editor = new Editor({
+      element: null,
+      extensions: [Document, Text, Paragraph, Table],
+    })
+    expect(() => computeFitColWidth(editor, 3)).not.toThrow()
+    expect(computeFitColWidth(editor, 3)).toBeUndefined()
+    editor.destroy()
+  })
 })
 
 describe("insertTable command — fit-to-editor default width", () => {

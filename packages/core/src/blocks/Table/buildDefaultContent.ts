@@ -52,14 +52,22 @@ export const MIN_COL_WIDTH = 35
  *  that coupling to the padding declaration in editor-chrome.css.
  *
  *  Returns `undefined` when no editor is available, when no
- *  `.rune-block-content` has rendered yet (empty doc / SSR / jsdom),
- *  or when the measurement is zero — caller should fall back to the
- *  spec's default. The returned value is floor-divided and clamped to
- *  `MIN_COL_WIDTH` so very narrow editors still produce a usable (if
- *  overflowing) table rather than zero-width cells. */
+ *  `.rune-block-content` has rendered yet (empty doc / SSR / jsdom), when
+ *  the editor was never mounted (a headless editor, e.g.
+ *  `createHeadlessEditor` — `editor.view` there is a stub Proxy that THROWS
+ *  on any property outside a small whitelist, `dom` not among them, rather
+ *  than being `undefined`; caught below), or when the measurement is zero —
+ *  caller should fall back to the spec's default. The returned value is
+ *  floor-divided and clamped to `MIN_COL_WIDTH` so very narrow editors still
+ *  produce a usable (if overflowing) table rather than zero-width cells. */
 export function computeFitColWidth(editor: Editor | undefined, cols: number): number | undefined {
   if (!editor || cols <= 0) return undefined
-  const dom = editor.view?.dom as HTMLElement | undefined
+  let dom: HTMLElement | undefined
+  try {
+    dom = editor.view?.dom as HTMLElement | undefined
+  } catch {
+    return undefined
+  }
   if (!dom) return undefined
   // Prefer a real `.rune-block-content` width — that is the layout
   // context the new table will live in. Falls back to the
