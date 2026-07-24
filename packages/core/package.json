@@ -1,6 +1,6 @@
 {
   "name": "@ocai/rune-core",
-  "version": "0.19.2",
+  "version": "0.20.0",
   "description": "Headless Rune editor core. Tiptap schema, extensions, block API. No React, no UI.",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,5 +1,13 @@
 # @ocai/rune-core
 
+## 0.20.0
+
+### Minor Changes
+
+- bf21d2d: feat(core): host-remappable shortcut registry + `createRuneKit({ keymap })` override channel
+
+  Every user-facing shortcut chord now has a stable action id in the exported `RUNE_SHORTCUT_ACTIONS` registry (22 actions: marks, undo/redo, hard break, block conversions, expand-selection/duplicate/move, table delete, and the react-side link chord). Hosts pass `createRuneKit({ keymap: { link: false, bold: ["Mod-Shift-b"] } })` to rebind (`string[]`, prosemirror-keymap dialect, single chords only) or unbind (`false`/`[]`) any action — an unbound chord is not registered at all, so the keydown bubbles out of the editor to the host's own shortcut dispatcher. The resolved map is exposed at `editor.storage.runeKeymap` (`getRuneKeymap(editor)`), and `eventMatchesRuneKeys` lets DOM-listener surfaces match chords with prosemirror-keymap's own semantics. The InlineToolbar's Cmd+K link chord follows the resolved keymap. Structural editing keys (Enter/Tab/Backspace/arrows/Escape/trigger characters) remain fixed. Default behavior is unchanged.
+
 ## 0.19.2
 
 ### Patch Changes

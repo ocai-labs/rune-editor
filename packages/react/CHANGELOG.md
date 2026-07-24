@@ -1,5 +1,22 @@
 # @ocai/rune-react
 
+## 0.20.0
+
+### Minor Changes
+
+- bf21d2d: feat(core): host-remappable shortcut registry + `createRuneKit({ keymap })` override channel
+
+  Every user-facing shortcut chord now has a stable action id in the exported `RUNE_SHORTCUT_ACTIONS` registry (22 actions: marks, undo/redo, hard break, block conversions, expand-selection/duplicate/move, table delete, and the react-side link chord). Hosts pass `createRuneKit({ keymap: { link: false, bold: ["Mod-Shift-b"] } })` to rebind (`string[]`, prosemirror-keymap dialect, single chords only) or unbind (`false`/`[]`) any action — an unbound chord is not registered at all, so the keydown bubbles out of the editor to the host's own shortcut dispatcher. The resolved map is exposed at `editor.storage.runeKeymap` (`getRuneKeymap(editor)`), and `eventMatchesRuneKeys` lets DOM-listener surfaces match chords with prosemirror-keymap's own semantics. The InlineToolbar's Cmd+K link chord follows the resolved keymap. Structural editing keys (Enter/Tab/Backspace/arrows/Escape/trigger characters) remain fixed. Default behavior is unchanged.
+
+### Patch Changes
+
+- 3179aa3: fix(react): inline toolbar no longer jumps to the next line's left edge when the selection ends on a soft line-wrap
+
+  A selection endpoint on a soft wrap is one document position with two valid screen points; PM's TextSelection drops the DOM selection's affinity, so `pointAnchorAtHead` / `rangeToRect` now pass `coordsAtPos`'s `side` argument to bias endpoint coords into the selection (`from` side 1, `to` side -1, head takes its end's bias). Fixes the forward-drag toolbar landing at the lower line's start and the one-line-too-low placement in both drag directions; collapsed ranges keep the legacy after-bias.
+
+- Updated dependencies [bf21d2d]
+  - @ocai/rune-core@0.20.0
+
 ## 0.19.2
 
 ### Patch Changes
