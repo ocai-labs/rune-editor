@@ -40,11 +40,18 @@ import {
 
 type Coords = { left: number; right: number; top: number; bottom: number }
 
+/** A coords entry is either one rect (both `side` biases coincide — the normal
+ *  mid-line case) or a soft-wrap boundary: `before` (side -1, end of the upper
+ *  visual line) and `after` (side 1, start of the lower line). One document
+ *  position, two valid screen points — the ambiguity the getters must
+ *  disambiguate via coordsAtPos's `side` argument. */
+type SideCoords = Coords | { before: Coords; after: Coords }
+
 /** Mock EditorView exposing only what the getters touch: coordsAtPos and
  *  dom.querySelector. coordsAtPos throws for a position absent from the map
  *  (mirrors PM's RangeError on an invalid pos). */
 function makeView(opts: {
-  coords?: Record<number, Coords>
+  coords?: Record<number, SideCoords>
   throwAt?: Set<number>
   elements?: Record<string, DOMRect | null>
 }): { view: EditorView; querySelector: ReturnType<typeof vi.fn> } {
@@ -63,10 +70,11 @@ function makeView(opts: {
   })
 
   const view = {
-    coordsAtPos: (pos: number): Coords => {
+    coordsAtPos: (pos: number, side = 1): Coords => {
       if (throwAt.has(pos)) throw new RangeError(`mock: invalid pos ${pos}`)
       const c = coords[pos]
       if (!c) throw new RangeError(`mock: no coords for pos ${pos}`)
+      if ("before" in c) return side < 0 ? c.before : c.after
       return c
     },
     dom: { querySelector },
@@ -129,6 +137,72 @@ describe("pointAnchorAtHead — parity with the two selection-point sites", () =
   it("returns null when coordsAtPos throws (pure getter — no swallow, hook adds fallback)", () => {
     const { view } = makeView({ coords: TWO_LINE.coords, throwAt: new Set([20]) })
     expect(pointAnchorAtHead(view, 5, 20, 20)).toBeNull()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// SOFT-WRAP BOUNDARY
+//
+// A selection endpoint that lands exactly on a soft line-wrap is ONE document
+// position with TWO valid screen points: end of the upper line (side -1) and
+// start of the lower line (side 1). PM's TextSelection stores no affinity —
+// the DOM selection's leaning is dropped at the DOM→PM boundary — so the
+// getters must reconstruct it: bias each endpoint INTO the selection (`from`
+// side 1 = the first selected char's line, `to` side -1 = the last selected
+// char's line, head takes the bias of whichever end it is). Off-boundary both
+// sides coincide, so the parity rects above are unaffected.
+//
+// Numbers mirror the playground repro ("…create columns; drag ⏎ into the
+// gap…"): upper line ends at x 928 (top 440, bottom 459), lower line starts
+// at x 257 (top 464, bottom 483), selection start (the ";") at x 882.
+// ─────────────────────────────────────────────────────────────────────────
+
+const WRAP = {
+  coords: {
+    85: { left: 882, right: 890, top: 440, bottom: 459 }, // ";" on the upper line
+    92: {
+      before: { left: 928, right: 928, top: 440, bottom: 459 }, // end of upper line
+      after: { left: 257, right: 258, top: 464, bottom: 483 }, // start of lower line
+    },
+  } as Record<number, SideCoords>,
+  from: 85,
+  to: 92,
+}
+
+describe("soft-wrap boundary — endpoint coords bias INTO the selection", () => {
+  it("forward drag (head at `to` on the wrap): anchors at the UPPER line's end, not the lower line's start", () => {
+    const { view } = makeView({ coords: WRAP.coords })
+    const rect = pointAnchorAtHead(view, WRAP.from, WRAP.to, /* head */ WRAP.to, {
+      height: "selection",
+    })
+    // x = end-of-upper-line 928 (side -1), NOT lower-line start 257 (side 1);
+    // height spans the upper line only: 459 - 440 = 19, not down to 483.
+    expect(tuple(rect)).toEqual([928, 440, 0, 19])
+  })
+
+  it("backward drag (head at `from`): x already correct, but height must not swallow the lower line", () => {
+    const { view } = makeView({ coords: WRAP.coords })
+    const rect = pointAnchorAtHead(view, WRAP.from, WRAP.to, /* head */ WRAP.from, {
+      height: "selection",
+    })
+    // x = head 882 either way; h = 19 (upper line), not 43 (down to the
+    // lower line's bottom) — the `to` extent needs side -1 too.
+    expect(tuple(rect)).toEqual([882, 440, 0, 19])
+  })
+
+  it("rangeToRect ending on the wrap: real bbox out to the upper line's end, not the 1px degenerate clamp", () => {
+    const { view } = makeView({ coords: WRAP.coords })
+    const rect = rangeToRect(view, WRAP.from, WRAP.to)
+    // w = 928 - 882 = 46 (was max(258 - 882, 1) = 1), h = 459 - 440 = 19.
+    expect(tuple(rect)).toEqual([882, 440, 46, 19])
+  })
+
+  it("collapsed range on the wrap keeps the legacy after-bias (no interior to bias into)", () => {
+    const { view } = makeView({ coords: WRAP.coords })
+    const rect = pointAnchorAtHead(view, WRAP.to, WRAP.to, WRAP.to, {
+      height: "zero",
+    })
+    expect(tuple(rect)).toEqual([257, 464, 0, 0])
   })
 })
 

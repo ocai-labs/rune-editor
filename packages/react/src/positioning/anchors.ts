@@ -66,7 +66,17 @@ export interface PointAnchorOptions {
 /** Zero-width point at the selection HEAD's x, the selection's top y. The AI
  *  menu and the inline toolbar both anchor here; they differ only in `height`
  *  (see PointAnchorOptions). x tracks the cursor end the user is looking at
- *  (forward drag → head at `to`; backward drag → head at `from`). */
+ *  (forward drag → head at `to`; backward drag → head at `from`).
+ *
+ *  A position on a soft line-wrap is ONE document position with TWO valid
+ *  screen points (end of the upper line / start of the lower line). PM's
+ *  TextSelection carries no affinity — the DOM selection's leaning is dropped
+ *  at the DOM→PM boundary — so `coordsAtPos`'s `side` argument is the only
+ *  disambiguator, and for a non-empty selection the endpoints' affinity is
+ *  fully determined: each belongs to the line its selected text is on. Bias
+ *  INTO the selection (`from` side 1, `to` side -1, head takes its end's
+ *  bias); off-boundary both sides coincide, so this is a no-op everywhere
+ *  else. Collapsed ranges keep the after-bias — no interior to bias into. */
 export function pointAnchorAtHead(
   view: EditorView,
   from: number,
@@ -75,9 +85,10 @@ export function pointAnchorAtHead(
   opts: PointAnchorOptions = {},
 ): DOMRect | null {
   try {
-    const start = view.coordsAtPos(from)
-    const end = view.coordsAtPos(to)
-    const headCoords = view.coordsAtPos(head)
+    const start = view.coordsAtPos(from, 1)
+    const end = view.coordsAtPos(to, from !== to ? -1 : 1)
+    const headCoords =
+      head === to ? end : head === from ? start : view.coordsAtPos(head, 1)
     const top = Math.min(start.top, end.top)
     const height =
       opts.height === "selection" ? Math.max(start.bottom, end.bottom) - top : 0
@@ -90,15 +101,16 @@ export function pointAnchorAtHead(
 /** Bounding rect of a text range, anchored at the range START (not the head):
  *  origin = `start.left`/`start.top`, size = bbox out to `end`, with a 1px
  *  minimum on each axis so a degenerate/line-wrapped range never collapses to
- *  zero. The paste-link menu's anchor. */
+ *  zero. The paste-link menu's anchor. Endpoint coords bias INTO the range
+ *  (same soft-wrap disambiguation as pointAnchorAtHead — see its JSDoc). */
 export function rangeToRect(
   view: EditorView,
   from: number,
   to: number,
 ): DOMRect | null {
   try {
-    const start = view.coordsAtPos(from)
-    const end = view.coordsAtPos(to)
+    const start = view.coordsAtPos(from, 1)
+    const end = view.coordsAtPos(to, from !== to ? -1 : 1)
     return new DOMRect(
       start.left,
       start.top,
