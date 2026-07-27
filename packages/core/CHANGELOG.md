@@ -1,5 +1,15 @@
 # @ocai/rune-core
 
+## 0.21.2
+
+### Patch Changes
+
+- 5cb5b98: fix(core): `parseAiMarkdown` consumes the exporter's ordered-list-run separator instead of leaking it as a literal-text paragraph, and `commitWikiLink` gains a `label` option distinct from `alias`
+
+  `exportMarkdown` splices a standalone HTML-comment separator (`<!-- -->`, its own paragraph — always at a columnLayout boundary, see `ORDERED_SEPARATOR` in `api/export/markdown.ts`) between two adjacent numbered-list runs so CommonMark doesn't merge them into one continuously-numbered list. `parseAiMarkdown` used to neutralize that separator down to a literal `<!-- -->` text node, which landed as a spurious paragraph between the two lists on re-parse. The AI markdown parser now recognizes the exact standalone form (`html_block` token whose trimmed content is `<!-- -->`) and drops it silently — no node produced, and the two runs keep their own `start` instead of merging. A `<!-- -->` mixed into ordinary running text (a different token type, `html_inline`) is untouched.
+
+  `commitWikiLink` previously stamped `internalRef.alias = true` on ANY non-empty `alias` argument, including callers (like a suggestion menu) that only wanted to seed an initial display text before the target's title is known — that permanently opted the mention out of the label-sync plugin's rename-following (`syncLabel` skips `alias: true` runs forever). `commitWikiLink` now takes a separate `label` option for that case: it sets the same initial display text but leaves `alias: false`, so `syncLabel` keeps the mention's text following the target's title on future renames. `alias` keeps its previous meaning (a user-fixed override) and wins if both are passed. Omitting both is unchanged (falls back to `target` as display text, `alias: false`).
+
 ## 0.21.1
 
 ### Patch Changes

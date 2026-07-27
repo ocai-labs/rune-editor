@@ -106,12 +106,32 @@ md.renderer.rules.inlineMath = (tokens, idx) => {
   const { latex } = tokens[idx]!.meta as { latex: string }
   return `<span data-type="inline-math" data-latex="${md.utils.escapeHtml(latex)}"></span>`
 }
+// The exporter's inter-ordered-list-run separator (markdown.ts's
+// ORDERED_SEPARATOR): a standalone HTML comment, alone in its own block, that
+// `exportMarkdown` splices between two adjacent numbered-list runs so
+// CommonMark doesn't merge them into one continuously-numbered list (always
+// at a columnLayout boundary — see AV-1 in markdown.ts). markdown-it already
+// tokenizes the two runs as separate `ordered_list_open`/`_close` pairs
+// regardless (the comment interrupts list continuation at the block-grammar
+// level); the ONLY job left here is to make the comment ITSELF vanish rather
+// than survive as a literal-text node — left alone, that text would land
+// between the two `<ol>`s and get wrapped into a spurious paragraph on parse.
+// Scoped to the exact standalone form (`html_block`, trimmed content ===
+// "<!-- -->"): a comment mixed into running text is a DIFFERENT token type
+// (`html_inline`) and is untouched by this branch, unaffected by this special
+// case.
+const ORDERED_RUN_SEPARATOR = "<!-- -->"
+
 // Neutralize every raw-HTML token to the mark-contract whitelist. Only these
 // two token types carry model-supplied raw HTML; code fences / inline code are
 // separate token types markdown-it already escapes, and markdown-produced
 // elements (`<strong>`, `<a href>`, …) never pass through here.
 md.renderer.rules.html_inline = (tokens, idx) => sanitizeRawHtml(tokens[idx]!.content)
-md.renderer.rules.html_block = (tokens, idx) => sanitizeRawHtml(tokens[idx]!.content)
+md.renderer.rules.html_block = (tokens, idx) => {
+  const raw = tokens[idx]!.content
+  if (raw.trim() === ORDERED_RUN_SEPARATOR) return ""
+  return sanitizeRawHtml(raw)
+}
 
 const browserParseHTML: ParseHTML = (html) =>
   new DOMParser().parseFromString(html, "text/html")
@@ -247,12 +267,16 @@ function splitCellLineBreaks(doc: Document): void {
  * headless DOM in Node/worker contexts; the default uses the global
  * `DOMParser`). Returns `{ type: "doc", content: [...] }`.
  *
- * NOTE: `exportMarkdown` emits an HTML-comment separator (`<!-- -->`) between
- * two adjacent numbered runs to stop CommonMark from merging them into one
- * list; that separator does NOT round-trip here (it neutralizes to a literal-
- * text paragraph). So a full multi-run/multi-column EXPORTED doc is not yet a
- * supported parse input — the editing model feeds per-block chunks, which have
- * no such separator.
+ * NOTE: `exportMarkdown` emits a standalone HTML-comment separator
+ * (`<!-- -->`, alone in its own block) between two adjacent numbered-list
+ * runs at a columnLayout boundary, to stop CommonMark from merging them into
+ * one continuously-numbered list. This parser consumes that standalone form
+ * silently (no node produced), so the two runs on either side survive
+ * unmerged with their own `start`. It does NOT reconstruct the columnLayout
+ * itself, though — a multi-column EXPORTED doc still flattens to root-level
+ * blocks here, same as every other consumer of the flattened markdown. A
+ * `<!-- -->` embedded inline in ordinary text is a different token path
+ * (html_inline) and round-trips as before.
  */
 export function parseAiMarkdown(
   markdown: string,

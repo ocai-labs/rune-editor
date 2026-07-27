@@ -456,6 +456,58 @@ describe("exportMarkdown → parseAiMarkdown round-trip", () => {
     })
   })
 
+  // `exportMarkdown` splices a standalone HTML-comment separator
+  // (`<!-- -->`, its own paragraph — markdown.ts's ORDERED_SEPARATOR) between
+  // two adjacent numbered-list runs so CommonMark doesn't merge them into one
+  // continuously-numbered list. The only place that ever fires is a
+  // columnLayout boundary (collectBlockInfos' three splice sites are all
+  // column-adjacency cases), and columnLayout itself is a known-lossy type on
+  // this parse path — it flattens to root-level blocks and is never
+  // reconstructed, same as toggle/callout — so this doesn't fit
+  // `expectRoundTrip`'s compare-to-original-doc harness above. Instead this
+  // pins the actual contract: real `exportMarkdown` output re-parses with the
+  // separator producing NO node, and the two runs on either side keep their
+  // own `start` rather than merging into one continuous count.
+  describe("ordered-list run separator (AV-1) — parseAiMarkdown consumes it", () => {
+    function columns(cols: JSONContent[][]): JSONContent {
+      return {
+        type: "columnLayout",
+        attrs: { id: "cl1", depth: 0 },
+        content: cols.map((children, i) => ({
+          type: "column",
+          attrs: { id: `col-${i}`, width: 1 },
+          content: children,
+        })),
+      }
+    }
+    const numbered = (t: string, attrs?: Attrs): JSONContent => ({
+      type: "numberedList",
+      attrs: { id: t, depth: 0, ...attrs },
+      content: [text(t)],
+    })
+
+    it("two column-adjacent runs (second start non-1) re-parse as two independent runs", () => {
+      const editor = createTestEditor({
+        content: {
+          type: "doc",
+          content: [
+            columns([
+              [numbered("a"), numbered("b")],
+              [numbered("c", { start: 5 })],
+            ]),
+          ],
+        },
+      })
+
+      const markdown = exportMarkdown(editor)
+      expect(markdown).toBe("1. a\n2. b\n\n<!-- -->\n\n5. c\n")
+
+      const parsed = parseAiMarkdown(markdown, editor.schema)
+      const items = (parsed.content ?? []).map(canon)
+      expect(items).toEqual([numbered("a"), numbered("b"), numbered("c", { start: 5 })].map(canon))
+    })
+  })
+
   // `serializeTableMarkdown` synthesizes a `|   |   |` header for a
   // header-less table (GFM pipe tables can't omit one). Without
   // `dropSyntheticEmptyTableHeader`, that phantom row re-parses into a real

@@ -831,6 +831,113 @@ describe("WikiLink", () => {
     editor.destroy()
   })
 
+  // `label` vs `alias`: both seed the committed run's initial display text,
+  // but only `alias` marks it as a user-fixed override (internalRef.alias =
+  // true) that the label-sync plugin (labelSyncPlugin.ts) skips forever. A
+  // `label`-seeded run stays alias=false, so syncLabel keeps following the
+  // target's title on every future rename — the #56/#58 fix for the
+  // suggestion menu, which only wants an initial display text, not a pin.
+  describe("commitWikiLink — label vs alias (syncLabel semantics)", () => {
+    function makeSyncKitEditor(titles: Map<string, string>) {
+      return makeKitEditor({
+        suggestionMenus: false,
+        internalRef: {
+          syncLabel: true,
+          resolve: (attrs) => {
+            const title = titles.get(attrs.target)
+            return title ? { displayText: title } : null
+          },
+        },
+      })
+    }
+
+    it("a label-created ref follows the target's title after a rename", () => {
+      const titles = new Map([["note-1", "Original Title"]])
+      const editor = makeSyncKitEditor(titles)
+      editor.commands.setContent("<p>before [[ho</p>")
+
+      commitWikiLink(
+        { editor, range: { from: 8, to: 12 }, triggerCharacter: "[[" },
+        { target: "note-1", label: "Original Title" },
+      )
+
+      const linkText = editor.state.doc.firstChild!.child(1)
+      expect(linkText.text).toBe("Original Title")
+      expect(
+        linkText.marks.find((m) => m.type.name === "internalRef")?.attrs.alias,
+      ).toBe(false)
+
+      titles.set("note-1", "Renamed Title")
+      editor.commands.refreshEntityRefs("internalRef")
+
+      const updated = editor.state.doc.firstChild!.child(1)
+      expect(updated.text).toBe("Renamed Title")
+
+      editor.destroy()
+    })
+
+    it("an alias-created ref keeps its fixed text after the target is renamed", () => {
+      const titles = new Map([["note-1", "Original Title"]])
+      const editor = makeSyncKitEditor(titles)
+      editor.commands.setContent("<p>before [[ho</p>")
+
+      commitWikiLink(
+        { editor, range: { from: 8, to: 12 }, triggerCharacter: "[[" },
+        { target: "note-1", alias: "Custom Alias" },
+      )
+
+      const linkText = editor.state.doc.firstChild!.child(1)
+      expect(linkText.text).toBe("Custom Alias")
+      expect(
+        linkText.marks.find((m) => m.type.name === "internalRef")?.attrs.alias,
+      ).toBe(true)
+
+      titles.set("note-1", "Renamed Title")
+      editor.commands.refreshEntityRefs("internalRef")
+
+      const updated = editor.state.doc.firstChild!.child(1)
+      expect(updated.text).toBe("Custom Alias")
+
+      editor.destroy()
+    })
+
+    it("alias wins over label when both are given", () => {
+      const editor = makeKitEditor({ suggestionMenus: false })
+      editor.commands.setContent("<p>before [[ho</p>")
+
+      commitWikiLink(
+        { editor, range: { from: 8, to: 12 }, triggerCharacter: "[[" },
+        { target: "note-1", label: "Seeded Title", alias: "Custom Alias" },
+      )
+
+      const linkText = editor.state.doc.firstChild!.child(1)
+      expect(linkText.text).toBe("Custom Alias")
+      expect(
+        linkText.marks.find((m) => m.type.name === "internalRef")?.attrs.alias,
+      ).toBe(true)
+
+      editor.destroy()
+    })
+
+    it("no label/no alias still falls back to target text with alias=false (no regression)", () => {
+      const editor = makeKitEditor({ suggestionMenus: false })
+      editor.commands.setContent("<p>before [[ho</p>")
+
+      commitWikiLink(
+        { editor, range: { from: 8, to: 12 }, triggerCharacter: "[[" },
+        { target: "note-1" },
+      )
+
+      const linkText = editor.state.doc.firstChild!.child(1)
+      expect(linkText.text).toBe("note-1")
+      expect(
+        linkText.marks.find((m) => m.type.name === "internalRef")?.attrs.alias,
+      ).toBe(false)
+
+      editor.destroy()
+    })
+  })
+
   it("calls onClick with attrs and the mouse event when clicked while editable", () => {
     const onClick = vi.fn()
     const editor = makeEditor([WikiLink.configure({ onClick })])
