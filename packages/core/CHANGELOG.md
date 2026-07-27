@@ -1,5 +1,15 @@
 # @ocai/rune-core
 
+## 0.21.1
+
+### Patch Changes
+
+- ef7901f: fix(core): parse rules no longer reach for DOM-class globals (`instanceof HTMLElement`)
+
+  Five parse-path checks were written as `instanceof HTMLElement` / `HTMLInputElement` / `HTMLDetailsElement.open`: TaskList's `<li>` rule and its checkbox probe, the wikiLink and internalRef mark rules, and the `<details>` flattener. In a browser those are always true, so the bug never surfaced there — but core's headless surfaces (`markdownToDoc` with an injected `parseHTML`, `createHeadlessEditor`'s linkedom `DOMParser`, and any Electron-main / CLI / worker importer built on them) parse against a Document whose classes are not the host's. A bare Node process has no `HTMLElement` global at all, so a single `<li>` in the input threw `ReferenceError: HTMLElement is not defined` and the whole conversion failed; a mixed-realm host (globals present, Document from another implementation) would instead have silently dropped the block.
+
+  All five now use tag / attribute / `matches()` checks, which every standards-compliant DOM agrees on. Downstream apps that installed DOM classes as globals to work around this can drop that shim. Locked by `markdownToDoc.headless.test.ts`, which runs under `@vitest-environment node` against linkedom — the rest of the suite is jsdom and is structurally unable to catch this class of bug. Invariant recorded as the architecture notes.
+
 ## 0.21.0
 
 ### Minor Changes
