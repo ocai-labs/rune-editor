@@ -171,7 +171,6 @@ export const WikiLink = Mark.create<WikiLinkOptions>({
       {
         tag: "a[data-wikilink]",
         getAttrs: (node) => {
-          if (!(node instanceof HTMLElement)) return false
           const target = node.getAttribute("data-wikilink")
           if (!target) return false
           return { target }

@@ -176,8 +176,7 @@ export const InternalRef = Mark.create<InternalRefOptions>({
     return [
       {
         tag: "a[data-rune-ref-kind][data-rune-ref-target]",
-        getAttrs: (node) =>
-          node instanceof HTMLElement ? parseInternalRefElement(node) : false,
+        getAttrs: parseInternalRefElement,
       },
     ]
   },

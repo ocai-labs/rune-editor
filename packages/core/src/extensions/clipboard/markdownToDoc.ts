@@ -57,10 +57,12 @@ export function unwrapLoneImageParagraphs(doc: Document) {
  * implementation. In the browser that is automatic (the default
  * `parseHTML` uses the global `DOMParser`). In a Node / worker migration
  * script, pass a `parseHTML` backed by a headless DOM (e.g. linkedom's
- * `new DOMParser().parseFromString(html, "text/html")`); the transform
- * uses only tag/nodeType checks, so any standards-compliant Document works
- * — no global-DOM shim required. (`markdownToHtml` itself is pure string →
- * string and needs nothing.)
+ * `new DOMParser().parseFromString(html, "text/html")`); the transform AND
+ * every schema parse rule it feeds use only tag/attribute checks
+ * (the architecture notes §13), so any standards-compliant Document works — no
+ * global-DOM shim required, and none of the injected Document's classes
+ * have to be the host's. (`markdownToHtml` itself is pure string → string
+ * and needs nothing.)
  *
  * Image handling is intentionally skipped: there is no editor to route an
  * upload through, so `![alt](path)` lands as an image block carrying its

@@ -46,16 +46,16 @@ export function transformToggleHTML(doc: Document): void {
   }
 }
 
-function pickRootToggle(doc: Document): HTMLElement | null {
+function pickRootToggle(doc: Document): Element | null {
   // Document order from querySelector already guarantees outermost-first;
   // nested <details> are handled by flattenOne's recursion at the
   // body-element loop.
   return doc.querySelector("details")
 }
 
-function flattenOne(doc: Document, root: HTMLElement, depthOffset: number): void {
+function flattenOne(doc: Document, root: Element, depthOffset: number): void {
   const { titleEl, level, expanded, bodyEls } = extractTitleAndBody(doc, root)
-  const out: HTMLElement[] = []
+  const out: Element[] = []
 
   titleEl.setAttribute("data-rune-toggle-title", "1")
   titleEl.setAttribute("data-rune-toggle-level", String(level))
@@ -71,7 +71,7 @@ function flattenOne(doc: Document, root: HTMLElement, depthOffset: number): void
       stash.appendChild(body)
       flattenOne(doc, body, depthOffset + 1)
       // After flattening, the title + children sit at top level under stash.
-      Array.from(stash.children).forEach((c) => out.push(c as HTMLElement))
+      out.push(...Array.from(stash.children))
       stash.remove()
     } else {
       body.setAttribute("data-rune-paste-depth", String(depthOffset + 1))
@@ -83,22 +83,22 @@ function flattenOne(doc: Document, root: HTMLElement, depthOffset: number): void
 }
 
 interface Extracted {
-  titleEl: HTMLElement
+  titleEl: Element
   level: 0 | 2 | 3 | 4
   expanded: boolean
-  bodyEls: HTMLElement[]
+  bodyEls: Element[]
 }
 
 // `root` is always a `<details>` here — `pickRootToggle` and `flattenOne`'s
 // recursion (`body.matches("details")`) never hand this anything else, now
 // that the Notion-class heuristic is gone.
-function extractTitleAndBody(doc: Document, root: HTMLElement): Extracted {
+function extractTitleAndBody(doc: Document, root: Element): Extracted {
   // <details>: summary first child, others are body.
   const summary = root.querySelector(":scope > summary")
   const innerHead = summary?.querySelector("h1, h2, h3, h4, h5, h6")
   const titleEl =
     innerHead != null
-      ? (doc.importNode(innerHead, true) as HTMLElement)
+      ? doc.importNode(innerHead, true)
       : (() => {
           const p = doc.createElement("p")
           p.innerHTML = summary?.innerHTML ?? ""
@@ -110,12 +110,12 @@ function extractTitleAndBody(doc: Document, root: HTMLElement): Extracted {
     p.innerHTML = titleEl.innerHTML
     titleEl.replaceWith(p)
   }
-  const expanded = (root as HTMLDetailsElement).open
-  const bodyEls: HTMLElement[] = []
-  for (const child of Array.from(root.children)) {
-    if (child === summary) continue
-    if (child instanceof HTMLElement) bodyEls.push(child)
-  }
+  // `hasAttribute("open")`, not `HTMLDetailsElement.open`: this runs against
+  // whatever Document the caller parsed with (see the header of
+  // `clipboard/transformPastedHTML.ts`), and the attribute is the part every
+  // DOM implementation agrees on.
+  const expanded = root.hasAttribute("open")
+  const bodyEls = Array.from(root.children).filter((child) => child !== summary)
   return { titleEl, level, expanded, bodyEls }
 }
 

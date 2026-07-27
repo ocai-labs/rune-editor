@@ -211,7 +211,15 @@ export interface BlockSpecConfig {
   /** Indent mode declaration. Spec §4. Default when omitted: `follow-prev`. */
   indent?: IndentConfig
   /** ParseRules in Tiptap's format. `getAttrs` / `attrs` are merged
-   *  with the shared-attribute parsers the factory injects. */
+   *  with the shared-attribute parsers the factory injects.
+   *
+   *  Rules must inspect elements with tag / attribute / `matches()` checks
+   *  ONLY — never `instanceof HTMLElement` & co. They run against whatever
+   *  Document the caller parsed with, which in a headless import is a
+   *  linkedom/jsdom one whose classes are not (and in a bare Node process,
+   *  where the global doesn't exist at all, cannot be) the page globals.
+   *  the architecture notes §13; regression test in
+   *  `extensions/clipboard/markdownToDoc.headless.test.ts`. */
   parseDOM: TagParseRule[]
   /** Serializer. Receives the Tiptap node and the merged HTMLAttributes
    *  object (already containing `data-id` / `data-depth` when non-empty).

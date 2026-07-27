@@ -21,9 +21,8 @@ export interface RuneTaskListBlock extends RuneBlockBase {
 
 function taskListAttrsFromElement(li: HTMLElement) {
   const checkedAttr = li.getAttribute("data-rune-paste-checked")
-  const cb = Array.from(li.children).find(
-    (child): child is HTMLInputElement =>
-      child instanceof HTMLInputElement && child.matches("input[type='checkbox']"),
+  const cb = Array.from(li.children).find((child) =>
+    child.matches("input[type='checkbox']"),
   )
   if (checkedAttr == null && cb == null) return false
   return {
@@ -228,7 +227,7 @@ export const TaskList = createBlockSpec({
     {
       tag: "li",
       priority: 60,
-      getAttrs: (li) => (li instanceof HTMLElement ? taskListAttrsFromElement(li) : false),
+      getAttrs: taskListAttrsFromElement,
     },
   ],
   renderDOM: ({ HTMLAttributes }) => {
