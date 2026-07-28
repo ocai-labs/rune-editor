@@ -122,6 +122,12 @@ export function FloatingTableOfContents({
   const overColumnRef = useRef(false)
   const overCardRef = useRef(false)
   const closeTimerRef = useRef<number | null>(null)
+  // Live mirror of `hoverOpen` for pointer handlers that must not start
+  // tracking a card that is already closing (see onCardEnter).
+  const hoverOpenRef = useRef(false)
+  useEffect(() => {
+    hoverOpenRef.current = hoverOpen
+  }, [hoverOpen])
 
   // Current heading — topmost heading whose top edge has scrolled past a
   // ~120px band, matching docs.google / Notion's "what's currently being
@@ -273,7 +279,12 @@ export function FloatingTableOfContents({
   const onColumnLeave = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.pointerType !== "mouse") return
-      const related = e.relatedTarget as Element | null
+      // instanceof, NOT a bare cast: when the pointer exits the window
+      // (this column hugs the window's right edge, so that's a routine
+      // move), React's synthesized leave carries `window` as relatedTarget.
+      // Calling .closest on it threw mid-handler, skipping scheduleClose and
+      // wedging the card open until an outside click (the stuck-open bug).
+      const related = e.relatedTarget instanceof Element ? e.relatedTarget : null
       if (related && related.closest(CARD_SELECTOR)) {
         overColumnRef.current = false
         return
@@ -285,13 +296,22 @@ export function FloatingTableOfContents({
   )
 
   const onCardEnter = useCallback(() => {
+    // Ignore enters on a closed (exit-animating) card: Radix Presence keeps
+    // it mounted through the close animation, so sweeping the pointer across
+    // it still fires pointerenter — but its eventual unmount delivers NO
+    // matching pointerleave. Tracking that enter would wedge overCardRef at
+    // true forever, and every later scheduleClose would no-op — the card
+    // could then only be dismissed by clicking outside.
+    if (!hoverOpenRef.current) return
     overCardRef.current = true
     cancelClose()
   }, [cancelClose])
 
   const onCardLeave = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      const related = (e.relatedTarget as Element | null) ?? null
+      // Same non-Element relatedTarget guard as onColumnLeave — the card
+      // also sits flush against the window edge.
+      const related = e.relatedTarget instanceof Element ? e.relatedTarget : null
       if (related && related.closest(COLUMN_SELECTOR)) {
         overCardRef.current = false
         return
@@ -315,6 +335,18 @@ export function FloatingTableOfContents({
     },
     [editor, scrollOffset, scrollRoot, onJump, forceClose],
   )
+
+  // Window deactivation (Cmd-Tab, a click into another window or app)
+  // delivers no pointerleave for whatever the pointer was resting on, so the
+  // over* refs would stay true with no follow-up event to ever clear them —
+  // the card survives the window switch and, worse, those stale refs veto
+  // every later grace-timer close ("it only closes when I click something").
+  // Blur is the one reliable deactivation signal, so treat it as a hard close.
+  useEffect(() => {
+    const onWindowBlur = () => forceClose()
+    window.addEventListener("blur", onWindowBlur)
+    return () => window.removeEventListener("blur", onWindowBlur)
+  }, [forceClose])
 
   useEffect(() => () => cancelClose(), [cancelClose])
 

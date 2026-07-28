@@ -1,5 +1,12 @@
 # @ocai/rune-react
 
+## 0.22.1
+
+### Patch Changes
+
+- cba9229: FloatingTableOfContents: the hover card no longer wedges open until an outside click. Moving the pointer out of the window across the bar column or card crashed the leave handler (React synthesizes those leaves with `window` as relatedTarget; the handler cast it to Element and called `.closest` on it), so the grace-timer close never ran and the stale hover refs vetoed every later auto-close. The card now also hard-closes on window blur (Cmd-Tab delivers no pointerleave for whatever the pointer sat on), and a closing card is pointer-inert during its exit animation so it can neither eat clicks nor re-wedge the hover refs via a ghost pointerenter.
+  - @ocai/rune-core@0.22.1
+
 ## 0.22.0
 
 ### Patch Changes

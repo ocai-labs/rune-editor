@@ -304,6 +304,52 @@ describe("FloatingTableOfContents", () => {
       rafSpy.mockRestore()
     }
   })
+
+  it("closes the hover card when the window loses focus (no pointerleave arrives on Cmd-Tab)", async () => {
+    vi.stubGlobal("PointerEvent", TestPointerEvent)
+    try {
+      render(<TocHarness />)
+      await openCardAndGetRow("Details")
+      // Park the pointer on the card first — the hover refs now believe the
+      // card is being hovered, and a window switch will never deliver the
+      // pointerleave that would clear them.
+      const card = document.querySelector("[data-rune-toc-hover-card]") as HTMLElement
+      fireEvent.pointerOver(card, { pointerType: "mouse" })
+      fireEvent.blur(window)
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Details" })).toBeNull(),
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("hover-leave still closes the card after a blur-close orphaned the pointer state", async () => {
+    vi.stubGlobal("PointerEvent", TestPointerEvent)
+    try {
+      render(<TocHarness />)
+      await openCardAndGetRow("Details")
+      const card = document.querySelector("[data-rune-toc-hover-card]") as HTMLElement
+      fireEvent.pointerOver(card, { pointerType: "mouse" })
+      fireEvent.blur(window)
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Details" })).toBeNull(),
+      )
+      // Reopen, then leave the column with the pointer going nowhere in
+      // particular. The grace timer must be allowed to close the card — a
+      // stale overCardRef from before the blur would veto it forever (the
+      // "only a click closes it" wedge).
+      const column = document.querySelector("[data-rune-toc-column]") as HTMLElement
+      fireEvent.pointerOver(column, { pointerType: "mouse" })
+      await screen.findByRole("button", { name: "Details" })
+      fireEvent.pointerOut(column, { pointerType: "mouse" })
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Details" })).toBeNull(),
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
 
 describe("extractHeadings", () => {

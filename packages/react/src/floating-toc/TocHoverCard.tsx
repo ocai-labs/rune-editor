@@ -129,7 +129,11 @@ export function TocHoverCard({
         // bg-[var(--rune-toc-card-bg)] overrides the chrome's default bg-popover
         // (tailwind-merge, last-wins) so the dropdown's fill is its own themeable
         // token — defaults to the page background (see shadcn-tokens.css).
-        className="w-fit min-w-45 max-w-xs rounded-lg bg-[var(--rune-toc-card-bg)] p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10"
+        // data-[state=closed]:pointer-events-none — while the card plays its
+        // exit animation it must be a ghost: it may not eat clicks meant for
+        // what's under it, and it may not report pointerenter (a missed
+        // matching leave on unmount is how the hover refs used to wedge).
+        className="w-fit min-w-45 max-w-xs rounded-lg bg-[var(--rune-toc-card-bg)] p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 data-[state=closed]:pointer-events-none"
         {...{ [CARD_ATTR]: "" }}
       >
         <ul className="flex max-h-[60vh] flex-col gap-0.5 overflow-y-auto">
