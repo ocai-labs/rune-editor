@@ -234,6 +234,99 @@ describe("exportMarkdown → parseAiMarkdown round-trip", () => {
       )
     })
 
+    // internalRef's page/block-kind mentions round-trip through the
+    // Notion-mention-style `<mention-page id="…">`/`<mention-block id="…">`
+    // shape (markInlineContract.ts). `canon`/`expectRoundTrip` compare
+    // attr-for-attr (including `alias`), so these pin identity, not just
+    // "some mark survived".
+    describe("internalRef mention round-trip", () => {
+      it("page, alias: false", () => {
+        const md = expectRoundTrip(
+          [para([text("Some Page", [{ type: "internalRef", attrs: { kind: "page", target: "Some Page" } }])])],
+          "mention-page-noalias",
+        )
+        expect(md).toContain('<mention-page id="Some Page">Some Page</mention-page>')
+        expect(md).not.toContain("alias=")
+      })
+
+      it("page, alias: true", () => {
+        const md = expectRoundTrip(
+          [para([text("Display", [{ type: "internalRef", attrs: { kind: "page", target: "Target", alias: true } }])])],
+          "mention-page-alias",
+        )
+        expect(md).toContain('<mention-page id="Target" alias="true">Display</mention-page>')
+      })
+
+      it("block (target is an opaque host-composed string, e.g. zyler's `<noteId>#<blockId>`)", () => {
+        const md = expectRoundTrip(
+          [para([text("Block ref", [{ type: "internalRef", attrs: { kind: "block", target: "note-1#block-2" } }])])],
+          "mention-block",
+        )
+        expect(md).toContain('<mention-block id="note-1#block-2">Block ref</mention-block>')
+      })
+
+      it("label with special characters (quotes, angle bracket, ampersand, pipe, [[)", () => {
+        expectRoundTrip(
+          [
+            para([
+              text('a "quoted" <tag> & pipe | [[wiki]]', [
+                { type: "internalRef", attrs: { kind: "page", target: "Target" } },
+              ]),
+            ]),
+          ],
+          "mention-label-special-chars",
+        )
+      })
+
+      it("target containing a double quote", () => {
+        const md = expectRoundTrip(
+          [para([text("ref", [{ type: "internalRef", attrs: { kind: "page", target: 'a "quoted" target' } }])])],
+          "mention-target-quote",
+        )
+        expect(md).toContain('id="a &quot;quoted&quot; target"')
+      })
+
+      it("coexists with a [[wikiLink]] in the same paragraph", () => {
+        expectRoundTrip(
+          [
+            para([
+              text("See "),
+              text("Some Page", [{ type: "internalRef", attrs: { kind: "page", target: "Some Page" } }]),
+              text(" and "),
+              text("Other Page", [{ type: "wikiLink", attrs: { target: "Other Page" } }]),
+              text("."),
+            ]),
+          ],
+          "mention-and-wikilink",
+        )
+      })
+
+      // Pins the ACTUAL nesting behavior: internalRef and textStyle are both
+      // `html`-metadata contract entries (the outermost wrapWithMarks stage,
+      // serializeInline.ts), applied in schema-rank order — internalRef is
+      // registered after color/textStyle in kit.ts, so it wraps OUTSIDE the
+      // color span, which wraps OUTSIDE bold. Pinned exactly, not just
+      // "some mark survived", since this ordering is what makes the
+      // round-trip hold at all.
+      it("stacks with bold and a color span (bold middle, color inside mention)", () => {
+        const md = expectRoundTrip(
+          [
+            para([
+              text("x", [
+                { type: "bold" },
+                { type: "textStyle", attrs: { textColor: "blue" } },
+                { type: "internalRef", attrs: { kind: "page", target: "Target" } },
+              ]),
+            ]),
+          ],
+          "mention-bold-color",
+        )
+        expect(md).toContain(
+          '<mention-page id="Target"><span data-text-color="blue">**x**</span></mention-page>',
+        )
+      })
+    })
+
     it("inlineMath", () => {
       expectRoundTrip(
         [
@@ -666,5 +759,41 @@ describe("parseAiMarkdown — raw-HTML sanitizer", () => {
     const marks = allMarkTypes(doc)
     expect(marks.has("textStyle")).toBe(true)
     expect(marks.has("underline")).toBe(true)
+  })
+})
+
+// A hand-authored (not model-round-tripped) mention that doesn't match the
+// dialect's exact shape must fail closed: no internalRef mark, text
+// preserved, same "declared lossy passthrough" contract as any other
+// unrecognized raw HTML the sanitizer neutralizes or admits inertly.
+describe("parseAiMarkdown — internalRef mention parse safety", () => {
+  function schema() {
+    const editor = createTestEditor({})
+    return editor.schema
+  }
+
+  it("produces the mark for a well-formed page mention (sanity check)", () => {
+    const doc = parseAiMarkdown('<mention-page id="Target">Display</mention-page>', schema())
+    expect(allMarkTypes(doc).has("internalRef")).toBe(true)
+    expect(allText(doc)).toBe("Display")
+  })
+
+  it("a mention with no id attribute produces no mark", () => {
+    const doc = parseAiMarkdown("<mention-page>Display</mention-page>", schema())
+    expect(allMarkTypes(doc).has("internalRef")).toBe(false)
+    expect(allText(doc)).toContain("Display")
+  })
+
+  it("a mention with an empty id attribute produces no mark", () => {
+    const doc = parseAiMarkdown('<mention-page id="">Display</mention-page>', schema())
+    expect(allMarkTypes(doc).has("internalRef")).toBe(false)
+    expect(allText(doc)).toContain("Display")
+  })
+
+  it("an unknown mention-* tag name produces no mark (neutralized to literal text)", () => {
+    const doc = parseAiMarkdown('<mention-foo id="Target">Display</mention-foo>', schema())
+    expect(allMarkTypes(doc).has("internalRef")).toBe(false)
+    expect(allText(doc)).toContain("Display")
+    expect(allText(doc)).toContain("mention-foo")
   })
 })

@@ -1,5 +1,12 @@
 # @ocai/rune-react
 
+## 0.22.0
+
+### Patch Changes
+
+- Updated dependencies [7054f11]
+  - @ocai/rune-core@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes

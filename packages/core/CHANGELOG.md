@@ -1,5 +1,30 @@
 # @ocai/rune-core
 
+## 0.22.0
+
+### Minor Changes
+
+- 7054f11: `internalRef` mentions (`kind: "page" | "block"`) now round-trip losslessly
+  through the AI markdown dialect via a Notion-mention-style `<mention-page
+id="…">label</mention-page>` / `<mention-block id="…">label</mention-block>`
+  tag, with `alias="true"` emitted only when the mark's `alias` attr is true.
+  `target` is carried opaque — rune-core never parses or reassembles its
+  internal structure, so a host's composite target string (e.g. zyler's
+  `<noteId>#<blockId>` block refs) survives untouched.
+
+  A `kind` outside `"page" | "block"`, or an empty `target`, still falls back to
+  the previous unwrapped passthrough (declared-lossy, same as a mark with no
+  markdown contract entry at all). As a result, `applyMarkdownEdits`'s
+  round-trip guard now permits editing a block that carries a page/block-kind
+  mention (previously refused outright as "not-editable-lossless"), while still
+  refusing one carrying an internalRef of an unrecognized kind.
+
+  The AI-parse raw-HTML sanitizer's whitelist (derived from
+  `markInlineContract`'s `html` metadata) now admits `<mention-page>` /
+  `<mention-block>` with `id` / `alias` attrs; a hand-authored malformed
+  mention (missing/empty `id`, or an unrecognized `mention-*` tag name) fails
+  closed — no mark is produced, the tag's text stays inert.
+
 ## 0.21.2
 
 ### Patch Changes

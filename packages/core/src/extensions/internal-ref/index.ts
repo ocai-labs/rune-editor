@@ -122,6 +122,33 @@ function parseInternalRefElement(node: HTMLElement): InternalRefAttrs | false {
   return { kind, target, ...(alias ? { alias } : {}) }
 }
 
+/** `<mention-page>` / `<mention-block>` — the Notion-mention-style raw-HTML
+ * shape `markInlineContract`'s `internalRef` entry serializes `kind: "page" |
+ * "block"` into (api/export/markInlineContract.ts). Returns the
+ * `InternalRefKind` the tag name implies, or `null` for any other tag
+ * (including the editor's own `<a data-rune-ref-*>` DOM shape, which
+ * `parseInternalRefElement` above handles). */
+function mentionKindFromTag(tagName: string): InternalRefKind | null {
+  const tag = tagName.toLowerCase()
+  if (tag === "mention-page") return "page"
+  if (tag === "mention-block") return "block"
+  return null
+}
+
+/** Parse `<mention-page id="…">` / `<mention-block id="…">` — the AI-markdown
+ * mention shape. `false` (dropped mark, inner text preserved) for a
+ * missing/empty `id`, mirroring `parseInternalRefElement`'s empty-attr
+ * rejection above; a hand-authored `<mention-foo>` never reaches this
+ * function at all (no `parseHTML` rule below matches its tag). */
+function parseMentionElement(node: HTMLElement): InternalRefAttrs | false {
+  const kind = mentionKindFromTag(node.tagName)
+  if (!kind) return false
+  const target = node.getAttribute("id") ?? ""
+  if (!target) return false
+  const alias = node.getAttribute("alias") === "true" ? true : undefined
+  return { kind, target, ...(alias ? { alias } : {}) }
+}
+
 export const InternalRef = Mark.create<InternalRefOptions>({
   name: "internalRef",
 
@@ -140,12 +167,23 @@ export const InternalRef = Mark.create<InternalRefOptions>({
     }
   },
 
+  // Tiptap calls EVERY attribute's own `parseHTML` against whatever node
+  // matched below, regardless of which `parseHTML()` rule matched it or what
+  // that rule's `getAttrs` returned (`injectExtensionAttributesToParseRule`
+  // in @tiptap/core spreads the per-attribute results OVER the rule's own —
+  // last writer wins). So each attribute here must independently recognize
+  // BOTH DOM shapes (the editor's `<a data-rune-ref-*>` round-trip shape and
+  // the AI-markdown `<mention-page>`/`<mention-block>` shape) or the mention
+  // rule's correctly-parsed attrs would get silently clobbered back to this
+  // shape's defaults.
   addAttributes() {
     return {
       kind: {
         default: "page",
         parseHTML: (element) =>
-          element.getAttribute("data-rune-ref-kind") ?? "page",
+          element.getAttribute("data-rune-ref-kind") ??
+          mentionKindFromTag(element.tagName) ??
+          "page",
         renderHTML: (attributes) => {
           const kind = attributes.kind
           return typeof kind === "string" && kind ? { "data-rune-ref-kind": kind } : {}
@@ -153,8 +191,12 @@ export const InternalRef = Mark.create<InternalRefOptions>({
       },
       target: {
         default: "",
-        parseHTML: (element) =>
-          element.getAttribute("data-rune-ref-target") ?? "",
+        parseHTML: (element) => {
+          const dataTarget = element.getAttribute("data-rune-ref-target")
+          if (dataTarget != null) return dataTarget
+          if (!mentionKindFromTag(element.tagName)) return ""
+          return element.getAttribute("id") ?? ""
+        },
         renderHTML: (attributes) => {
           const target = attributes.target
           return typeof target === "string" && target
@@ -164,8 +206,13 @@ export const InternalRef = Mark.create<InternalRefOptions>({
       },
       alias: {
         default: false,
-        parseHTML: (element) =>
-          element.getAttribute("data-rune-ref-alias") === "true" ? true : false,
+        parseHTML: (element) => {
+          if (element.hasAttribute("data-rune-ref-alias")) {
+            return element.getAttribute("data-rune-ref-alias") === "true"
+          }
+          if (!mentionKindFromTag(element.tagName)) return false
+          return element.getAttribute("alias") === "true"
+        },
         renderHTML: (attributes) =>
           attributes.alias === true ? { "data-rune-ref-alias": "true" } : {},
       },
@@ -177,6 +224,14 @@ export const InternalRef = Mark.create<InternalRefOptions>({
       {
         tag: "a[data-rune-ref-kind][data-rune-ref-target]",
         getAttrs: parseInternalRefElement,
+      },
+      {
+        tag: "mention-page[id]",
+        getAttrs: parseMentionElement,
+      },
+      {
+        tag: "mention-block[id]",
+        getAttrs: parseMentionElement,
       },
     ]
   },

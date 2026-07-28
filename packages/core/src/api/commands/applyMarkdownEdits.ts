@@ -18,7 +18,7 @@
 // re-parse equivalent to a surgical splice.
 
 import type { Editor } from "@tiptap/core"
-import { Node as PMNode, type Schema } from "@tiptap/pm/model"
+import { Node as PMNode, type Mark, type Schema } from "@tiptap/pm/model"
 import type { Transaction } from "@tiptap/pm/state"
 import { resolveBodyBlockById } from "../../schema/bodySurface"
 import { parseAiMarkdown } from "../../extensions/clipboard/aiMarkdown"
@@ -215,8 +215,9 @@ function applyMatch(
 
   // Pre-flight lossless guard: the UNEDITED chunk must round-trip back to the
   // live block's content. If it doesn't, the block carries inline state the
-  // dialect can't represent (an internalRef mark, an undeclared plugin mark,
-  // consecutive spaces inside inline code) — refuse rather than destroy it.
+  // dialect can't represent (an internalRef mark of an unrecognized kind or
+  // empty target, an undeclared plugin mark, consecutive spaces inside inline
+  // code) — refuse rather than destroy it.
   const uneditedBlocks = parseBlocks(stripped, schema)
   const uneditedBlock = uneditedBlocks[0]
   const roundTrips =
@@ -339,15 +340,35 @@ function stripIndent(text: string, indent: number): string {
   return text.startsWith(prefix) ? text.slice(prefix.length) : text
 }
 
-/** The name of the first inline mark on `node` with no markdown contract (e.g.
- * `internalRef`), or null. Used only to NAME the lossless-guard refusal; the
- * guard decision itself is the structural round-trip compare. */
+/** Whether `mark` round-trips through the markdown dialect at all. Most mark
+ * types are yes/no by TYPE NAME alone (a contract entry either exists or it
+ * doesn't). `internalRef` is the one exception: its contract entry is
+ * attrs-dependent (markInlineContract.ts) — only `kind: "page" | "block"`
+ * with a non-empty `target` serialize into the lossless `<mention-*>` shape,
+ * every other kind/target still passes through unwrapped and is lossy, so a
+ * bare `mark.type.name in markInlineContract` check would wrongly call those
+ * instances representable too. */
+function isRepresentableMark(mark: Mark): boolean {
+  if (mark.type.name === "internalRef") {
+    const { kind, target } = mark.attrs as { kind?: unknown; target?: unknown }
+    return (
+      (kind === "page" || kind === "block") &&
+      typeof target === "string" &&
+      target !== ""
+    )
+  }
+  return mark.type.name in markInlineContract
+}
+
+/** The name of the first inline mark on `node` that isn't representable (see
+ * `isRepresentableMark`), or null. Used only to NAME the lossless-guard
+ * refusal; the guard decision itself is the structural round-trip compare. */
 function findUnrepresentableMark(node: PMNode): string | null {
   let found: string | null = null
   node.descendants((child) => {
     if (found) return false
     for (const mark of child.marks) {
-      if (!(mark.type.name in markInlineContract)) {
+      if (!isRepresentableMark(mark)) {
         found = mark.type.name
         return false
       }

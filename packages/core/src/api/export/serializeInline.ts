@@ -116,7 +116,7 @@ function wrapWithMarks(
   const htmlMarks: Mark[] = []
   for (const mark of marks) {
     const contract = markInlineContract[mark.type.name]
-    if (!contract) continue // Marks with no contract (e.g. internalRef) pass through unwrapped.
+    if (!contract) continue // A mark with no contract entry passes through unwrapped.
     if (contract.html) htmlMarks.push(mark)
     else if (VERBATIM_MARKS.has(mark.type.name)) verbatimMarks.push(mark)
     else markdownMarks.push(mark)

@@ -118,6 +118,78 @@ describe("serializeInlineContent", () => {
     ).toBe("[[Target|Display]]")
   })
 
+  it("serializes an internalRef page-kind mention as <mention-page>", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [{ type: "internalRef", attrs: { kind: "page", target: "Target" } }],
+            text: "Display",
+          },
+        ],
+      }),
+    ).toBe('<mention-page id="Target">Display</mention-page>')
+  })
+
+  it("serializes an internalRef block-kind mention as <mention-block>", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [{ type: "internalRef", attrs: { kind: "block", target: "note#block" } }],
+            text: "Display",
+          },
+        ],
+      }),
+    ).toBe('<mention-block id="note#block">Display</mention-block>')
+  })
+
+  it("emits alias=\"true\" only when the internalRef alias attr is true", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [
+              { type: "internalRef", attrs: { kind: "page", target: "Target", alias: true } },
+            ],
+            text: "Display",
+          },
+        ],
+      }),
+    ).toBe('<mention-page id="Target" alias="true">Display</mention-page>')
+  })
+
+  it("emits no wrapper for an internalRef mark of an unrecognized kind (declared-lossy passthrough)", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [{ type: "internalRef", attrs: { kind: "custom", target: "Target" } }],
+            text: "Display",
+          },
+        ],
+      }),
+    ).toBe("Display")
+  })
+
+  it("emits no wrapper for an internalRef mark with an empty target (declared-lossy passthrough)", () => {
+    expect(
+      inlineFromEditor({
+        content: [
+          {
+            type: "text",
+            marks: [{ type: "internalRef", attrs: { kind: "page", target: "" } }],
+            text: "Display",
+          },
+        ],
+      }),
+    ).toBe("Display")
+  })
+
   it("serializes underline as <u>", () => {
     expect(
       inlineFromEditor({

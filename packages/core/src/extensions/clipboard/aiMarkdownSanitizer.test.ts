@@ -29,6 +29,12 @@ describe("sanitizeRawHtml — admits the whitelisted forms verbatim", () => {
   it("<br>", () => pass("<br>"))
   it("<br/> (self-closing)", () => pass("<br/>"))
   it("a bare <br> between two text runs", () => pass("line1<br>line2"))
+  it("a page mention", () => pass('<mention-page id="Target">'))
+  it("a block mention", () => pass('<mention-block id="note#block">'))
+  it("a mention with alias=\"true\"", () =>
+    pass('<mention-page id="Target" alias="true">'))
+  it("</mention-page>", () => pass("</mention-page>"))
+  it("</mention-block>", () => pass("</mention-block>"))
 })
 
 describe("sanitizeRawHtml — neutralizes everything outside the whitelist", () => {
@@ -90,6 +96,17 @@ describe("sanitizeRawHtml — neutralizes everything outside the whitelist", () 
   it("a non-whitelisted closing tag is rejected", () => {
     expect(sanitizeRawHtml("</script>")).toBe("&lt;/script&gt;")
   })
+
+  it("a mention with a non-whitelisted attr is rejected", () => {
+    const out = sanitizeRawHtml('<mention-page id="Target" onclick="steal()">')
+    expect(out).toContain("&lt;mention-page")
+    noLiveTag(out)
+  })
+
+  it("an unknown mention-* tag name is rejected (not in the whitelist)", () => {
+    const out = sanitizeRawHtml('<mention-foo id="Target">')
+    expect(out).toBe('&lt;mention-foo id="Target"&gt;')
+  })
 })
 
 describe("sanitizeRawHtml — tag-boundary and quote handling", () => {
@@ -136,6 +153,16 @@ describe("isAllowedTag — classification predicate", () => {
     '<span data-text-color="a>b">',
     '<SPAN DATA-TEXT-COLOR="blue">',
     '<input class="task-list-item-checkbox" checked disabled type="checkbox">',
+    '<mention-page id="Target">',
+    '<mention-block id="note#block">',
+    '<mention-page id="Target" alias="true">',
+    "</mention-page>",
+    // `id` is required for the MARK to apply (the schema's `mention-page[id]`
+    // parse rule + internal-ref's own empty-target rejection), but that is a
+    // parse-side concern, not the sanitizer's — the whitelist only vets
+    // tag/attr NAMES, so a bare `<mention-page>` is still an admitted
+    // (harmless) custom element here.
+    "<mention-page>",
   ])("admits %s", (tag) => expect(isAllowedTag(tag)).toBe(true))
 
   it.each([
@@ -150,5 +177,7 @@ describe("isAllowedTag — classification predicate", () => {
     "<div>",
     "not a tag",
     "<span", // no closing bracket
+    '<mention-foo id="Target">',
+    '<mention-page id="Target" onclick="x">',
   ])("rejects %s", (tag) => expect(isAllowedTag(tag)).toBe(false))
 })

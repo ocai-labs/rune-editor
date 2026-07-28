@@ -267,6 +267,110 @@ describe("InternalRef — parseHTML round-trip", () => {
   })
 })
 
+// The AI-markdown mention shape (markInlineContract.ts's `internalRef`
+// entry): `<mention-page id="…">` / `<mention-block id="…">`, the raw HTML
+// `parseAiMarkdown` hands to this same schema after markdown-it renders it.
+describe("InternalRef — mention parseHTML (AI-markdown shape)", () => {
+  it("parses a page mention (kind derived from tag name, alias defaults false)", () => {
+    const editor = makeEditor()
+    const parser = DOMParser.fromSchema(editor.schema)
+    const container = document.createElement("div")
+    container.innerHTML = '<p><mention-page id="Target">Display</mention-page></p>'
+    const doc = parser.parse(container)
+
+    const text = doc.firstChild!.firstChild!
+    expect(text.text).toBe("Display")
+    const mark = text.marks.find((m) => m.type.name === "internalRef")
+    expect(mark?.attrs).toMatchObject({ kind: "page", target: "Target", alias: false })
+
+    editor.destroy()
+  })
+
+  it("parses alias=\"true\" into alias: true", () => {
+    const editor = makeEditor()
+    const parser = DOMParser.fromSchema(editor.schema)
+    const container = document.createElement("div")
+    container.innerHTML =
+      '<p><mention-page id="Target" alias="true">Display</mention-page></p>'
+    const doc = parser.parse(container)
+
+    const text = doc.firstChild!.firstChild!
+    const mark = text.marks.find((m) => m.type.name === "internalRef")
+    expect(mark?.attrs).toMatchObject({ kind: "page", target: "Target", alias: true })
+
+    editor.destroy()
+  })
+
+  it("parses a block mention (kind: block, opaque target string)", () => {
+    const editor = makeEditor()
+    const parser = DOMParser.fromSchema(editor.schema)
+    const container = document.createElement("div")
+    container.innerHTML = '<p><mention-block id="note-1#block-2">Block ref</mention-block></p>'
+    const doc = parser.parse(container)
+
+    const text = doc.firstChild!.firstChild!
+    expect(text.text).toBe("Block ref")
+    const mark = text.marks.find((m) => m.type.name === "internalRef")
+    expect(mark?.attrs).toMatchObject({ kind: "block", target: "note-1#block-2" })
+
+    editor.destroy()
+  })
+
+  it("drops the mark but preserves inner text when the mention has no id attribute", () => {
+    const editor = makeEditor()
+    const parser = DOMParser.fromSchema(editor.schema)
+    const container = document.createElement("div")
+    container.innerHTML = "<p><mention-page>Display</mention-page></p>"
+    const doc = parser.parse(container)
+
+    const text = doc.firstChild!.firstChild!
+    expect(text.text).toBe("Display")
+    expect(text.marks.find((m) => m.type.name === "internalRef")).toBeUndefined()
+
+    editor.destroy()
+  })
+
+  it("drops the mark but preserves inner text when the mention's id is empty", () => {
+    const editor = makeEditor()
+    const parser = DOMParser.fromSchema(editor.schema)
+    const container = document.createElement("div")
+    container.innerHTML = '<p><mention-page id="">Display</mention-page></p>'
+    const doc = parser.parse(container)
+
+    const text = doc.firstChild!.firstChild!
+    expect(text.text).toBe("Display")
+    expect(text.marks.find((m) => m.type.name === "internalRef")).toBeUndefined()
+
+    editor.destroy()
+  })
+
+  it("an unknown mention-* tag name has no matching rule; inner text passes through unmarked", () => {
+    const editor = makeEditor()
+    const parser = DOMParser.fromSchema(editor.schema)
+    const container = document.createElement("div")
+    container.innerHTML = '<p><mention-foo id="Target">Display</mention-foo></p>'
+    const doc = parser.parse(container)
+
+    const text = doc.firstChild!.firstChild!
+    expect(text.text).toBe("Display")
+    expect(text.marks.find((m) => m.type.name === "internalRef")).toBeUndefined()
+
+    editor.destroy()
+  })
+
+  it("renderHTML always emits the editor's data-rune-ref-* shape, even for a mark parsed from a mention tag", () => {
+    const editor = makeEditor()
+    editor.commands.setContent('<p><mention-page id="Target">Display</mention-page></p>')
+
+    const html = editor.getHTML()
+    expect(html).toContain('data-rune-ref-kind="page"')
+    expect(html).toContain('data-rune-ref-target="Target"')
+    expect(html).not.toContain("<mention-page")
+
+    editor.destroy()
+  })
+})
+
 describe("InternalRef — selection commands", () => {
   it("applies the mark with setInternalRef across a non-empty multi-node selection", () => {
     // An existing internalRef in the middle splits the paragraph into

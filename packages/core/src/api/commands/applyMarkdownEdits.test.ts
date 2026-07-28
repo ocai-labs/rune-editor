@@ -598,9 +598,30 @@ describe("applyMarkdownEdits — clear (empty newStr)", () => {
 // ── lossless guard ───────────────────────────────────────────────────────
 
 describe("applyMarkdownEdits — lossless guard", () => {
-  it("refuses a block carrying an internalRef mark, naming it", () => {
+  // A page/block-kind internalRef now round-trips through the `<mention-*>`
+  // markdown shape (markInlineContract.ts), so it no longer trips the
+  // pre-flight guard — the block is editable and the mark survives untouched.
+  it("edits a block carrying a page-kind internalRef mark, preserving it", () => {
     const editor = editorWith([
       para("p", [text("ref", [{ type: "internalRef", attrs: { kind: "page", target: "Page" } }])]),
+    ])
+    const res = applyMarkdownEdits(editor, { edits: [{ oldStr: "ref", newStr: "reference" }] })
+    const data = expectOk(res)
+    expect(data.changedBlockIds).toEqual(["p"])
+
+    const block = findBlock(editor, "p")!
+    expect(block.textContent).toBe("reference")
+    expect(marksOnText(block, "reference")).toEqual(["internalRef"])
+    expect(markAttrOnText(block, "reference", "internalRef", "kind")).toBe("page")
+    expect(markAttrOnText(block, "reference", "internalRef", "target")).toBe("Page")
+  })
+
+  // A `kind` outside `"page" | "block"` has no `<mention-*>` shape to encode
+  // into (markInlineContract.ts's internalRef entry falls back to unwrapped
+  // passthrough for it), so it still can't round-trip and still refuses.
+  it("refuses a block carrying an internalRef mark of an unrecognized kind, naming it", () => {
+    const editor = editorWith([
+      para("p", [text("ref", [{ type: "internalRef", attrs: { kind: "custom", target: "Page" } }])]),
     ])
     const res = applyMarkdownEdits(editor, { edits: [{ oldStr: "ref", newStr: "reference" }] })
     expect(res.ok).toBe(false)

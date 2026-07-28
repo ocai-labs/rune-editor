@@ -914,6 +914,16 @@ describe("exportMarkdown — dialects (B1)", () => {
     )
   })
 
+  it("plain drops an internalRef mention (unwraps to bare text), styled keeps it", () => {
+    const editor = editorWith(
+      p([run("Some Page", [{ type: "internalRef", attrs: { kind: "page", target: "Some Page" } }])]),
+    )
+    expect(exportMarkdown(editor, { dialect: "plain" })).toBe("Some Page\n")
+    expect(exportMarkdown(editor, { dialect: "styled" })).toBe(
+      '<mention-page id="Some Page">Some Page</mention-page>\n',
+    )
+  })
+
   it("plain keeps markdown-syntax marks (code+color → just backticks)", () => {
     const editor = editorWith(
       p([
