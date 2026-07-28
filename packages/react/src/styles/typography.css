@@ -58,7 +58,7 @@
   color: var(--rune-inline-code-fg);
   background: var(--rune-inline-code-bg);
   border-radius: var(--rune-inline-code-radius);
-  padding: 0.2em 0.4em;
+  padding: var(--rune-inline-code-pad-y) var(--rune-inline-code-pad-x);
   position: relative;
   bottom: 0.065em;
 }
@@ -79,6 +79,39 @@
 
 .rune-editor span[data-background-color]:has(code:not(pre code)) {
   border-radius: var(--rune-inline-code-radius);
+}
+
+/* A struck inline-code chip breaks native line-through twice: Chromium
+   paints the line for the chip's text run at the run's OWN font metrics, so
+   the 85% chip's segment sits a few px off the line through the surrounding
+   text, and the line takes the <s> element's color, not the chip red. No
+   glyph shift (position/vertical-align) moves the painted line, and a
+   background-gradient line on <s> itself is out too: the pill fill is
+   low-alpha, so the gradient shows through the pill's padding (verified
+   against Chromium 146). Instead the chip opts out of decoration
+   propagation by becoming an atomic inline — decorations are not drawn
+   across inline-block descendants — and redraws its own segment: centered
+   (50% is junction-calibrated against the native line, no visible step),
+   in its own currentColor (the code red, or an inline text-color flowing
+   in via the `color: inherit` override above), and inset by pad-x so the
+   line strikes the text, not the pill padding. 0.094em ≈ 0.08em / 0.85
+   keeps the visual thickness constant across the chip's smaller em. As
+   inline-block the chip's vertical padding starts counting toward the line
+   box and would bump the row height when struck; the negative block margin
+   cancels exactly that. Tradeoff: a struck chip can't wrap mid-run.
+
+   The second, higher-specificity selector re-asserts all of this inside an
+   inline background-color span, whose chip-clearing `background:
+   transparent` shorthand above would otherwise reset the gradient.
+   lists.css applies the same recipe for the checked to-do's line-through. */
+.rune-editor s code:not(pre code),
+.rune-editor span[data-background-color] s code:not(pre code) {
+  display: inline-block;
+  margin-block: calc(-1 * var(--rune-inline-code-pad-y));
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-size: calc(100% - 2 * var(--rune-inline-code-pad-x)) max(1px, 0.094em);
+  background-position: var(--rune-inline-code-pad-x) 50%;
 }
 
 .rune-editor ::selection {

@@ -166,6 +166,23 @@
   text-decoration: line-through;
 }
 
+/* Checked to-dos are the OTHER strike path (besides the <s> mark): the
+   native line-through above re-hits both per-run problems on an
+   inline-code chip — the chip run's line sits at its own 85% metrics, in
+   this <p>'s muted color instead of the chip red. Same recipe as the
+   struck-chip rule in typography.css (read its comment for the full
+   mechanism): the chip opts out of decoration propagation as an atomic
+   inline and redraws its own segment — centered, chip-colored, inset by
+   pad-x — while the native line keeps striking the plain text around it. */
+.rune-task-list[data-checked="true"] .rune-block-content > p code:not(pre code) {
+  display: inline-block;
+  margin-block: calc(-1 * var(--rune-inline-code-pad-y));
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-size: calc(100% - 2 * var(--rune-inline-code-pad-x)) max(1px, 0.094em);
+  background-position: var(--rune-inline-code-pad-x) 50%;
+}
+
 /* Block-color pill — see blocks/heading.css for the rationale; reads
    the shared --block-content-* tokens. Pill wraps the entire list row
    (marker + content) since data-background-color rides on

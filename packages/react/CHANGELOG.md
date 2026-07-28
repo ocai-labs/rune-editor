@@ -1,5 +1,12 @@
 # @ocai/rune-react
 
+## 0.22.2
+
+### Patch Changes
+
+- a6ab1ff: A struck inline-code chip now draws its own strike segment: aligned with the surrounding text's line, in the chip's own color, and striking only the text instead of crossing the pill padding. Applies to both the strike mark and checked to-dos.
+  - @ocai/rune-core@0.22.2
+
 ## 0.22.1
 
 ### Patch Changes

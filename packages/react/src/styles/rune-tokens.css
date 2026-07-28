@@ -179,6 +179,15 @@
      and — when an inline background-color wraps the code — on the outer
      color span, which is what actually paints the fill in that case. */
   --rune-inline-code-radius: 4px;
+  /* Pill padding, tokenized because it is load-bearing beyond the padding
+     itself: the hand-painted strike segment (typography.css, lists.css)
+     insets its line by exactly pad-x so the strike stops at the chip's
+     TEXT instead of crossing the pill padding, and the checked-to-do rule
+     cancels exactly pad-y of line-box growth when the chip turns
+     inline-block. Change the padding here and every dependent offset
+     follows. */
+  --rune-inline-code-pad-y: 0.2em;
+  --rune-inline-code-pad-x: 0.4em;
   position: relative;
 }
 
