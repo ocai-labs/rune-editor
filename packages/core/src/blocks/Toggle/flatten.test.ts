@@ -45,6 +45,18 @@ describe("transformToggleHTML — <details>", () => {
     expect(t.getAttribute("data-rune-toggle-expanded")).toBe("false")
   })
 
+  it("keeps H1 identity and clamps external H4–H6 toggles to H3", () => {
+    const h1 = parse("<details><summary><h1>One</h1></summary></details>")
+    transformToggleHTML(h1)
+    expect(h1.body.firstElementChild?.getAttribute("data-rune-toggle-level")).toBe("1")
+
+    for (const tag of ["h4", "h5", "h6"]) {
+      const doc = parse(`<details><summary><${tag}>Deep</${tag}></summary></details>`)
+      transformToggleHTML(doc)
+      expect(doc.body.firstElementChild?.getAttribute("data-rune-toggle-level")).toBe("3")
+    }
+  })
+
   it("flattens nested <details> recursively, incrementing depth", () => {
     const doc = parse(`
       <details open>

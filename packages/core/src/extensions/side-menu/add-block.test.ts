@@ -96,59 +96,6 @@ describe("addBlockBelowAndOpenSlash", () => {
     editor.destroy()
   })
 
-  it("in-column block: inserts the new paragraph INSIDE the column", () => {
-    const editor = createTestEditor()
-    editor.commands.setContent([
-      {
-        type: "columnLayout",
-        attrs: { depth: 0 },
-        content: [
-          {
-            type: "column",
-            attrs: { width: 1 },
-            content: [{ type: "paragraph", content: [{ type: "text", text: "L0" }] }],
-          },
-          {
-            type: "column",
-            attrs: { width: 1 },
-            content: [{ type: "paragraph", content: [{ type: "text", text: "R0" }] }],
-          },
-        ],
-      },
-    ])
-    // Find L0's block pos.
-    let blockPos = -1
-    editor.state.doc.descendants((n, p) => {
-      if (n.isTextblock && n.textContent === "L0") {
-        blockPos = p
-        return false
-      }
-      return true
-    })
-    addBlockBelowAndOpenSlash(editor, blockPos)
-
-    // The first column now holds [L0, "/"], the second still [R0]. The new
-    // paragraph must NOT have escaped to the root surface.
-    let firstColumn: ProseMirrorNode | null = null
-    editor.state.doc.descendants((n) => {
-      if (firstColumn) return false
-      if (n.type.name === "column") {
-        firstColumn = n
-        return false
-      }
-      return true
-    })
-    expect(firstColumn).not.toBeNull()
-    const col = firstColumn as unknown as ProseMirrorNode
-    expect(col.childCount).toBe(2)
-    expect(col.child(0).textContent).toBe("L0")
-    expect(col.child(1).textContent).toBe("/")
-    // Root surface still has exactly the one columnLayout block.
-    expect(editor.state.doc.childCount).toBe(1)
-    expect(editor.state.doc.child(0).type.name).toBe("columnLayout")
-    editor.destroy()
-  })
-
   it("slash menu store transitions to show: true", async () => {
     const editor = mk("<p></p>")
     addBlockBelowAndOpenSlash(editor, 0)

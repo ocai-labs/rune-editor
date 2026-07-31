@@ -16,7 +16,6 @@ import {
   TaskList,
   Equation,
   EquationBlockCommands,
-  ColumnLayout,
 } from "@ocai/rune-core";
 import { getDefaultReactSlashMenuItems } from "./getDefaultReactSlashMenuItems";
 import {
@@ -24,10 +23,6 @@ import {
   DividerIcon,
   TeXIcon,
   ImageBlockIcon,
-  ColumnsIcon,
-  Columns3Icon,
-  Columns4Icon,
-  Columns5Icon,
 } from "@/icons";
 
 describe("getDefaultReactSlashMenuItems", () => {
@@ -84,27 +79,6 @@ describe("getDefaultReactSlashMenuItems", () => {
     expect(image.title).toBe("Image");
     expect((image.icon as React.ReactElement).type).toBe(ImageBlockIcon);
     expect(image.block).toBeUndefined();
-    editor.destroy();
-  });
-
-  it("provides an icon for every columns item (2..5)", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: [Document, Paragraph, Text, ColumnLayout],
-    });
-    const items = getDefaultReactSlashMenuItems(editor);
-    const expectedIcons: Record<number, React.ComponentType> = {
-      2: ColumnsIcon,
-      3: Columns3Icon,
-      4: Columns4Icon,
-      5: Columns5Icon,
-    };
-    for (const count of [2, 3, 4, 5]) {
-      const columns = items.find((i) => i.key === `columns_${count}`)!;
-      expect(columns).toBeDefined();
-      expect(columns.title).toBe(`${count} columns`);
-      expect((columns.icon as React.ReactElement).type).toBe(expectedIcons[count]);
-    }
     editor.destroy();
   });
 

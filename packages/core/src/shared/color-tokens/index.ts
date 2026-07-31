@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-export { COLORS, COLOR_NAMES, type ColorName, type NamedColorEntry } from "./colors"
+export { COLORS, COLOR_NAMES, HIGHLIGHT_COLOR_NAME, type ColorName, type NamedColorEntry } from "./colors"
 export { parseCssColor, type Rgb } from "./parseCssColor"
 export { nearestColorName } from "./nearestColorName"
 export { normalizeAttrValue } from "./normalizeAttrValue"

@@ -21,10 +21,6 @@ import {
   DividerIcon,
   CalloutIcon,
   TableIcon,
-  ColumnsIcon,
-  Columns3Icon,
-  Columns4Icon,
-  Columns5Icon,
   ImageBlockIcon,
   VideoIcon,
   AudioIcon,
@@ -40,10 +36,10 @@ import {
 
 type IconComponentType = ComponentType<{ size?: number }>;
 
-// heading_4 reuses Heading3Icon because UI H4 shares H3's CSS, so the
-// icon would look the same either way — wire a Heading4Icon when/if
-// visual differentiation lands. Toggle has no heading_4 entry — Notion
-// caps Toggle Heading at 3.
+// heading_4 reuses Heading3Icon because there is no Heading4Icon yet, not
+// because the two look alike: H4 has had its own size step since the Notion
+// pass (blocks/heading.css), so this is a placeholder to replace when the icon
+// is drawn. Toggle has no heading_4 entry — Notion caps Toggle Heading at 3.
 const ICONS: Record<string, IconComponentType> = {
   paragraph: TextIcon,
   heading_1: Heading1Icon,
@@ -58,10 +54,6 @@ const ICONS: Record<string, IconComponentType> = {
   divider: DividerIcon,
   callout: CalloutIcon,
   table: TableIcon,
-  columns_2: ColumnsIcon,
-  columns_3: Columns3Icon,
-  columns_4: Columns4Icon,
-  columns_5: Columns5Icon,
   image: ImageBlockIcon,
   video: VideoIcon,
   audio: AudioIcon,

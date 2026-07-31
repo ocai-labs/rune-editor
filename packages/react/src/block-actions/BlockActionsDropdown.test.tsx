@@ -25,14 +25,7 @@
 //     would race the user's own hover-open.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import {
-  fireEvent,
-  render,
-  renderHook,
-  screen,
-  waitFor,
-} from "@testing-library/react"
-import { useEffect, useRef } from "react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { Editor, type Content } from "@tiptap/core"
 import {
   createBlockSpec,
@@ -146,67 +139,25 @@ describe("blockSelectionKey reducer — dropdownBlockId transitions", () => {
   })
 })
 
-describe("BlockActionsDropdown — submenu reset effect", () => {
-  // Mirror of the shipping effect in BlockActionsDropdown.tsx — kept
-  // here verbatim so the test is auditable independently of the
-  // production file. If the production effect drifts, update both
-  // sides together.
-  function useResetOnReanchor(
-    dropdownBlockId: string | null,
-    submenu: { close: () => void },
-  ) {
-    const prevDropdownBlockId = useRef(dropdownBlockId)
-    useEffect(() => {
-      if (prevDropdownBlockId.current !== dropdownBlockId) {
-        submenu.close()
-        prevDropdownBlockId.current = dropdownBlockId
-      }
-    }, [dropdownBlockId, submenu])
-  }
+describe("BlockActionsDropdown — inline-only color notice", () => {
+  it("renders a disabled Color row and clicking it dispatches no transaction", async () => {
+    const { editor, cleanup } = makeEditor()
+    const id = editor.state.doc.firstChild!.attrs.id as string
+    render(<BlockActionsDropdown editor={editor} />)
+    await openDropdownFor(editor, id)
 
-  it("calls submenu.close() on A → null (dropdown closing)", () => {
-    const submenu = { close: vi.fn() }
-    const { rerender } = renderHook(
-      ({ id }: { id: string | null }) => useResetOnReanchor(id, submenu),
-      { initialProps: { id: "A" as string | null } },
-    )
-    submenu.close.mockClear()
+    const row = await screen.findByRole("menuitem", {
+      name: "Color Inline text only",
+    })
+    expect(row).toBeDisabled()
+    expect(row).not.toHaveAttribute("aria-haspopup")
 
-    rerender({ id: null })
-    expect(submenu.close).toHaveBeenCalledTimes(1)
-  })
-
-  it("calls submenu.close() on A → B re-anchor (the leak case)", () => {
-    const submenu = { close: vi.fn() }
-    const { rerender } = renderHook(
-      ({ id }: { id: string | null }) => useResetOnReanchor(id, submenu),
-      { initialProps: { id: "A" as string | null } },
-    )
-    submenu.close.mockClear()
-
-    rerender({ id: "B" })
-    expect(submenu.close).toHaveBeenCalledTimes(1)
-  })
-
-  it("does NOT call submenu.close() when only `submenu` changes (hover flicker guard)", () => {
-    // `useNativeMenuSubmenu`'s returned object is memoized on `isOpen`
-    // among other things, so when the user hovers the Color trigger and
-    // isOpen flips, `submenu` is a new object reference. The effect
-    // re-fires (deps changed) but dropdownBlockId is stable — close()
-    // must NOT run, or it would race-cancel the open the user just
-    // triggered.
-    const submenuA = { close: vi.fn() }
-    const submenuB = { close: vi.fn() } // different reference, same id
-    const { rerender } = renderHook(
-      ({ id, submenu }: { id: string | null; submenu: { close: () => void } }) =>
-        useResetOnReanchor(id, submenu),
-      { initialProps: { id: "A" as string | null, submenu: submenuA } },
-    )
-    submenuA.close.mockClear()
-
-    rerender({ id: "A", submenu: submenuB })
-    expect(submenuA.close).not.toHaveBeenCalled()
-    expect(submenuB.close).not.toHaveBeenCalled()
+    const onTransaction = vi.fn()
+    editor.on("transaction", onTransaction)
+    fireEvent.click(row)
+    expect(onTransaction).not.toHaveBeenCalled()
+    editor.off("transaction", onTransaction)
+    cleanup()
   })
 })
 
@@ -232,36 +183,6 @@ const replaceableMediaBlocks = [
 ] as const
 
 describe("BlockActionsDropdown — media actions", () => {
-  it("uses color support intersection for mixed text and media selections", async () => {
-    const { editor, cleanup } = makeBlockActionsEditor({
-      type: "doc",
-      content: [
-        {
-          type: "paragraph",
-          attrs: { id: "p1" },
-          content: [{ type: "text", text: "plain text" }],
-        },
-        {
-          type: "image",
-          attrs: {
-            id: "img1",
-            src: "https://example.com/image.png",
-            alt: "",
-          },
-        },
-      ],
-    })
-    render(<BlockActionsDropdown editor={editor} />)
-
-    await openDropdownFor(editor, "p1", { from: "p1", to: "img1" })
-    const color = await screen.findByRole("menuitem", { name: "Color" })
-    fireEvent.mouseEnter(color)
-
-    expect(await screen.findByText("Background color")).toBeVisible()
-    expect(screen.queryByText("Text color")).toBeNull()
-
-    cleanup()
-  })
 
   it.each(replaceableMediaBlocks)(
     "shows Replace for %s blocks and opens the media popover",

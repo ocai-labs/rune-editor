@@ -26,7 +26,7 @@
    body text breathes more. --block-pad-top moves WITH padding-top (the
    side-menu gutter contract, CLAUDE.md invariant 8) so the grip stays
    aligned with the first text line. */
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block:has(> .rune-block-content > p):not(.rune-bullet-list, .rune-numbered-list, .rune-task-list, .rune-toggle) {
+.rune-editor .ProseMirror > .rune-block:has(> .rune-block-content > p):not(.rune-bullet-list, .rune-numbered-list, .rune-task-list, .rune-toggle) {
   --block-pad-top: 6px;
   padding-top: var(--block-pad-top);
   padding-bottom: 6px;

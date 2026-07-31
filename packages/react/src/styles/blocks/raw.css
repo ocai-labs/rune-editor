@@ -1,0 +1,64 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * Copyright (c) 2026 Ocean AI, LLC
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* Raw block — source markdown with no rune representation, kept verbatim so the
+ * file round-trips byte-for-byte. The text is DISPLAYED, never rendered; the
+ * block spec enforces that on every output path.
+ *
+ * It renders a <pre>, so `.rune-editor pre` in codeBlock.css already gives it the
+ * code-card geometry. That is deliberate reuse of the rhythm — but the two must
+ * NOT look alike: a code block has fences in the file and is freely editable,
+ * while this one is verbatim source that the user cannot edit inline. Someone who
+ * reads it as a code block would expect ``` in their file and would try to type
+ * in it. Hence a different surface and a left rule rather than a filled card.
+ *
+ * Imported AFTER codeBlock.css so these win without !important (the architecture notes: state
+ * gating belongs in the plugin, not in CSS specificity wars — this is plain
+ * cascade order, not gating). */
+.rune-editor pre.rune-raw-block {
+  background: var(--rune-raw-block-bg);
+  border-left: 2px solid var(--rune-raw-block-rule);
+  border-radius: 0;
+  padding: 12px 14px;
+  font-size: 0.8em;
+  color: var(--rune-raw-block-fg);
+  /* Long unbroken tags (a base64 data: URI in an <img>) must scroll rather than
+   * force the whole editor column wide. */
+  white-space: pre;
+  overflow-x: auto;
+  word-break: normal;
+}
+
+/* Marks the block as preserved-not-interpreted. `attr()` is safe here: the value
+ * is one of a closed set written by the codec, never user source. */
+.rune-editor pre.rune-raw-block::before {
+  content: attr(data-rune-raw-label);
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--rune-font-sans);
+  font-size: 0.75rem;
+  color: var(--rune-raw-block-label-fg);
+  user-select: none;
+}
+
+/* Inline counterpart — one source token (a tag, a stray closer, a comment) that
+ * sits in the middle of a paragraph. It reads as a chip so the boundary between
+ * "preserved source" and the ordinary editable text around it is visible; without
+ * that, a user would try to type inside the tag and find the caret refusing.
+ *
+ * Deliberately NOT the inline-`code` pill: that one means "code the author
+ * wrote", this one means "source we could not interpret". Same reason the block
+ * form avoids the code-card surface. */
+.rune-editor .rune-raw-inline {
+  font-family: var(--rune-font-mono);
+  font-size: 0.85em;
+  background: var(--rune-raw-block-bg);
+  color: var(--rune-raw-block-fg);
+  border: 1px solid var(--rune-raw-block-rule);
+  border-radius: 3px;
+  padding: 0 3px;
+  white-space: pre;
+}

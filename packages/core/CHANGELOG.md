@@ -1,5 +1,439 @@
 # @ocai/rune-core
 
+## 0.23.1-alpha.1
+
+### Patch Changes
+
+- f852605: Make inline mark serialization lossless and canonical in the storage codec.
+
+  Marks are now grouped into runs before they are wrapped, widest run first, so a
+  mark shared by several runs becomes their common wrapper. Previously each run
+  was wrapped on its own, which produced abutting delimiters (`**a****b**`,
+  `*You *` + `***can***`); remark escaped the seams, the file re-parsed with a
+  duplicated mark, and the escape count doubled on every subsequent save. Bold,
+  italic, and strikethrough are also no longer dropped when the run carries
+  `code` — the code span stays verbatim-innermost and the native syntax wraps
+  around it, matching what the editor already allows.
+
+  Parse output is canonical ProseMirror: a mark type appears at most once per run,
+  and neighbouring text with identical marks arrives as a single node. Both were
+  previously possible and made a save look like a change that never happened.
+
+  Adds `normalizeDocForComparison`, `sameDocument`, and `countDuplicateMarks` to
+  the `markdown` subpath — deliberately narrow comparison support for fidelity
+  gates. Only mark order is normalized (a ProseMirror mark set has no order);
+  lost, gained, duplicated, or re-attributed marks, reordered children, and
+  distinct attr values all still compare as different.
+
+  Drops GFM's transform-time autolinking, keeping its parse-time syntax. GFM
+  autolinks in two passes; only the first matches source bytes and is real syntax.
+  The second runs over already-decoded mdast text, which means a URL the codec
+  escaped on the way out (`https\://…`) decoded back to a URL on the way in and got
+  claimed as a link — so unsupported HTML that degraded to text was rewritten into
+  `[https://example.com">link</a](…)` on its second save. Real autolinks
+  (`<a@b.com>`, `https://…` and `www.…` after whitespace) are unaffected.
+
+  Measured over 1,151 external Markdown files: structural round-trip fidelity
+  rises to 90.8%, with no file failing to reach a fixpoint and no file producing a
+  duplicate mark.
+
+- 85319bb: Stop the editor accepting a nesting that the next save undoes, and give image
+  width and alignment somewhere to live.
+
+  **A raw block could be dragged into a list.** The drop depth was derived from
+  the destination alone, so the gesture landed, the indicator drew the block
+  indented, and the depth was applied — and then the save flattened it, because a
+  raw carrier's bytes cannot survive a container. Reopening put the block back at
+  the margin. The data was safe; what was not safe was the user's belief that the
+  drag had done something.
+
+  The block now says so itself, once, and both sides read it: the codec still
+  flattens on save, and the drag no longer offers the deeper slot. This is
+  deliberately a different claim from "cannot be indented", which code blocks,
+  dividers and tables also make for the much weaker reason that indenting them is
+  meaningless — a fenced block under a list item round-trips perfectly, and that
+  gesture stays available.
+
+  **An image's width and alignment were silently dropped on save.** Width now
+  rides Obsidian's native `![alt|300](src)`, which readers that do not know the
+  convention simply show as part of the alt text. Only a trailing all-digit
+  segment counts, so an alt that legitimately contains a pipe is left alone.
+
+  Alignment has no Markdown spelling, so a left- or right-aligned image upgrades
+  to `<img src … align>`. Centre is the default, so the overwhelmingly common
+  image still writes as plain `![alt](src)` and never grows a tag. An `<img>` the
+  author wrote by hand with no alignment is deliberately NOT claimed — reading it
+  as an image would rewrite their tag into `![]()` on the next save, so those
+  bytes are kept verbatim instead.
+
+  `contentWidth` remains unpersisted on purpose: it is view state, and writing it
+  would push one client's layout choice into a file every other client must honour.
+
+- ae4ff99: Finish four Markdown storage-fidelity edges found during review.
+
+  Toggle bodies nested inside list items now serialize through the full block
+  walker, so the list-item boundary guard cannot separate a body from its owner.
+  Inline image carriers rebuild escaped alt text and titles with the Markdown
+  writer and remain images after repeated saves. Link and image titles now survive
+  the storage codec, including aligned images that use the HTML form. Markdown
+  paste also consults the active editor's plugin block contracts instead of only
+  the built-in contract set.
+
+- 72b621d: Stop a hard break from disappearing when the next thing on the line is underline,
+  highlight, or a coloured span.
+
+  Those three marks — and wiki links — are written as raw HTML, and a hard break
+  immediately followed by raw HTML has no native Markdown spelling:
+  `mdast-util-to-markdown` emits `\` + a SPACE there instead of `\` + a newline. `\ `
+  is a literal backslash in CommonMark, so the break was gone the next time the file
+  was read and a stray backslash was left sitting in the paragraph. Writing a line,
+  pressing Shift+Enter and starting the next line with underlined text was enough to
+  trigger it.
+
+  The affected successors were measured rather than guessed, so the rule stays as
+  narrow as the defect: raw HTML is the only one. Text, code spans, bold, italic,
+  strikethrough, links, images, inline math and a following break all keep the
+  native form, and HTML nested inside a wrapper is safe because the wrapper's own
+  delimiter separates them. Only breaks that sit directly before raw HTML now take
+  `<br>`, which reads back as a hard break — the same resolution, and the same
+  reasoning, as the existing rule for a break at the very end of a block.
+
+  Found by the new storage-fidelity fixture corpus. The same defect was also making
+  paragraph-level bare HTML look structurally unstable, so that class is now
+  byte-damage only, as documented.
+
+- 72b621d: Connect inline math to the storage codec, in both directions.
+
+  Both halves of this mapping already existed and were simply never wired
+  together: mdast has an `inlineMath` node, and rune has an `inlineMath` atom whose
+  input rule is `$$latex$$`. The codec handled it in the same branch as unrecognised
+  HTML — flattened to the node's raw value — so the two directions failed
+  differently.
+
+  Reading dropped the delimiters: `$$x^2$$` in a file became the literal prose
+  `x^2`, and the formula's identity was gone for good on the next save.
+
+  Writing was the severe half. The serializer had no case for the PM node at all,
+  so a formula the **user typed in the editor** was deleted outright when the
+  document was saved — `前面 $$x^2$$ 后面` came back as `前面  后面`, and a paragraph
+  holding only a formula came back empty. This was silent content loss, not a
+  downgrade.
+
+  Marks now survive around the atom (`**$$E = mc^2$$**` keeps its bold), and block
+  math is untouched. A lone `$` still stays prose — `singleDollarTextMath: false` is
+  deliberate so that prices like `$5 and $6` are not eaten.
+
+  No delimiter option was needed: `mdast-util-math` follows that same setting and
+  writes `$$…$$`, which the pipeline reads back as `inlineMath` and reaches a
+  fixpoint immediately. That was measured rather than assumed, because writing a
+  form the reader will not accept is exactly how the hard-break and code-span
+  defects decayed a file on every save. The round-trip suite pins it so a future
+  change to the math options cannot quietly reintroduce that asymmetry.
+
+- beb825d: Stop a list item's block children from swallowing each other.
+
+  A list item packs its block children onto consecutive lines. CommonMark's lazy
+  continuation then reads the next plain-text line as part of the construct above
+  it, so a paragraph written directly after a nested list was absorbed by that
+  list's last item and the block disappeared — measured on 18 files of external
+  Markdown, and it took several saves to settle after that.
+
+  The unsafe boundaries were measured, not guessed: every left-right pair of the
+  ten constructs a list item can hold was round-tripped, and exactly four families
+  fail — a `list`, `blockquote`, or `table` followed by a `paragraph` or `table`
+  (lazy continuation), two blockquotes or two tables in a row (they merge), and a
+  `thematicBreak` under a paragraph (it becomes a setext underline instead).
+
+  Those boundaries now get a blank line, and only those. The fix is a
+  `mdast-util-to-markdown` join rule rather than `listItem.spread`, because
+  `spread` is an item-level switch: turning it on to protect one boundary
+  blank-lines every other boundary in the same item, which would rewrite the very
+  common tight `- item` / `- nested` shape for nothing. Tight lists stay
+  byte-for-byte tight.
+
+  Measured over 1,151 external Markdown files: structural round-trip fidelity
+  92.4%, worst case now two saves to a fixpoint instead of three, and no file lost
+  its byte-for-byte first save.
+
+- 87f1007: Stop a video or audio block inside a list item from ceasing to be a block.
+
+  A list item packs its block children onto consecutive lines. That is reversible
+  for most constructs and this codec already separates the pairs where it is not —
+  but the measurement behind that rule was taken when bare HTML still degraded to
+  literal text, so `html` was excluded from it. It is a shape a list item can hold
+  now, and re-running the same matrix with it included shows it is the only one
+  still failing: fifteen of the pairs, every one involving `html`.
+
+  The reason it fails is worth stating, because it is not the same reason as the
+  others. A tag outside CommonMark's block whitelist — which is where `<video>`
+  and `<audio>` land — starts a block that ends only at a **blank line**, not at
+  the next construct. So it is unsafe in both directions, and differently in each:
+  with the tag on the left it swallows whatever follows, whatever that is, and a
+  heading or a fenced code block is no protection; with the tag on the right it
+  cannot interrupt the paragraph above it and gets swallowed instead.
+
+  Measured damage: three videos in the VS Code changelog. Each was written onto
+  the line after its item's paragraph, read back as part of that paragraph's text,
+  and so never seen again by the mapping that made it a video. The bytes survived
+  as inline source, but the block was gone — and the next save turned the boundary
+  into a `<br>` and moved the file further from what its author wrote.
+
+  Across 1,151 external Markdown files this takes documents that survive a save
+  from 1,149 to 1,150, and every file in the corpus now reaches a fixpoint in a
+  single save rather than two. It costs nothing: the count of byte-identical files
+  and of files gaining an escape are both unchanged, because the added blank line
+  appears only at boundaries that were being corrupted.
+
+- 0dde585: Pasting Markdown now goes through the storage codec, so a document pasted from
+  the clipboard and the same document opened from a file are one document.
+
+  They were not. Pasting rendered Markdown to HTML with markdown-it and handed the
+  result to ProseMirror, which made it a second, independently-drifting
+  implementation of "Markdown → document". Measured over 1,118 real Markdown
+  files, the two agreed on 14.8% of them. The HTML detour turned a soft wrap into a
+  `hardBreak`, tore a paragraph apart around an inline image, degraded raw HTML
+  instead of keeping its bytes, and left a stray `code` mark and a trailing newline
+  inside every fenced block.
+
+  Frontmatter on the clipboard is kept as body content in a raw carrier. Carving it
+  off is right on the file path, where the caller owns it; a paste has no file, so
+  carving there would silently drop the top of whatever was copied.
+
+  `markdownToDoc` and `markdownToHtml` are removed from the public API along with
+  the pipeline behind them. `parseAiMarkdown` is unaffected and still takes an
+  injectable `parseHTML`, which is where the `ParseHTML` type now lives.
+
+- 72b621d: Keep block-level HTML exactly as it was written, with a new `rawBlock`.
+
+  A block of HTML that rune has no node for — the `<div align="center">` /
+  `<p align>` / `<picture>` wrappers that carry badges and logos at the top of most
+  READMEs — used to degrade into a paragraph of plain text. The newline inside that
+  text was then read back as a hard break, so the document's STRUCTURE only settled
+  after a second save, and the bytes on disk were rewritten with `\<` escapes along
+  the way. It was the single largest class of round-trip damage.
+
+  `rawBlock` carries that source verbatim instead. It is a decoder artefact, not
+  something the UI can create: it appears when a block of source has nowhere else to
+  go, and it writes itself back unchanged.
+
+  The source is displayed, never rendered. Every path out of the block goes through
+  a text node, so nothing in a note can execute or restyle the editor around it,
+  and copying it out yields the same characters rather than a blank.
+
+  The fallback runs only after every block contract has declined the node, so
+  first-class mappings still win: `<video>` and `<audio>` remain media blocks, a
+  `toc` fence remains a table of contents, and a document rune authored itself never
+  grows a raw block on reopening. It is also deliberately narrow — only HTML at the
+  top level of a document is claimed. Inside a list or a quote, the enclosing
+  construct's indentation has already been stripped from what remark reports, so
+  claiming it there would hand the block bytes the file never contained.
+
+  Raw blocks cannot be indented, for the same reason tables and dividers cannot:
+  list indentation and `>` prefixes are derived from a block's depth, so a block
+  that could be dragged into a container could not also promise to keep its bytes.
+
+  Measured over 1,151 external Markdown files: structural round-trip fidelity rises
+  from 92.4% to 99.4%, files that survive a save byte-for-byte rise from 453 to 493,
+  files that gain a `\<` escape fall from 201 to 92, and the worst case drops from
+  three saves to reach a fixpoint to two.
+
+- 0e65f55: Fix three ways a preserved-source block could still lose the bytes it exists to
+  keep.
+
+  An independent review of the raw carriers found each of these by reading the
+  code; the 1,151-file corpus reproduced none of them, and its numbers are
+  unchanged. That is worth stating plainly — a corpus catches what its documents
+  happen to contain, and no file in this one nests a multi-line tag inside a list.
+
+  **A tag inside a list item or a blockquote grew its indentation on every save.**
+  The source slice recovers bytes that mdast's `value` had stripped, which is right
+  at the top level of a document and wrong anywhere inside a container: the offsets
+  point at the original text, which still carries the list's indentation or the
+  quote's `>` — and then the writer adds that prefix again. A component written
+  with two-space continuation lines inside a list item came back with four, then
+  six, and never settled. Nested positions now use the stripped value, which is
+  exactly what the writer expects to re-prefix. The indentation an author wrote
+  inside a nested multi-line tag is not recoverable from a tree that never held it;
+  normalizing it is a degrade, and inventing it would be worse.
+
+  **A raw block that reached a container was destroyed.** Its bytes were indented
+  into the list item, and the file then read back as an ordinary paragraph of
+  literal text — so the following save escaped every `<`. Identity and content both
+  gone. The block already declared that it cannot be indented and the insert path
+  honoured that, but a drag derives the drop depth from the destination alone. The
+  guarantee now lives in the codec, where it holds however the depth arrived. (The
+  drag path's blind spot is real and shared with code blocks, dividers and tables;
+  those three survive a container, so it is filed separately.)
+
+  **`getHTML()` followed by `setContent()` turned preserved source into a code
+  block**, whose next save would wrap the user's HTML in fences. The marker that
+  identifies a raw block sat on the wrapper element while the rule that recognises
+  it matches the inner one. Copy and paste were unaffected, which is precisely why
+  this went unnoticed — that path emits the marked element directly.
+
+  Two smaller corrections come with them. A construct that is unmistakably markdown
+  — a link definition, an MDX export — announced itself in the editor as "HTML";
+  it now says "Markdown". And a table with ragged rows was labelled "malformed",
+  which is simply false: GFM permits body rows that differ from the header. It is
+  not malformed, it is non-rectangular, and that is what it now says.
+
+- 72b621d: Preserve unrecognised HTML written inside a paragraph, with a new `rawInline`.
+
+  A tag rune has no meaning for — an unknown element, a stray closing tag, an
+  inline comment, an MDX component — used to be flattened into the surrounding
+  text. Once it was text, the writer had to escape it, so every save rewrote
+  `<span class="x">` as `\<span class="x">`. This was the largest remaining class
+  of byte damage.
+
+  `rawInline` is an atom rather than a mark, and that is the whole design. Remark
+  reports `<span class="x">middle</span>` as three independently positioned nodes —
+  tag, text, tag — and an atom keeps that shape: the tags are quarantined while the
+  middle stays ordinary, editable text. A mark could do neither job. Editing splits
+  and extends marks, so one authored span would drift into several generated ones
+  and the original tag boundaries would be gone; and an unmatched `</div>`, a
+  self-closing tag or a comment has no text for a mark to attach to at all.
+
+  Marks around it are carried through, so raw source inside a bold or italic run no
+  longer breaks the run in two. Tags rune does understand are untouched: `<u>`,
+  `<mark data-color>`, colour spans and `<br>` are all claimed before the fallback
+  is reached.
+
+  One case is improved but not finished. When a tag's opening spans several lines,
+  its indentation is stripped by CommonMark before rune ever sees it, so the source
+  comes back without it. That is strictly better than before — the previous text
+  path lost exactly the same indentation and added escapes on top — but it is not
+  byte-exact, and the round-trip suite pins the residue rather than letting it read
+  as success.
+
+  Measured over 1,151 external Markdown files: files that gain a `\<` escape fall
+  from 92 to 57 (201 before this series), and files that survive a save
+  byte-for-byte rise to 495.
+
+- f1208e1: Stop rewriting how a document reads, and stop throwing away image URLs.
+
+  Across 1,151 external Markdown files, every file now survives a save with its
+  structure unchanged — 1,149 before, 1,151 now — and every one of them settles in
+  a single save rather than two. Files that come back byte-for-byte rose from 497
+  to 528, and files that pick up a backslash they did not have fell from 387 to 210.
+
+  **A soft wrap was being read as a hard break.** In Markdown a line break inside
+  a paragraph is a space; a hard break is a line break. Reading the first as the
+  second meant every wrapped paragraph came back rendering differently than its
+  author wrote it — a third of all files, and a real Obsidian vault was no better.
+  It was invisible to every existing check because the codec was symmetric about
+  it: what it wrote, it read back the same way, so the document always "matched".
+
+  The newline now simply stays inside the text. That is a shape ProseMirror
+  permits and the editor already renders correctly, and the writer needed no
+  change at all — it has always spelled a text newline as a soft wrap and a hard
+  break as a backslash. Real hard breaks are therefore still real hard breaks.
+
+  One position cannot be spelled as a soft wrap: a newline ending a run of text
+  that is immediately followed by something else, where it no longer sits between
+  two words. There the reader now adopts the writer's answer — a space — so the
+  two agree on the first save instead of disagreeing on every one.
+
+  **An image standing next to text lost its URL.** rune has an image block and no
+  inline image, so an image sharing a line with prose had nowhere to go and was
+  reduced to its alt text. Measured across 800 files: 327 URLs gone, in 80 files —
+  73% of every file that contains an image, because a README badge row is exactly
+  this shape. Like the wrap, it was symmetric and so invisible: alt text went in,
+  alt text came back.
+
+  Such an image is now kept verbatim by the same carrier that already holds source
+  rune cannot represent. Nothing is lost, a lone image paragraph is still promoted
+  to a real image block, and a first-class inline image remains open as a later
+  feature rather than being foreclosed.
+
+  **Encoding is now declared rather than incidental.** A byte-order mark is
+  dropped and CRLF becomes LF, at one place, before anything else runs. Previously
+  a CRLF file left a bare carriage return inside the document's prose — the `\n`
+  was consumed as a line break and the `\r` was not — which travelled into the
+  editor and back out to the file, and was stable enough that nothing noticed.
+
+- 0e65f55: Keep footnotes, non-rectangular tables, and multi-line tags exactly as they were
+  written.
+
+  The raw carriers could only reproduce constructs whose mdast `value` happened to
+  be their source text. Three shapes are not like that, and each was damaged in its
+  own way.
+
+  A footnote **lost content**: `footnoteDefinition` has children but no value, and
+  `footnoteReference` has neither, so the note's prose survived as an ordinary
+  paragraph while the `[^1]` marker that made it a footnote simply disappeared.
+
+  A **non-rectangular table** — one whose rows do not all match the header's width
+  — was reshaped rather than reformatted. A row with an extra cell grew a third
+  column _in the header_; a row with one missing gained an empty cell the author
+  never wrote. Such a table is perfectly legal GFM, which permits ragged body rows
+  and pads or drops cells when reading; it simply is not something a fixed-width
+  table node can hold without changing the file. Truncating would discard the
+  author's bytes and merging into the last cell would invent table semantics, so
+  the table is now kept verbatim instead. The check is exactly the measured shape —
+  a width mismatch — so a rectangular table is never touched.
+
+  A tag whose **opening spans several lines** lost its indentation, because
+  CommonMark strips the leading whitespace of a paragraph's continuation lines
+  before rune ever sees the tree.
+
+  All three are now recovered from the source text itself. The conversion takes the
+  markdown it parsed alongside the tree and derives the lookup internally, so its
+  output still depends only on its arguments. A caller that supplies no source
+  degrades exactly as before rather than recording approximate bytes — and a node
+  with no position, such as one a plugin built, reports that plainly instead of
+  returning a plausible-looking slice.
+
+  One hazard is worth naming: with a byte-order mark, offsets are counted against
+  the stripped text, so a naive slice is off by one for every node in the file.
+  That is handled, and pinned by a test.
+
+  Measured over 1,151 external Markdown files, and the vendored fidelity corpus now
+  has no known gaps left to track.
+
+- 1d5b4af: Claim `<br>` so a hard break inside a table cell has a Markdown spelling.
+
+  The editor lets Shift+Enter put a hard break inside a table cell, but a GFM row
+  cannot span physical lines: the native backslash form ends the row, and the
+  continuation re-parses as a second row. `<br>` is what GitHub, Obsidian, and any
+  HTML pipeline read as a break inside a cell, so the storage codec now uses it
+  there.
+
+  Reading is uniform — `<br>`, `<br/>`, and `<br />` in any position become a hard
+  break, which also means a `<br>` in an existing note stops showing up as four
+  literal characters in the editor. Writing stays native everywhere a physical
+  newline is safe, so ordinary prose does not gain HTML tags.
+
+  One exception is required for losslessness: a hard break at the very END of a
+  block also takes `<br>`. `a\` at the end of a block is a literal backslash
+  rather than a break in CommonMark, so the native form re-parsed as text and the
+  escape doubled on every save.
+
+## 0.23.1-alpha.0
+
+### Patch Changes
+
+- Complete the Markdown-workspace editor contract: remove Columns, move page
+  titles to host chrome while restoring Heading 1–6 identity, remove block-level
+  colors while retaining inline colors, and align Markdown depth, media, table,
+  toggle, callout, equation, TOC, clipboard, and AI-tool behavior with the flat
+  storage schema.
+
+## 0.23.0
+
+### Minor Changes
+
+- 4196c8a: Markdown storage codec ships as the `@ocai/rune-core/markdown` subpath export: `parseMarkdown` / `serializeMarkdown` — pure, DOM-free, remark-based, with per-block `toMdast`/`fromMdast` contracts on `createBlockSpec`. Highlight rides `==`/`<mark data-color>` (D4), media splits embed `![]()` vs paired asset tags (D5), TableOfContents rides an empty `toc` fence, and external `#####`/`######` headings round-trip as levels 6/7 without entering the UI (D10). The editor's parseDOM also reads `<mark>`/`<mark data-color>`; h6 gains a rhythm step in rune-react's heading styles.
+
+### Patch Changes
+
+- Peer/dependency ranges move to `^3.23.4` for the `@tiptap/*` family. Consumers already holding 3.23.4 now satisfy the range with their existing copy, so the editor resolves to a single ProseMirror instance instead of a second one (two copies make `Schema`/`Editor` mutually unassignable and misdirect rune's TS module augmentations).
+
+## 0.22.3
+
+### Patch Changes
+
+- c4ebda1: A whole-document swap no longer opens a suggestion menu. Replacing the document with `setContent` (an external or remote write landing in an open editor, a snapshot restore, a rehydrate) moves the caret to the end of the incoming content, and its full-document ReplaceStep looked like a keystroke to every trigger's open gate, so any `/` already in the incoming prose popped an item-less slash menu over the document. Document swaps are now treated like a paste: no trigger opens on them, and the anchor is suppressed so the caret restore that follows cannot reopen it either.
+
 ## 0.22.2
 
 ## 0.22.1

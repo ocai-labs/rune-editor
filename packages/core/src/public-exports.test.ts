@@ -8,10 +8,12 @@ import { describe, expect, it } from "vitest"
 import {
   Blockquote,
   CodeBlock,
-  ColumnLayout,
   InlineMath,
   MathController,
   Toggle,
+  TextStyleWithColorAttrs,
+  TextColor,
+  BackgroundColor,
   ToggleBodyPlugin,
   expandCollapsedToggles,
   findCollapsedToggleContaining,
@@ -29,15 +31,10 @@ import {
 } from "./blocks"
 import * as core from "./index"
 import type {
-  ColumnInsertTarget,
   MediaEmbedProvider,
   MediaSourceAttrs,
-  MoveBlocksTarget,
-  WrapIntoColumnsTarget,
-  RuneBlockOutline,
   RuneBlockquoteBlock,
   RuneCodeBlock,
-  RuneColumnsBlock,
   RuneImportMediaFile,
   RuneImportMediaUrl,
   RuneMediaImportContext,
@@ -64,7 +61,7 @@ describe("public core exports", () => {
       text: "code",
       language: null,
     }
-    const level: ToggleLevel = 4
+    const level: ToggleLevel = 3
     const toggle: RuneToggleBlock = {
       type: "toggle",
       id: "toggle",
@@ -74,53 +71,27 @@ describe("public core exports", () => {
       text: "Toggle",
     }
 
-    const columns: RuneColumnsBlock = {
-      type: "columnLayout",
-      id: "layout",
-      depth: 0,
-      columns: [
-        { id: "col_a", width: 1, children: [quote] },
-        { id: "col_b", width: 1, children: [code] },
-      ],
-    }
-
     expect(Blockquote).toBeDefined()
     expect(CodeBlock).toBeDefined()
-    expect(ColumnLayout).toBeDefined()
     expect(Toggle).toBeDefined()
     expect(quote.type).toBe("blockquote")
     expect(code.type).toBe("codeBlock")
     expect(toggle.type).toBe("toggle")
-    expect(columns.type).toBe("columnLayout")
-    expect(columns.columns).toHaveLength(2)
-  })
-
-  it("exposes column command targets and the outline surface field", () => {
-    // Deliberate public-API shapes (columns phase 1 verification gates).
-    const insertTarget: ColumnInsertTarget = { columnId: "col_a", index: 0 }
-    const moveTarget: MoveBlocksTarget = { columnId: "col_b", at: "end" }
-    const outlineEntry: RuneBlockOutline = {
-      id: "b1",
-      type: "paragraph",
-      depth: 0,
-      index: 0,
-      preview: "",
-      surface: "col_a",
-    }
-    // Drag-to-create columns (phase 2, F6): both target shapes are public.
-    const wrapTarget: WrapIntoColumnsTarget = { id: "b1", side: "right" }
-    const addColumnTarget: WrapIntoColumnsTarget = { layoutId: "lay", index: 1 }
-    expect(insertTarget.columnId).toBe("col_a")
-    expect(moveTarget).toBeDefined()
-    expect(wrapTarget).toBeDefined()
-    expect(addColumnTarget).toBeDefined()
-    expect(outlineEntry.surface).toBe("col_a")
   })
 
   it("exposes core math extension surfaces from the package root", () => {
     expect(InlineMath).toBeDefined()
     expect(MathController).toBeDefined()
     expect(typeof mathControllerKey.getState).toBe("function")
+  })
+
+  it("exposes inline color extensions without block-color APIs", () => {
+    expect(TextStyleWithColorAttrs).toBeDefined()
+    expect(TextColor).toBeDefined()
+    expect(BackgroundColor).toBeDefined()
+    expect("BlockTextColor" in core).toBe(false)
+    expect("BlockBackgroundColor" in core).toBe(false)
+    expect("setBlockColor" in core).toBe(false)
   })
 
   it("exposes first-class toggle helpers from the package root", () => {

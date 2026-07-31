@@ -258,11 +258,11 @@ export function InlineToolbar({
       const sel = editor.state.selection
       const isText = sel instanceof TextSelection
       const collapsed = sel.from === sel.to
-      // A plain-text block (node spec `marks: ""`, e.g. the page title) has no
+      // A plain-text block (node spec `marks: ""`) has no
       // inline marks to format. When the selection sits WHOLLY inside one such
       // block, keep the toolbar closed rather than float a grid of no-op
       // formatting buttons (and a Turn-into / color menu) over a field that
-      // can't take any of them. A selection that merely STARTS in the title and
+      // can't take any of them. A selection that merely starts in one and
       // extends into the body still opens — its body run is formattable.
       const marksFree =
         isText &&
@@ -784,10 +784,9 @@ function useCurrentTextSelectionBlock(
 }
 
 // Exported for unit testing (mirrors readActive below). Resolves via
-// `nearestBodyBlock` — the same surface-aware resolver SuggestionMenuController
-// uses (SM-3) — instead of a raw `$from.node(1)`, which reports the whole
-// columnLayout for an in-column caret ($from.depth === 3 there: doc >
-// columnLayout > column > textblock) rather than the column's paragraph.
+// `nearestBodyBlock` — the same registry-aware resolver
+// SuggestionMenuController uses — instead of assuming `$from.node(1)` is
+// always the intended block when plugins add structural ancestors.
 export function readCurrentTextSelectionBlock(
   editor: Editor,
 ): { id: string; type: string } | null {

@@ -35,23 +35,20 @@ import { INTERNAL_NORMALIZATION_META } from "../../extensions/internal-meta"
 // regardless of how the hardBreak got there.
 //
 // EDITABLE GATE: both the view() seed pass and appendTransaction are gated
-// on the editor being editable (view.editable / editor.isEditable) —
-// mirrors ColumnsNormalization's guard (blocks/Columns/normalization.ts),
-// which itself mirrors TitleBoundary (blocks/Title/boundary.ts). A
+// on the editor being editable (view.editable / editor.isEditable). A
 // read-only editor must display a doc verbatim rather than silently
 // rewriting it on mount. Flipping `editable` back on does NOT itself
 // re-run normalization (Tiptap's setEditable/setOptions calls
 // view.updateState with the SAME state — no transaction, so
 // appendTransaction never fires); normalization resumes on the NEXT
-// doc-changing transaction after the flip, same as ColumnsNormalization.
+// doc-changing transaction after the flip.
 //
 // TRANSACTION SHAPE mirrors TableMergedCellsGuard (blocks/Table/
 // TableMergedCellsGuard.ts): a single `doc.descendants` scan collects
 // patches, applied to ONE `state.tr`, tagged `addToHistory: false` +
 // INTERNAL_NORMALIZATION_META so undo never reveals an un-normalized
 // intermediate and consumers can distinguish housekeeping from user
-// edits. Unlike ColumnsNormalization's structural rules (which can cascade
-// — flattening a nested layout can produce a new empty column, etc.),
+// edits. Unlike structural rules that can cascade,
 // splitting a tableParagraph never creates or removes ANOTHER
 // hardBreak-bearing tableParagraph, so ONE scan + one tr converges in a
 // single pass — no find-first/loop-until-stable needed. Patches are
@@ -61,7 +58,7 @@ import { INTERNAL_NORMALIZATION_META } from "../../extensions/internal-meta"
 // position is still valid when its turn comes — no `tr.mapping` bookkeeping
 // needed for the patches themselves. The selection rides through
 // `tr.mapping` automatically (PM's `Transaction` re-resolves the current
-// selection against every step by default), same as ColumnsNormalization.
+// selection against every step by default).
 
 const TABLE_CELL_NORMALIZE_META = "rune/table-cell-normalize"
 
@@ -154,7 +151,7 @@ export const TableCellNormalization = Extension.create({
           // seed (otherwise displaying a doc with an embedded in-cell
           // hardBreak read-only would silently rewrite it — a host that
           // later persists getDocument() would capture the injected
-          // structure). Mirrors ColumnsNormalization's guard. Once the
+          // structure). Once the
           // editor becomes editable, this pass no longer applies (view()
           // fires once, at mount) — the appendTransaction guard below
           // picks normalization back up on the next doc-changing

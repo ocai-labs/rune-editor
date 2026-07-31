@@ -7,7 +7,7 @@
 /* Image block schema output:
    .rune-block.rune-image > .rune-block-content > img | placeholder. */
 
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block.rune-image {
+.rune-editor .ProseMirror > .rune-block.rune-image {
   --block-pad-top: var(--rune-media-pad-top);
   padding-top: var(--block-pad-top);
   padding-bottom: 0.5rem;

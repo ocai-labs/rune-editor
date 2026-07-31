@@ -31,6 +31,10 @@ export const TextStyleWithColorAttrs = TextStyle.extend({
       ...base,
       { tag: "span[data-text-color]", consuming: false, getAttrs: () => ({}) },
       { tag: "span[data-background-color]", consuming: false, getAttrs: () => ({}) },
+      // <mark> is the markdown-storage background form (D4): bare = the
+      // HIGHLIGHT_COLOR_NAME anchor, data-color = a palette name. The
+      // BackgroundColor global attribute reads the value.
+      { tag: "mark", consuming: false, getAttrs: () => ({}) },
     ]
   },
 })

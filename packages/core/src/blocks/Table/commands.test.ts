@@ -14,8 +14,6 @@ import { TextSelection } from "@tiptap/pm/state"
 import { Paragraph } from "../Paragraph/block"
 import { Table } from "./block"
 import { deleteTableWhenAllCellsSelected } from "./utilities/deleteTableWhenAllCellsSelected"
-import { BlockTextColor, BlockBackgroundColor } from "../../extensions/color"
-import { BLOCK_COLOR_TYPES } from "../../kit"
 
 const editors = new Set<Editor>()
 
@@ -790,156 +788,6 @@ describe("duplicateTableColumn / duplicateTableRow / clearTableColumn / clearTab
   })
 })
 
-// ─── Cell-color command tests (Task 3 — M8.4e-e) ────────────────────────────
-// Uses a separate setupWithColors() helper so the existing makeEditor() tests
-// are untouched. The color extensions MUST be registered here — without them,
-// cell.attrs.backgroundColor is `undefined`, not `null`, and assertions would
-// pass for the wrong reason.
-
-function setupWithColors() {
-  return new Editor({
-    element: document.createElement("div"),
-    extensions: [
-      Document,
-      Text,
-      Paragraph,
-      Table,
-      BlockTextColor.configure({ types: [...BLOCK_COLOR_TYPES] }),
-      BlockBackgroundColor.configure({ types: [...BLOCK_COLOR_TYPES] }),
-    ],
-  })
-}
-
-describe("TableCommands — cell color (column)", () => {
-  it("setTableColumnBackgroundColor colors every cell in a column", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 2, cols: 3, withHeaderRow: false })
-
-    // Locate the table and capture its tableStart (start-of-content position).
-    let tableStart = -1
-    editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "table") {
-        tableStart = pos + 1
-        return false
-      }
-      return true
-    })
-    expect(tableStart).toBeGreaterThan(0)
-
-    expect(
-      editor.commands.setTableColumnBackgroundColor({
-        tableStart, colIndex: 1, name: "blue",
-      }),
-    ).toBe(true)
-
-    // All cells in column 1 should carry backgroundColor="blue"; cells in
-    // columns 0 and 2 should remain null.
-    const colorsByCol: Array<Array<unknown>> = [[], [], []]
-    editor.state.doc.descendants((node) => {
-      if (node.type.name !== "tableRow") return true
-      node.forEach((cell, _offset, cellIndex) => {
-        colorsByCol[cellIndex]!.push(cell.attrs.backgroundColor)
-      })
-      return false
-    })
-    expect(colorsByCol[0]!.every((c) => c === null)).toBe(true)
-    expect(colorsByCol[1]!.every((c) => c === "blue")).toBe(true)
-    expect(colorsByCol[2]!.every((c) => c === null)).toBe(true)
-
-    editor.destroy()
-  })
-
-  it("setTableColumnTextColor with name 'default' stores null", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 1, cols: 2, withHeaderRow: false })
-    let tableStart = -1
-    editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "table") { tableStart = pos + 1; return false }
-      return true
-    })
-    editor.commands.setTableColumnTextColor({ tableStart, colIndex: 0, name: "red" })
-    editor.commands.setTableColumnTextColor({ tableStart, colIndex: 0, name: "default" })
-
-    let cellTextColor: unknown = "unset"
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === "tableCell" && cellTextColor === "unset") {
-        cellTextColor = node.attrs.textColor
-        return false
-      }
-      return true
-    })
-    expect(cellTextColor).toBeNull()
-
-    editor.destroy()
-  })
-
-  it("setTableColumnBackgroundColor returns false for an invalid tableStart", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 1, cols: 1 })
-    expect(
-      editor.commands.setTableColumnBackgroundColor({
-        tableStart: 999_999, colIndex: 0, name: "blue",
-      }),
-    ).toBe(false)
-    editor.destroy()
-  })
-})
-
-describe("TableCommands — cell color (row)", () => {
-  it("setTableRowBackgroundColor colors every cell in a row", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 3, cols: 2, withHeaderRow: false })
-    let tableStart = -1
-    editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "table") { tableStart = pos + 1; return false }
-      return true
-    })
-    expect(
-      editor.commands.setTableRowBackgroundColor({
-        tableStart, rowIndex: 1, name: "green",
-      }),
-    ).toBe(true)
-
-    const colorsByRow: Array<Array<unknown>> = [[], [], []]
-    let rowIdx = 0
-    editor.state.doc.descendants((node) => {
-      if (node.type.name !== "tableRow") return true
-      node.forEach((cell) => colorsByRow[rowIdx]!.push(cell.attrs.backgroundColor))
-      rowIdx++
-      return false
-    })
-    expect(colorsByRow[0]!.every((c) => c === null)).toBe(true)
-    expect(colorsByRow[1]!.every((c) => c === "green")).toBe(true)
-    expect(colorsByRow[2]!.every((c) => c === null)).toBe(true)
-
-    editor.destroy()
-  })
-
-  it("setTableRowTextColor colors every cell in a row", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: false })
-    let tableStart = -1
-    editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "table") { tableStart = pos + 1; return false }
-      return true
-    })
-    editor.commands.setTableRowTextColor({ tableStart, rowIndex: 0, name: "purple" })
-
-    const colorsByRow: Array<Array<unknown>> = [[], []]
-    let rowIdx = 0
-    editor.state.doc.descendants((node) => {
-      if (node.type.name !== "tableRow") return true
-      node.forEach((cell) => colorsByRow[rowIdx]!.push(cell.attrs.textColor))
-      rowIdx++
-      return false
-    })
-    expect(colorsByRow[0]!.every((c) => c === "purple")).toBe(true)
-    expect(colorsByRow[1]!.every((c) => c === null)).toBe(true)
-
-    editor.destroy()
-  })
-})
-
 describe("Table header helpers", () => {
   it("isTableHeaderRow: true when every cell in the row is tableHeader", () => {
     const editor = makeEditor()
@@ -1006,46 +854,6 @@ describe("toggleTableHeaderRow", () => {
     // Second toggle → all-header.
     editor.commands.toggleTableHeaderRow({ tableStart, rowIndex: 0 })
     expect(isTableHeaderRow(editor.state.doc.firstChild!, 0)).toBe(true)
-  })
-
-  it("preserves colwidth, textColor, backgroundColor, and inline content across toggles", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 2, cols: 3 })
-    const tableStart = 1
-
-    // Type something into the first header cell.
-    const firstCellPos = firstTableParagraphPos(editor)
-    editor.commands.setTextSelection(firstCellPos)
-    editor.commands.insertContent("Hello")
-
-    // Apply a row-0 background colour via the existing color command.
-    editor.commands.setTableRowBackgroundColor({ tableStart, rowIndex: 0, name: "blue" })
-
-    // Snapshot row 0 attrs + text BEFORE.
-    const before = readRow0(editor)
-
-    // Toggle off → on.
-    editor.commands.toggleTableHeaderRow({ tableStart, rowIndex: 0 })
-    editor.commands.toggleTableHeaderRow({ tableStart, rowIndex: 0 })
-
-    const after = readRow0(editor)
-    expect(after).toEqual(before)
-  })
-
-  it("after toggling header off, cells retain backgroundColor (renders as colored td)", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 2, cols: 3 })
-    const tableStart = 1
-    editor.commands.setTableRowBackgroundColor({ tableStart, rowIndex: 0, name: "red" })
-
-    editor.commands.toggleTableHeaderRow({ tableStart, rowIndex: 0 })
-
-    const row0 = editor.state.doc.firstChild!.firstChild!
-    for (let i = 0; i < row0.childCount; i++) {
-      const cell = row0.child(i)
-      expect(cell.type.name).toBe("tableCell")
-      expect(cell.attrs.backgroundColor).toBe("red")
-    }
   })
 
   it("normalises a mixed row to all-header on first toggle, then to all-cell on second", () => {
@@ -1127,23 +935,6 @@ describe("toggleTableHeaderColumn", () => {
     const table = editor.state.doc.firstChild!
     for (let r = 0; r < table.childCount; r++) {
       expect(table.child(r).firstChild!.type.name).toBe("tableCell")
-    }
-  })
-
-  it("preserves attrs and content on col 0 cells", () => {
-    const editor = setupWithColors()
-    editor.commands.insertTable({ rows: 3, cols: 2 })
-    const tableStart = 1
-
-    editor.commands.setTableColumnBackgroundColor({ tableStart, colIndex: 0, name: "green" })
-
-    editor.commands.toggleTableHeaderColumn({ tableStart, colIndex: 0 })
-    editor.commands.toggleTableHeaderColumn({ tableStart, colIndex: 0 })
-
-    const table = editor.state.doc.firstChild!
-    for (let r = 0; r < table.childCount; r++) {
-      const firstCell = table.child(r).firstChild!
-      expect(firstCell.attrs.backgroundColor).toBe("green")
     }
   })
 

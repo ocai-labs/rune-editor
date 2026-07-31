@@ -73,11 +73,8 @@ export function contentAttrsFromOuter(
   outer: Record<string, any>
   contentAttrs: Record<string, string>
 } {
-  const { "data-background-color": bgColor, ...outer } = HTMLAttributes
+  const outer = HTMLAttributes
   const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-  if (typeof bgColor === "string") {
-    contentAttrs["data-background-color"] = bgColor
-  }
   return { outer, contentAttrs }
 }
 

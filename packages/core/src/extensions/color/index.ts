@@ -14,19 +14,11 @@ export { createColorExtension }
 export type { ColorExtensionOptions }
 export { TextStyleWithColorAttrs } from "./TextStyleWithColorAttrs"
 
-export interface BlockTextColorOptions extends ColorExtensionOptions {}
-export interface BlockBackgroundColorOptions extends ColorExtensionOptions {}
 export interface TextColorOptions extends ColorExtensionOptions {}
 export interface BackgroundColorOptions extends ColorExtensionOptions {}
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
-    runeBlockTextColor: {
-      setBlockTextColor: (pos: number, name: ColorName | null) => ReturnType
-    }
-    runeBlockBackgroundColor: {
-      setBlockBackgroundColor: (pos: number, name: ColorName | null) => ReturnType
-    }
     runeTextColor: {
       setRuneTextColor: (name: ColorName) => ReturnType
       unsetRuneTextColor: () => ReturnType
@@ -38,16 +30,7 @@ declare module "@tiptap/core" {
   }
 }
 
-export const BlockTextColor = createColorExtension({
-  kind: "text",
-  scope: "block",
-})
-export const BlockBackgroundColor = createColorExtension({
-  kind: "background",
-  scope: "block",
-})
-export const TextColor = createColorExtension({ kind: "text", scope: "inline" })
+export const TextColor = createColorExtension({ kind: "text" })
 export const BackgroundColor = createColorExtension({
   kind: "background",
-  scope: "inline",
 })

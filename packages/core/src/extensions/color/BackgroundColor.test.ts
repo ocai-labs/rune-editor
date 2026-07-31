@@ -97,6 +97,24 @@ describe("BackgroundColor", () => {
     editor.destroy()
   })
 
+  it("parses a bare <mark> as the yellow highlight anchor (D4)", () => {
+    const editor = setup()
+    editor.commands.setContent("<p><mark>hi</mark></p>")
+    const text = editor.state.doc.firstChild!.firstChild!
+    const mark = text.marks.find((m) => m.type.name === "textStyle")
+    expect(mark?.attrs.backgroundColor).toBe("yellow")
+    editor.destroy()
+  })
+
+  it("parses <mark data-color='blue'> as the named palette background (D4)", () => {
+    const editor = setup()
+    editor.commands.setContent('<p><mark data-color="blue">hi</mark></p>')
+    const text = editor.state.doc.firstChild!.firstChild!
+    const mark = text.marks.find((m) => m.type.name === "textStyle")
+    expect(mark?.attrs.backgroundColor).toBe("blue")
+    editor.destroy()
+  })
+
   it("parses inline style='background-color: <hex>' via nearestColorName", () => {
     const editor = setup()
     // #504425 is the M4a yellow background hex (color-palette.css).

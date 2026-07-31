@@ -11,7 +11,7 @@ import { EditorContent } from "@tiptap/react"
 import type { Editor } from "@tiptap/react"
 import type { Node as PMNode } from "@tiptap/pm/model"
 import type { CSSProperties, ReactNode } from "react"
-import type { PlaceholderConfig, PlaceholderResolver } from "@ocai/rune-core"
+import type { PlaceholderConfig } from "@ocai/rune-core"
 import { ComponentsContext, defaultComponents } from "./suggestion-menu/ComponentsContext"
 import { BlockActionsDropdown } from "./block-actions"
 import type { BuildBlockLink, OnCopyLink } from "./block-actions"
@@ -43,7 +43,7 @@ const SLASH_PLACEHOLDER = '"/" for commands'
 function buildDefaultPlaceholders(): PlaceholderConfig {
   const config: PlaceholderConfig = {
     default: SLASH_PLACEHOLDER,
-    heading: (node: PMNode) => `Heading ${(node.attrs.level as number) - 1}`,
+    heading: (node: PMNode) => `Heading ${node.attrs.level as number}`,
     // Toggle title is painted by ToggleBodyPlugin (always-on, every empty
     // title) rather than the generic focus-gated Placeholder. Per-key
     // undefined here opts the generic extension out so they don't both
@@ -57,16 +57,6 @@ function buildDefaultPlaceholders(): PlaceholderConfig {
     numberedList: undefined,
     taskList: "To-do",
   }
-  // The in-document page title (opt-in TitleKit) opts OUT of the generic
-  // focus-gated Placeholder: its only empty-state hint is title.css's
-  // always-on "New page" ::before (Notion-style), so a focused empty title
-  // must not ALSO render rune's `default` slash hint. An explicit per-type
-  // `undefined` is the opt-out (resolve.ts hasOwn check). `title` is not a
-  // default body block, so it's absent from the typed key union — assign it
-  // through the index-signature shape. Harmless when TitleKit is disabled:
-  // placeholder/index.ts skips its unknown-key warning for explicit
-  // `undefined` opt-outs, so consumers without TitleKit don't get a warning.
-  ;(config as Record<string, PlaceholderResolver | undefined>).title = undefined
   return config
 }
 

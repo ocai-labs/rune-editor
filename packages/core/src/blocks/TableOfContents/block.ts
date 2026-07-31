@@ -25,7 +25,6 @@ import { insertOrUpdateBlockForSlashMenu } from "../../extensions/suggestion-men
 export const TableOfContents = createBlockSpec({
   type: "tableOfContents",
   content: "",
-  supports: { textColor: true, backgroundColor: true },
   schemaContext: {
     input: {
       examples: [{ type: "tableOfContents" }],
@@ -48,19 +47,28 @@ export const TableOfContents = createBlockSpec({
   toMarkdown() {
     return null
   },
+  markdown: {
+    // D5 (2026-07-29): an EMPTY ```toc fence — the convention several
+    // Obsidian TOC plugins render, and a visible (if plain) code block in
+    // vanilla Obsidian. The block's content is derived from headings at
+    // render time, so the fence carries position only. Promotion requires
+    // an empty body: an external file's real ```toc code stays a codeBlock.
+    toMdast() {
+      return { type: "code", lang: "toc", value: "" }
+    },
+    fromMdast(node) {
+      return node.type === "code" && node.lang === "toc" && !node.value.trim()
+        ? { type: "tableOfContents" }
+        : null
+    },
+  },
   parseDOM: [{ tag: "div[data-rune-toc]" }],
   renderDOM: ({ HTMLAttributes }) => {
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = {
       class: "rune-block-content",
       "data-rune-toc": "",
     }
-    if (textColor) contentAttrs["data-text-color"] = textColor as string
-    if (bgColor) contentAttrs["data-background-color"] = bgColor as string
     return ["div", { ...outer, class: "rune-block" }, ["div", contentAttrs]]
   },
   // External paste targets get the bare semantic marker — no chrome,

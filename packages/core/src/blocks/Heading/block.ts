@@ -8,15 +8,13 @@ import { createBlockSpec, createBlockExtension, readBlockInputText, inlineConten
 import type { RuneBlockBase } from "../../types"
 import { insertOrUpdateBlockForSlashMenu } from "../../extensions/suggestion-menus"
 
-// Heading outline contract: the page template reserves <h1> for the
-// document title, so body headings start at <h2>. UI exposes four
-// options (labelled H1 / H2 / H3 / H4) that map to internal levels
-// 2 / 3 / 4 / 5 and render as <h2> / <h3> / <h4> / <h5>. Storing the
-// real tag number as the attribute keeps the doc's outline correct for
-// SEO / accessibility tooling that walks HTML headings directly. UI H4
-// shares CSS with UI H3 — the new level adds outline depth without a
-// new visual rhythm step.
-const LEVELS = [2, 3, 4, 5] as const
+// Heading identity contract: the page title is host-owned and does not occupy
+// the ProseMirror schema. A markdown HN is therefore Heading level N and
+// renders as <hN>, without an offset or a synthetic level 7. The UI keeps its
+// Notion-shaped H1–H4 creation surface while storage accepts H1–H6 so external
+// markdown round-trips without rewriting its outline.
+const UI_LEVELS = [1, 2, 3, 4] as const
+const LEVELS = [1, 2, 3, 4, 5, 6] as const
 export type HeadingLevel = (typeof LEVELS)[number]
 
 const isHeadingLevel = (n: unknown): n is HeadingLevel =>
@@ -25,16 +23,13 @@ const isHeadingLevel = (n: unknown): n is HeadingLevel =>
 export const Heading = createBlockSpec({
   type: "heading",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   schemaContext: {
     input: {
-      // Surfaced to agents via get_editor_context. The 2–5 range is the single
-      // most common author error (a model reasons "H1 → level 1", which the
-      // schema rejects because h1 is the page title), so state it explicitly.
       description:
-        "Body headings use level 2–5; level 1 is reserved for the page title " +
-        "(the UI's 'Heading 1' = level 2). Always include a level.",
-      examples: [{ type: "heading", level: 2, text: "Example heading" }],
+        "Heading level is identical to markdown and HTML: level 1 is #/<h1>, " +
+        "through level 6 as ######/<h6>. The UI offers levels 1–4; levels 5–6 " +
+        "remain accepted for external markdown fidelity. Always include a level.",
+      examples: [{ type: "heading", level: 1, text: "Example heading" }],
     },
   },
   toRuneBlock: (node) => {
@@ -43,7 +38,7 @@ export const Heading = createBlockSpec({
       type: "heading",
       id: typeof node.attrs.id === "string" ? node.attrs.id : "",
       depth: typeof node.attrs.depth === "number" ? node.attrs.depth : 0,
-      level: isHeadingLevel(level) ? level : 2,
+      level: isHeadingLevel(level) ? level : 1,
       text: node.textContent,
     }
   },
@@ -71,10 +66,10 @@ export const Heading = createBlockSpec({
   },
   props: {
     level: {
-      default: 2 as HeadingLevel,
+      default: 1 as HeadingLevel,
       parseHTML: (el) => {
         const n = Number.parseInt(el.tagName.slice(1), 10)
-        return isHeadingLevel(n) ? n : 2
+        return isHeadingLevel(n) ? n : 1
       },
       // level is expressed by the tag name in renderDOM, not as an
       // attribute — return {} so Tiptap doesn't serialise a redundant
@@ -82,40 +77,35 @@ export const Heading = createBlockSpec({
       renderHTML: () => ({}),
     },
   },
-  parseDOM: LEVELS.map((level) => ({
-    tag: `h${level}`,
-    attrs: { level },
-  })),
+  parseDOM: LEVELS.map((level) => ({ tag: `h${level}`, attrs: { level } })),
   renderDOM: ({ node, HTMLAttributes }) => {
-    const level = node.attrs.level as HeadingLevel
+    const level = isHeadingLevel(node.attrs.level) ? node.attrs.level : 1
     // Block-level color attrs ride on the inner wrapper (.rune-block-content)
     // so the colored pill hugs the content rectangle and the rhythm gutter
     // stays untinted. Outer .rune-block keeps data-id / data-depth only.
     // See spec §4.
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (textColor) contentAttrs["data-text-color"] = textColor
-    if (bgColor) contentAttrs["data-background-color"] = bgColor
     return [
       "div",
       { ...outer, class: "rune-block" },
-      ["div", contentAttrs, [`h${level}`, {}, 0]],
+      [
+        "div",
+        contentAttrs,
+        [`h${level}`, {}, 0],
+      ],
     ]
   },
   toMarkdown({ prefix, serializeInline, node }) {
-    const level = typeof node.attrs.level === "number" ? node.attrs.level : 2
-    return { line: `${prefix}${"#".repeat(level - 1)} ${serializeInline(node)}` }
+    const level = isHeadingLevel(node.attrs.level) ? node.attrs.level : 1
+    return { line: `${prefix}${"#".repeat(level)} ${serializeInline(node)}` }
   },
   clipboardRenderDOM: ({ node }) => {
-    const level = node.attrs.level as HeadingLevel
+    const level = isHeadingLevel(node.attrs.level) ? node.attrs.level : 1
     return [`h${level}`, {}, 0]
   },
   slashMenuItems: () =>
-    LEVELS.map((level, i) => {
+    UI_LEVELS.map((level, i) => {
       const block = { type: "heading", props: { level } }
       return {
         key: `heading_${i + 1}`,
@@ -133,33 +123,32 @@ export const Heading = createBlockSpec({
   extensions: [
     createBlockExtension({
       key: "extras",
-      // UI heading N = internal level N+1 (<h1> is reserved for the title).
       shortcutActions: {
         blockHeading1: ({ editor }) =>
-          editor.commands.setNode("heading", { level: 2 }),
+          editor.commands.setNode("heading", { level: 1 }),
         blockHeading2: ({ editor }) =>
-          editor.commands.setNode("heading", { level: 3 }),
+          editor.commands.setNode("heading", { level: 2 }),
         blockHeading3: ({ editor }) =>
-          editor.commands.setNode("heading", { level: 4 }),
+          editor.commands.setNode("heading", { level: 3 }),
         blockHeading4: ({ editor }) =>
-          editor.commands.setNode("heading", { level: 5 }),
+          editor.commands.setNode("heading", { level: 4 }),
       },
       inputRules: [
         {
           find: /^#\s$/,
-          replace: () => ({ type: "heading", props: { level: 2 } }),
+          replace: () => ({ type: "heading", props: { level: 1 } }),
         },
         {
           find: /^##\s$/,
-          replace: () => ({ type: "heading", props: { level: 3 } }),
+          replace: () => ({ type: "heading", props: { level: 2 } }),
         },
         {
           find: /^###\s$/,
-          replace: () => ({ type: "heading", props: { level: 4 } }),
+          replace: () => ({ type: "heading", props: { level: 3 } }),
         },
         {
           find: /^####\s$/,
-          replace: () => ({ type: "heading", props: { level: 5 } }),
+          replace: () => ({ type: "heading", props: { level: 4 } }),
         },
       ],
     }),

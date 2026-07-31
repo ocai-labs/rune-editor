@@ -128,23 +128,6 @@ describe("table input", () => {
   })
 })
 
-describe("columns input", () => {
-  it("advertises and round-trips the nested children shape", () => {
-    const editor = createTestEditor()
-    const ctx = getRuneSchemaContext(editor)
-    const columns = ctx.blocks.find((b) => b.type === "columnLayout")
-    expect(columns?.input.examples?.length).toBeGreaterThan(0)
-
-    const ex = columns!.input.examples![0]
-    const read = insertAndRead(editor, ex as unknown as RuneBlockInput) as RuneBlock & {
-      columns: Array<{ children: Array<{ type: string }> }>
-    }
-    expect(read.type).toBe("columnLayout")
-    expect(read.columns.length).toBe(2)
-    expect(read.columns[0]?.children[0]?.type).toBe("paragraph")
-  })
-})
-
 // The INVARIANT this section guards (the class of bug behind the downstream
 // table-write report): a block with a STRUCTURED content field (a nested
 // array/object, not a scalar `text`) must never SILENTLY drop content it was
@@ -156,7 +139,7 @@ describe("columns input", () => {
 //     `explainBlockInputRejection`'s actionable reason.
 // Building a content-LESS node and reporting success is forbidden: it loses the
 // user's content while telling the agent it succeeded (→ blind retry loop).
-// `columnLayout` already rejects; `table` historically degraded to a blank grid.
+// `table` historically degraded malformed input to a blank grid.
 // Any NEW structured block must be added here with both halves asserted.
 describe("structured blocks never silently drop content", () => {
   function tableRows(editor: Editor, input: RuneBlockInput) {
@@ -243,17 +226,5 @@ describe("structured blocks never silently drop content", () => {
     } as unknown as RuneBlockInput)
     expect(node).not.toBeNull()
     expect(node!.type.name).toBe("table")
-  })
-
-  it("columnLayout: REJECTS malformed columns input (already disciplined)", () => {
-    const editor = createTestEditor()
-    for (const bad of [
-      { type: "columnLayout", columns: "nope" },
-      { type: "columnLayout", columns: [] },
-      { type: "columnLayout", columns: [["x"]] }, // array as a column entry
-    ]) {
-      const node = createNodeFromBlockInput(editor, editor.schema, bad as unknown as RuneBlockInput)
-      expect(node, `expected null for ${JSON.stringify(bad)}`).toBeNull()
-    }
   })
 })

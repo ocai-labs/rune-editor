@@ -147,13 +147,12 @@ describe("Block API queries", () => {
       }),
     })
 
-    // A structural wrapper that contains real registered body blocks,
-    // simulating the future `columnLayout > column > child` shape. Its
-    // projection recurses into each child via the new ctx.projectChild.
+    // A structural wrapper that contains real registered body blocks. Its
+    // projection recurses into each child via ctx.projectChild.
     const Wrapper = createBlockSpec({
       type: "wrapper-block",
       // Body blocks all share group "block" (the factory sets it); the
-      // wrapper accepts one-or-more of them, simulating column children.
+      // wrapper accepts one-or-more of them.
       content: "block+",
       parseDOM: [{ tag: "wrapper-block" }],
       renderDOM: ({ HTMLAttributes }) => ["div", HTMLAttributes, 0],

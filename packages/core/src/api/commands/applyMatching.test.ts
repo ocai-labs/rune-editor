@@ -45,20 +45,6 @@ const tableRow1 = (id: string, cells: JSONContent[][]): JSONContent => ({
   ],
 })
 
-/** A two-column layout, each column holding one paragraph (id + inline content). */
-const twoColumns = (
-  layoutId: string,
-  a: { id: string; content: JSONContent[] },
-  b: { id: string; content: JSONContent[] },
-): JSONContent => ({
-  type: "columnLayout",
-  attrs: { id: layoutId, depth: 0 },
-  content: [
-    { type: "column", attrs: { id: "col_a", width: 1 }, content: [para(a.id, a.content)] },
-    { type: "column", attrs: { id: "col_b", width: 1 }, content: [para(b.id, b.content)] },
-  ],
-})
-
 function findBlock(editor: Editor, id: string): PMNode | null {
   let out: PMNode | null = null
   editor.state.doc.descendants((node) => {
@@ -427,75 +413,7 @@ describe("applyMatching — table-cell text", () => {
   })
 })
 
-// ── inline-kind: column no-double-application (regression) ────────────────────
-
-describe("applyMatching — columns (no double application)", () => {
-  it("applies EXACTLY once to a column child's text, layout id absent", () => {
-    // forEachBodyBlock visits the columnLayout AND each column child. The
-    // subtree enumeration must stop at the structural `column` so the child's
-    // paragraph is enumerated once (as its own body block) — a double-applied
-    // mark would hide as an idempotent addMark, so we assert count and ids.
-    const editor = editorWith([
-      twoColumns("lay", { id: "a1", content: [text("alpha", [code])] }, { id: "b1", content: [text("beta")] }),
-    ])
-    const data = expectOk(
-      applyMatching(editor, {
-        where: { mark: "code" },
-        set: { mark: { type: "textStyle", attrs: { textColor: "blue" } } },
-      }),
-    )
-    expect(data.count).toBe(1)
-    expect(data.changedBlockIds).toEqual(["a1"])
-    expect(data.changedBlockIds).not.toContain("lay")
-    expect(markAttrOnText(findBlock(editor, "a1")!, "alpha", "textStyle", "textColor")).toBe("blue")
-    // Exactly one application → ONE undo fully reverts.
-    undo(editor.state, editor.view.dispatch)
-    expect(marksOnText(findBlock(editor, "a1")!, "alpha")).toEqual(["code"])
-  })
-})
-
 // ── block-kind ───────────────────────────────────────────────────────────────
-
-describe("applyMatching — block-kind blockColor", () => {
-  it("colours every matching block, counting ONLY declared-support blocks", () => {
-    // paragraph + heading support background colour; image does not have inline
-    // text so it can't match a text predicate anyway — use blockType instead.
-    const editor = editorWith([
-      para("p1", [text("one")]),
-      para("p2", [text("two")]),
-    ])
-    const data = expectOk(
-      applyMatching(editor, {
-        where: { blockType: "paragraph" },
-        set: { blockColor: { kind: "background", name: "blue" } },
-      }),
-    )
-    expect(data.count).toBe(2)
-    expect(findBlock(editor, "p1")!.attrs.backgroundColor).toBe("blue")
-    expect(findBlock(editor, "p2")!.attrs.backgroundColor).toBe("blue")
-  })
-
-  it("excludes a matched-by-where block that does not declare the colour axis", () => {
-    // A code block has inline text (so it matches the text predicate) but
-    // declares NO colour support. It matches `where` yet is NOT counted.
-    const editor = editorWith([
-      para("p", [text("x")]),
-      { type: "codeBlock", attrs: { id: "c", depth: 0, language: "text" }, content: [text("x")] },
-    ])
-    const data = expectOk(
-      applyMatching(editor, {
-        // blockType absent → all blocks are candidates; only colour-supporting
-        // ones count.
-        where: { textMatches: "x" },
-        set: { blockColor: { kind: "text", name: "red" } },
-      }),
-    )
-    // Both contain "x", but only the paragraph supports text colour → count 1.
-    expect(data.count).toBe(1)
-    expect(data.changedBlockIds).toEqual(["p"])
-    expect(findBlock(editor, "p")!.attrs.textColor).toBe("red")
-  })
-})
 
 describe("applyMatching — block-kind turnInto", () => {
   it("turns every matching paragraph into a heading (level 2)", () => {
@@ -519,23 +437,6 @@ describe("applyMatching — block-kind turnInto", () => {
     expect(findBlock(editor, "b")!.type.name).toBe("bulletList")
   })
 
-  it("does not count a block whose turnInto no-ops at apply time (columnLayout no-nesting guard)", () => {
-    // canTurnInto (the cheap pre-filter) only rejects CONTAINER sources, so a
-    // paragraph target of columnLayout passes it — but applyTurnIntoTr's
-    // no-nesting guard then refuses the actual conversion. count/changedBlockIds
-    // must reflect the refusal, not the pre-filter pass.
-    const editor = editorWith([para("p1", [text("hi")])])
-    const data = expectOk(
-      applyMatching(editor, {
-        where: { blockType: "paragraph" },
-        set: { turnInto: { type: "columnLayout" } },
-      }),
-    )
-    expect(data.count).toBe(0)
-    expect(data.changedBlockIds).toEqual([])
-    expect(findBlock(editor, "p1")!.type.name).toBe("paragraph")
-  })
-
   it("does not count a block whose turnInto no-ops on invalid target props (illegal heading level)", () => {
     const editor = editorWith([para("p1", [text("hi")])])
     const data = expectOk(
@@ -546,23 +447,6 @@ describe("applyMatching — block-kind turnInto", () => {
     )
     expect(data.count).toBe(0)
     expect(data.changedBlockIds).toEqual([])
-    expect(findBlock(editor, "p1")!.type.name).toBe("paragraph")
-  })
-
-  it("still counts a block via blockColor even when its turnInto part no-ops (combined set)", () => {
-    const editor = editorWith([para("p1", [text("hi")])])
-    const data = expectOk(
-      applyMatching(editor, {
-        where: { blockType: "paragraph" },
-        set: {
-          blockColor: { kind: "background", name: "blue" },
-          turnInto: { type: "columnLayout" },
-        },
-      }),
-    )
-    expect(data.count).toBe(1)
-    expect(data.changedBlockIds).toEqual(["p1"])
-    expect(findBlock(editor, "p1")!.attrs.backgroundColor).toBe("blue")
     expect(findBlock(editor, "p1")!.type.name).toBe("paragraph")
   })
 
@@ -588,16 +472,6 @@ describe("applyMatching — block-kind turnInto", () => {
 // ── validation ───────────────────────────────────────────────────────────────
 
 describe("applyMatching — validation", () => {
-  it("rejects mixed set kinds (inline + block) as invalid-input", () => {
-    const editor = editorWith([para("p", [text("x", [code])])])
-    const err = expectErr(
-      applyMatching(editor, {
-        where: { mark: "code" },
-        set: { mark: { type: "bold" }, blockColor: { kind: "text", name: "red" } },
-      }),
-    )
-    expect(err.code).toBe("invalid-input")
-  })
 
   it("rejects an empty where as invalid-input", () => {
     const editor = editorWith([para("p", [text("x")])])
@@ -641,17 +515,6 @@ describe("applyMatching — validation", () => {
       applyMatching(editor, { where: { blockType: "paragraph" }, set: { turnInto: { type: "nope" } } }),
     )
     expect(err.code).toBe("unsupported")
-  })
-
-  it("reports invalid-input for an unknown blockColor name", () => {
-    const editor = editorWith([para("p", [text("x")])])
-    const err = expectErr(
-      applyMatching(editor, {
-        where: { blockType: "paragraph" },
-        set: { blockColor: { kind: "text", name: "chartreuse" } },
-      }),
-    )
-    expect(err.code).toBe("invalid-input")
   })
 })
 

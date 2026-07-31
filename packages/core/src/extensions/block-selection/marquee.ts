@@ -462,14 +462,9 @@ function dispatchRange(
   return intent
 }
 
-// Resolve the marquee's containing surface from BOTH rect corners (start +
-// current). Only when BOTH resolve to the SAME column do we walk that column's
-// children — a column-local MBS (F5, Notion-aligned for the in-column case). The
-// moment either corner is outside the column (root, or the other column) we fall
-// back to the ROOT walk, which treats the whole `columnLayout` as one root
-// block (F5's deliberate deviation: cross-boundary promotes to root granularity,
-// NEVER a cross-surface MBS). Returns the root walk if the column walk can't be
-// resolved (mid-mutation safety).
+// Resolve the marquee's containing surface from BOTH rect corners. A
+// plugin-provided nested surface is selected only when both corners resolve to
+// it; crossing a surface boundary falls back to root granularity.
 function walkForRect(view: EditorView, start: Point, current: Point): SurfaceWalk {
   const startSurface = surfaceFromPoint(view, start.x, start.y)
   const currentSurface = surfaceFromPoint(view, current.x, current.y)
@@ -478,15 +473,8 @@ function walkForRect(view: EditorView, start: Point, current: Point): SurfaceWal
     isColumn(startSurface) &&
     startSurface.surfacePos === currentSurface.surfacePos
   ) {
-    // NOTE (currently UNREACHABLE — keep, do not delete as "untested"): a
-    // marquee can only START outside every `.rune-block` (isMarqueeEligibleTarget
-    // rejects `.rune-block` descendants), and a `column`'s entire interior is
-    // nested inside the `columnLayout`'s `.rune-block` wrapper — so the start
-    // corner never resolves to a column and this branch never fires today. It is
-    // implemented correct-by-construction so that IF marquee eligibility is ever
-    // widened to let a sweep begin over a column, the F5 column-local rule is
-    // already in place (it would then need its own e2e). The reachable column
-    // path is the CROSSING case below, which correctly stays at root granularity.
+    // Built-in Rune blocks are flat, so this branch is reserved for plugins
+    // that expose nested body surfaces.
     return columnWalk(view, startSurface.surfacePos) ?? rootWalk(view)
   }
   return rootWalk(view)

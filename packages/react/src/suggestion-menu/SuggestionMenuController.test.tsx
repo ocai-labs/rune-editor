@@ -8,7 +8,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act, waitFor, fireEvent } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import Paragraph from "@tiptap/extension-paragraph";
@@ -16,7 +15,6 @@ import {
   Heading,
   Paragraph as RuneParagraph,
   SuggestionMenus,
-  createRuneKit,
   getSuggestionMenus,
   recordSuggestionUse,
 } from "@ocai/rune-core";
@@ -47,69 +45,13 @@ function mkRuneEditor() {
   });
 }
 
-/**
- * Full-kit editor whose doc holds a 2-column layout:
- *   paragraph "root-1"        (id r1)
- *   columnLayout              (id lay)
- *     column col_a: paragraph (id a1, text from `colAText`)
- *     column col_b: paragraph (id b1, "B1")
- */
-function mkColumnsEditor(colAText = "A1") {
-  const editor = new Editor({
-    element: document.createElement("div"),
-    extensions: createRuneKit(),
-  });
-  const s = editor.schema;
-  const para = (id: string, t: string) =>
-    s.nodes.paragraph!.create({ id, depth: 0 }, t ? s.text(t) : undefined);
-  const col = (id: string, ...children: ProseMirrorNode[]) =>
-    s.nodes.column!.create({ id, width: 1 }, children);
-  const doc = s.nodes.doc!.create(null, [
-    para("r1", "root-1"),
-    s.nodes.columnLayout!.create({ id: "lay", depth: 0 }, [
-      col("col_a", para("a1", colAText)),
-      col("col_b", para("b1", "B1")),
-    ]),
-  ]);
-  editor.view.dispatch(
-    editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-  );
-  return editor;
-}
-
-function blockPosById(editor: Editor, id: string): number {
-  let found = -1;
-  editor.state.doc.descendants((node, pos) => {
-    if (found >= 0) return false;
-    if (node.attrs?.id === id) {
-      found = pos;
-      return false;
-    }
-    return true;
-  });
-  return found;
-}
-
-describe("sourceBlockAtPos (SM-3)", () => {
+describe("sourceBlockAtPos", () => {
   it("resolves a root caret to its top-level block", () => {
-    const editor = mkColumnsEditor();
-    const r1Pos = blockPosById(editor, "r1");
-    const block = sourceBlockAtPos(editor, r1Pos + 1);
+    const editor = mkRuneEditor();
+    const expectedId = editor.state.doc.firstChild?.attrs.id;
+    const block = sourceBlockAtPos(editor, 1);
     expect(block?.type.name).toBe("paragraph");
-    expect(block?.attrs.id).toBe("r1");
-    editor.destroy();
-  });
-
-  it("resolves an in-column caret to the COLUMN CHILD, not the columnLayout", () => {
-    const editor = mkColumnsEditor();
-    const a1Pos = blockPosById(editor, "a1");
-    expect(a1Pos).toBeGreaterThan(-1);
-    // A caret inside a1's text. Before the fix, `$pos.node(1)` reported the
-    // whole columnLayout here, so Turn-into rows targeted the LAYOUT's id
-    // and committing `/head 1` clobbered the layout into an invalid doc.
-    const block = sourceBlockAtPos(editor, a1Pos + 1);
-    expect(block?.type.name).toBe("paragraph");
-    expect(block?.attrs.id).toBe("a1");
+    expect(block?.attrs.id).toBe(expectedId);
     editor.destroy();
   });
 });
@@ -623,100 +565,5 @@ describe("SuggestionMenuController", () => {
         Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
       }
     }
-  });
-});
-
-describe("Turn-into enrichment with column layouts (SM-2 / SM-3)", () => {
-  it("commits an in-column Turn-into against the column child, keeping the layout valid", async () => {
-    const editor = mkColumnsEditor("/head");
-
-    render(
-      <ComponentsContext.Provider value={defaultComponents}>
-        <SuggestionMenuController editor={editor} triggerCharacter="/" />
-      </ComponentsContext.Provider>,
-    );
-
-    const slot = getSuggestionMenus(editor).triggers["/"]!;
-    const a1Pos = blockPosById(editor, "a1");
-    const from = a1Pos + 1; // start of "/head" inside a1
-    act(() => {
-      slot._setState({
-        show: true,
-        query: "head",
-        range: { from, to: from + 5 },
-        getClientRect: () => new DOMRect(0, 0, 0, 16),
-      });
-    });
-
-    const rows = await screen.findAllByRole("option");
-    const turnIntoRow = rows.find(
-      (row) =>
-        row.textContent?.includes("Heading 1") &&
-        row.textContent?.includes("Turn into"),
-    );
-    expect(turnIntoRow).toBeDefined();
-
-    fireEvent.click(turnIntoRow!);
-
-    // The persisted doc must stay schema-valid — before the fix the source
-    // resolved to the LAYOUT, converting it wholesale and corrupting the doc.
-    expect(() => editor.state.doc.check()).not.toThrow();
-    const layoutPos = blockPosById(editor, "lay");
-    expect(layoutPos).toBeGreaterThan(-1);
-    expect(editor.state.doc.nodeAt(layoutPos)?.type.name).toBe("columnLayout");
-    const a1After = editor.state.doc.nodeAt(blockPosById(editor, "a1"));
-    expect(a1After?.type.name).toBe("heading");
-
-    editor.destroy();
-  });
-
-  it("'Hello /2' + '2 columns · Turn into' keeps Hello in column 1 (SM-2)", async () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: createRuneKit(),
-    });
-    editor.commands.setContent([
-      {
-        type: "paragraph",
-        attrs: { id: "p1" },
-        content: [{ type: "text", text: "Hello /2" }],
-      },
-    ]);
-
-    render(
-      <ComponentsContext.Provider value={defaultComponents}>
-        <SuggestionMenuController editor={editor} triggerCharacter="/" />
-      </ComponentsContext.Provider>,
-    );
-
-    const slot = getSuggestionMenus(editor).triggers["/"]!;
-    act(() => {
-      slot._setState({
-        show: true,
-        query: "2",
-        // "Hello " is 6 chars after the paragraph-open token: "/2" = [7, 9].
-        range: { from: 7, to: 9 },
-        getClientRect: () => new DOMRect(0, 0, 0, 16),
-      });
-    });
-
-    const rows = await screen.findAllByRole("option");
-    const turnIntoRow = rows.find(
-      (row) =>
-        row.textContent?.includes("2 columns") &&
-        row.textContent?.includes("Turn into"),
-    );
-    expect(turnIntoRow).toBeDefined();
-
-    fireEvent.click(turnIntoRow!);
-
-    expect(() => editor.state.doc.check()).not.toThrow();
-    const layout = editor.state.doc.child(0);
-    expect(layout.type.name).toBe("columnLayout");
-    expect(layout.childCount).toBe(2);
-    // The source's text survives in column 1 — the bug destroyed it.
-    expect(layout.child(0).textContent).toBe("Hello ");
-
-    editor.destroy();
   });
 });

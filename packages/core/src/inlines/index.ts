@@ -5,6 +5,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 export { InlineMath } from "./InlineMath/node"
+export { RawInline } from "./RawInline/node"
 export type { InlineNodeViewFactory } from "./InlineMath/node"
 export type { InsertInlineMathOptions } from "./InlineMath/commands"
 export {

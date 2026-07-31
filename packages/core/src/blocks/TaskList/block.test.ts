@@ -13,7 +13,6 @@ import { Plugin, PluginKey } from "@tiptap/pm/state"
 import { Decoration, DecorationSet } from "@tiptap/pm/view"
 
 import { BlockCommands } from "../../api/commands"
-import { BlockBackgroundColor, BlockTextColor } from "../../extensions/color"
 import { Paragraph } from "../Paragraph/block"
 import { BulletList } from "../BulletList/block"
 import { TaskList } from "./block"
@@ -423,36 +422,6 @@ describe("TaskList block — NodeView", () => {
     expect(root?.classList.contains("rune-block")).toBe(true)
     expect(root?.classList.contains("rune-task-list")).toBe(true)
     expect(root?.hasAttribute("style")).toBe(false)
-
-    editor.destroy()
-  })
-
-  it("places block color attrs on content instead of the root", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: [
-        Document,
-        Paragraph,
-        BlockCommands,
-        TaskList,
-        Text,
-        BlockTextColor.configure({ types: ["taskList"] }),
-        BlockBackgroundColor.configure({ types: ["taskList"] }),
-      ],
-      content: {
-        type: "doc",
-        content: [{ type: "taskList", attrs: { id: "abc" }, content: [{ type: "text", text: "todo" }] }],
-      } as never,
-    })
-    editor.commands.setBlockTextColor(0, "red")
-    editor.commands.setBlockBackgroundColor(0, "blue")
-    const root = editor.view.dom.querySelector<HTMLElement>(".rune-task-list")
-    const content = root?.querySelector<HTMLElement>(".rune-block-content")
-
-    expect(root?.hasAttribute("data-text-color")).toBe(false)
-    expect(root?.hasAttribute("data-background-color")).toBe(false)
-    expect(content?.getAttribute("data-text-color")).toBe("red")
-    expect(content?.getAttribute("data-background-color")).toBe("blue")
 
     editor.destroy()
   })

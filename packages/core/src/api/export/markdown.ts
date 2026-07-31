@@ -171,9 +171,7 @@ function collectBlockInfos(
   const specs = getBlockSpecs(editor)
   const results: BlockInfo[] = []
 
-  // Serialize one flat block surface (the root doc, or one column's
-  // children) into `results`. Numbered counters and toggle-heading context
-  // are surface-local — they never leak across a column boundary.
+  // Serialize the root block sequence into `results`.
   const serializeSurface = (nodes: readonly PMNode[]): void => {
     const numberedCounters = new Map<number, number>()
 
@@ -183,125 +181,8 @@ function collectBlockInfos(
     // extra indentation in Markdown.
     let toggleHeadingDepth: number | null = null
 
-    // AV-1 trailing-edge: after a columnLayout serializes, this holds the
-    // results index at which the very next block will land. If that next block
-    // is also a numberedList we splice a separator there.  Carries an index
-    // rather than a boolean so the splice position is unambiguous even when
-    // a second layout follows immediately.  Cleared (set to null) at the top
-    // of every iteration after it is resolved (whether a splice fires or not).
-    let pendingTrailingBoundaryIdx: number | null = null
-
     for (const node of nodes) {
       const type = node.type.name
-
-      if (type === "columnLayout") {
-        // Markdown has no columns — FLATTEN the layout: each column's
-        // children serialize in column order through this same pipeline,
-        // each column as its own surface. A child's surface-local depth
-        // projects as root-level indentation — mirroring the unwrap rule
-        // (Columns/normalization.ts), which splices a survivor column's
-        // children to root with depths preserved.
-        //
-        // AV-1 separator rule: CommonMark renderers merge adjacent ordered
-        // lists into one renumbered sequence. We collect surface-boundary
-        // indices into boundaryIdxs — one per inter-column gap plus the
-        // leading-edge boundary — then walk them right-to-left and splice a
-        // separator wherever results[idx-1] and results[idx] are both
-        // numberedList. Right-to-left iteration keeps earlier indices valid
-        // after each splice.  The trailing-edge boundary (after the last
-        // column) is deferred to the next iteration via
-        // pendingTrailingBoundaryIdx because the next block has not yet been
-        // pushed and its type is unknown.
-
-        // Resolve any deferred trailing-edge boundary from the preceding
-        // layout before this layout's first column writes into results.
-        if (pendingTrailingBoundaryIdx !== null) {
-          const idx = pendingTrailingBoundaryIdx
-          pendingTrailingBoundaryIdx = null
-          // The leading-edge boundary of THIS layout will write at idx.
-          // The "right neighbour" check fires once we know the first block
-          // of this layout — handle below after columns serialize.
-          // For now, just record idx so we can use it as the leading edge.
-          // Actually: the leading-edge boundary IS this deferred idx when
-          // layouts are adjacent.  We fold it into boundaryIdxs below.
-          // (If both sides are numberedList the splice will fire in the
-          // right-to-left pass.)
-
-          // Leading-edge boundary index when layout immediately follows layout:
-          const boundaryIdxs: number[] = [idx]
-          node.forEach((column) => {
-            const children: PMNode[] = []
-            column.forEach((child) => children.push(child))
-            serializeSurface(children)
-            boundaryIdxs.push(results.length)
-          })
-          // Right-to-left pass for leading + inter-column boundaries.
-          // Skip the last entry — that is the new trailing-edge boundary,
-          // deferred to the next iteration.
-          for (let i = boundaryIdxs.length - 2; i >= 0; i--) {
-            const bidx = boundaryIdxs[i]!
-            if (
-              results[bidx - 1]?.type === "numberedList" &&
-              results[bidx]?.type === "numberedList"
-            ) {
-              results.splice(bidx, 0, { ...ORDERED_SEPARATOR })
-            }
-          }
-          pendingTrailingBoundaryIdx = results.length
-          numberedCounters.clear()
-          toggleHeadingDepth = null
-          continue
-        }
-
-        // Normal (non-adjacent-layout) path:
-        // Leading-edge boundary index = current results.length before any
-        // column serializes.
-        const boundaryIdxs: number[] = [results.length]
-
-        node.forEach((column) => {
-          const children: PMNode[] = []
-          column.forEach((child) => children.push(child))
-          serializeSurface(children)
-          // Record the boundary after this column (= before the next column).
-          boundaryIdxs.push(results.length)
-        })
-
-        // Right-to-left pass for leading + inter-column boundaries.
-        // Skip the last entry — that is the trailing-edge boundary,
-        // deferred to the next iteration.
-        for (let i = boundaryIdxs.length - 2; i >= 0; i--) {
-          const idx = boundaryIdxs[i]!
-          if (
-            results[idx - 1]?.type === "numberedList" &&
-            results[idx]?.type === "numberedList"
-          ) {
-            results.splice(idx, 0, { ...ORDERED_SEPARATOR })
-          }
-        }
-
-        // Defer the trailing-edge boundary.
-        pendingTrailingBoundaryIdx = results.length
-
-        // On ITS surface the layout acts like any other non-list block:
-        // it breaks numbered runs and toggle-heading contexts.
-        numberedCounters.clear()
-        toggleHeadingDepth = null
-        continue
-      }
-
-      // AV-1 trailing-edge: resolve any pending boundary from the previous
-      // layout. If this (regular) block is a numberedList and the block just
-      // before the boundary was also a numberedList, splice a separator.
-      if (pendingTrailingBoundaryIdx !== null) {
-        const idx = pendingTrailingBoundaryIdx
-        pendingTrailingBoundaryIdx = null
-        if (
-          type === "numberedList" &&
-          results[idx - 1]?.type === "numberedList"
-        ) {
-          results.splice(idx, 0, { ...ORDERED_SEPARATOR })
-        }
-      }
 
       const nodeDepth: number =
         typeof node.attrs.depth === "number" ? node.attrs.depth : 0

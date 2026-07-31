@@ -6,14 +6,12 @@
 
 import type { RawCommands } from "@tiptap/core"
 import { Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state"
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import { nanoid } from "nanoid"
 import { MultiBlockSelection } from "./MultiBlockSelection"
 import { firstSelectableIndex } from "./selectable"
 import { blockSelectionKey, type BlockSelectionPluginMeta } from "./plugin"
 import { setSelectionAfterDelete } from "../../api/commands/deleteBlocks"
-import { resolveEmptiedSourceColumn } from "../../api/commands/moveBlocks"
-import { executeReorder, removeMoveSource, type EmptiedSourceColumn } from "../block-drag/reorder"
+import { executeReorder } from "../block-drag/reorder"
 import {
   resolveBodyBlockById,
   surfaceBlockTextBoundsAtPos,
@@ -37,11 +35,7 @@ declare module "@tiptap/core" {
 }
 
 /**
- * Resolve a `setBlockSelection` endpoint to its `(surfacePos, index)` placement.
- * A numeric ref keeps the historical ROOT semantics (surface = doc, `surfacePos
- * === -1`); a string id resolves surface-aware so an in-column block addresses
- * ITS column surface — the old root-only `topLevelBlockIndexById` returned -1 for
- * an in-column id, no-opping the command. `null` when an id doesn't resolve.
+ * Resolve a `setBlockSelection` endpoint to its root block index.
  */
 function resolveEndpoint(
   doc: import("@tiptap/pm/model").Node,
@@ -73,8 +67,7 @@ function moveSelectedBlocks(
     // Clamp at the surface's edges (column top/bottom mirror doc top/bottom):
     // consumed no-op, exactly like the root clamps. The TOP edge is the first
     // SELECTABLE index, not 0 — so a body block never moves above a leading
-    // non-selectable run (the in-document title). (An MBS can't cover the title
-    // itself: MultiBlockSelection.create clamps it out.)
+    // non-selectable run. MultiBlockSelection.create clamps protected blocks out.
     const minIdx = firstSelectableIndex(surface)
     if (direction === -1 && lo <= minIdx) return true
     if (direction === 1 && hi === surfaceN - 1) return true
@@ -102,19 +95,14 @@ function moveSelectedBlocks(
   }
 
   if (!(sel instanceof TextSelection)) return false
-  // Surface-aware caret branch: resolve the caret's containing block on its
-  // OWN surface (root or a column), mirroring the MBS branch above. The old
-  // root-only `$pos.index(0)` resolved an in-column caret to the enclosing
-  // columnLayout and reordered the WHOLE layout. Clamps and the insert
-  // position are computed against the block's surface, so an in-column
-  // Mod-ArrowUp/Down moves the block WITHIN its column.
+  // Resolve the caret's nearest registered block. Surface-local clamps keep
+  // this correct for plugin-provided structural ancestors as well as root
+  // blocks.
   const bounds = surfaceBlockTextBoundsAtPos(state.doc, sel.from)
   if (!bounds) return false
   const { surface, indexInSurface: index } = bounds
   // The first selectable index on this surface — a leading non-selectable run
-  // (the in-document title) is neither movable itself nor a slot a body block
-  // may move above. `index < minIdx` ⇒ the caret is IN the title: consumed no-op
-  // so Mod-ArrowDown can't push the title below the body.
+  // is neither movable itself nor a slot a body block may move above.
   const minIdx = firstSelectableIndex(surface.node)
   if (index < minIdx) return true
   if (direction === -1 && index === minIdx) return true
@@ -149,131 +137,16 @@ function moveSelectedBlocks(
   return true
 }
 
-/**
- * F2 emptied-column detection for an MBS delete/cut: when the (widened) range
- * `[sel.from, to)` covers a `column` surface's ENTIRE content, return the
- * emptied-source-column payload so the caller removes the column in the same
- * transaction (delete the column node when ≥2 survive; unwrap the layout when
- * <2 do). `null` for a root MBS, a partial column delete, or a non-column
- * surface. Shared by `deleteBlockSelection` and the Cmd-X cut branch so both
- * agree on the removal.
- */
-function resolveEmptiedColumnForMbs(
-  doc: ProseMirrorNode,
-  sel: MultiBlockSelection,
-  to: number,
-): EmptiedSourceColumn | null {
-  if (sel.surface === doc || sel.surface.type.name !== "column") return null
-  const columnPos = sel.$anchor.before(sel.$anchor.depth)
-  const columnNode = sel.surface
-  if (sel.from === columnPos + 1 && to === columnPos + columnNode.nodeSize - 1) {
-    return resolveEmptiedSourceColumn(doc, columnPos)
-  }
-  return null
-}
-
-interface EmptiedColumnLanding {
-  /** Stable id of the surviving block to land the caret in (`null` = fallback). */
-  id: string | null
-  /** Which end of that block's text to land on. */
-  edge: "start" | "end"
-}
-
-/**
- * Where the caret lands after a delete/cut empties a column (Notion parity).
- * Resolved as a stable block ID against the PRE-removal doc so the caller can
- * re-find it in the POST-removal doc — position mapping through the
- * column/layout `replaceWith` overshoots interior positions to the replacement
- * end (into the FOLLOWING root block), which is the caret-overshoot bug this
- * avoids.
- *
- *   - ≥2 survivors (the emptied `column` node is deleted, the layout persists):
- *     the nearest surviving column — the NEXT column's first block if one
- *     follows the emptied column, else the PREVIOUS column's last block.
- *   - <2 survivors (the layout unwraps, survivor children splice to root): the
- *     END of the survivor's LAST block. For an emptied RIGHT column this is the
- *     block nearest the removed column; an emptied LEFT column lands at the end
- *     too (observed Notion behavior) rather than the survivor's first block.
- */
-function resolveEmptiedColumnLanding(ec: EmptiedSourceColumn): EmptiedColumnLanding {
-  if (ec.remainingColumnCount < 2) {
-    const last = ec.survivor?.lastChild ?? null
-    return { id: last ? (last.attrs.id as string | null) : null, edge: "end" }
-  }
-  const { layoutNode, layoutPos, columnPos } = ec
-  let emptiedIdx = -1
-  layoutNode.forEach((child, offset, i) => {
-    if (layoutPos + 1 + offset === columnPos) emptiedIdx = i
-  })
-  if (emptiedIdx !== -1) {
-    const next = layoutNode.maybeChild(emptiedIdx + 1)
-    if (next && next.type.name === "column" && next.firstChild) {
-      return { id: next.firstChild.attrs.id as string | null, edge: "start" }
-    }
-    const prev = emptiedIdx > 0 ? layoutNode.child(emptiedIdx - 1) : null
-    if (prev && prev.type.name === "column" && prev.lastChild) {
-      return { id: prev.lastChild.attrs.id as string | null, edge: "end" }
-    }
-  }
-  return { id: null, edge: "end" }
-}
-
-/** Land the caret at the resolved emptied-column landing block in `tr.doc`. */
-function setCaretAtEmptiedColumnLanding(tr: Transaction, landing: EmptiedColumnLanding): void {
-  if (landing.id) {
-    let foundPos = -1
-    tr.doc.descendants((n, p) => {
-      if (foundPos !== -1) return false
-      if (n.attrs?.id === landing.id) {
-        foundPos = p
-        return false
-      }
-      return true
-    })
-    const node = foundPos === -1 ? null : tr.doc.nodeAt(foundPos)
-    if (node) {
-      if (node.isTextblock) {
-        const at = landing.edge === "start" ? foundPos + 1 : foundPos + 1 + node.content.size
-        tr.setSelection(TextSelection.create(tr.doc, at))
-      } else {
-        const at = landing.edge === "start" ? foundPos : foundPos + node.nodeSize
-        tr.setSelection(Selection.near(tr.doc.resolve(at), landing.edge === "start" ? 1 : -1))
-      }
-      return
-    }
-  }
-  // Fallback (a landing block that vanished — should not happen): the pre-fix
-  // mapped-near behavior, safe if imprecise.
-  tr.setSelection(Selection.near(tr.doc.resolve(Math.min(tr.selection.from, tr.doc.content.size))))
-}
-
-/**
- * Delete an MBS's blocks over the pre-widened range `[sel.from, to)`, applying
- * #392 F2 parity + the emptied-column caret landing. Shared by
- * `deleteBlockSelection` (Delete / command) and the Cmd-X cut branch so a cut
- * that empties a column removes it exactly like a delete does, landing the
- * caret in the same surviving block. The CALLER computes `to` (delete/cut widen
- * differently — see call sites) and dispatches the `tr` with its own meta.
- */
+/** Delete an MBS's root blocks over the pre-widened range. */
 export function applyMbsDelete(
   tr: Transaction,
   state: EditorState,
   sel: MultiBlockSelection,
   to: number,
 ): void {
-  const emptied = resolveEmptiedColumnForMbs(state.doc, sel, to)
-  if (emptied) {
-    // Resolve the landing block BEFORE the removal (positions are pre-removal),
-    // remove the column, then re-find the landing block by its stable id.
-    const landing = resolveEmptiedColumnLanding(emptied)
-    removeMoveSource(tr, { from: sel.from, to }, emptied)
-    setCaretAtEmptiedColumnLanding(tr, landing)
-    return
-  }
   const [lo] = sel.blockIndices
-  const rootSurface = sel.surface === state.doc
   tr.delete(sel.from, to)
-  setSelectionAfterDelete(tr, state.schema, lo, rootSurface)
+  setSelectionAfterDelete(tr, state.schema, lo)
 }
 
 export function blockSelectionCommands(): Partial<RawCommands> {
@@ -284,14 +157,7 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         const fromRef = resolveEndpoint(state.doc, from)
         const toRef = resolveEndpoint(state.doc, to)
         if (!fromRef || !toRef) return false
-        // Both endpoints must live on the SAME surface — a cross-surface MBS
-        // (root ↔ inside a column, or two different columns) is not a thing.
-        if (fromRef.surfacePos !== toRef.surfacePos) return false
-        const surfaceNode =
-          fromRef.surfacePos === -1
-            ? state.doc
-            : state.doc.nodeAt(fromRef.surfacePos)
-        if (!surfaceNode) return false
+        const surfaceNode = state.doc
         const N = surfaceNode.childCount
         if (
           fromRef.index < 0 ||
@@ -301,16 +167,10 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         )
           return false
         if (dispatch) {
-          // Surface ResolvedPos for a column surface (mirrors block-drag's
-          // restoreMbs); undefined for the root reproduces the historical call.
-          const $surface =
-            fromRef.surfacePos === -1
-              ? undefined
-              : state.doc.resolve(fromRef.surfacePos + 1)
           const anchorId = surfaceNode.child(fromRef.index).attrs.id as string | null
           const meta: BlockSelectionPluginMeta = { setAnchor: anchorId }
           tr.setSelection(
-            MultiBlockSelection.create(state.doc, fromRef.index, toRef.index, $surface),
+            MultiBlockSelection.create(state.doc, fromRef.index, toRef.index),
           )
           tr.setMeta(blockSelectionKey, meta)
           dispatch(tr)
@@ -342,13 +202,11 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         const sel = state.selection
         if (!(sel instanceof MultiBlockSelection)) return false
         if (dispatch) {
-          // Surface-aware collapse to a caret at the end of the first selected
-          // block's text (column-local or root). The old root-only
-          // topLevelBlockTextBounds(doc, lo) landed the caret on the wrong ROOT
-          // block for a column-local MBS — same fix as the Enter key.
+          // Collapse to a caret at the end of the first selected block's text,
+          // resolved against the selection's own surface.
           //
           // `firstBlockTextEnd` assumes a TEXTBLOCK first block; a divider or
-          // columnLayout first block makes it a non-text position, and a raw
+          // plugin container first block makes it a non-text position, and a raw
           // TextSelection.create there builds a dead caret (PM warns, doesn't
           // throw) instead of failing loudly. Selection.near finds the nearest
           // valid cursor position instead — same guard as the Enter keymap.
@@ -427,11 +285,8 @@ export function blockSelectionCommands(): Partial<RawCommands> {
         }
         if (sel instanceof TextSelection) {
           if (!dispatch) return true
-          // Surface-aware caret branch (mirrors the MBS branch above): the old
-          // root-only `$pos.index(0)` resolved an in-column caret to the
-          // enclosing columnLayout and duplicated the WHOLE layout. Resolve
-          // the caret's containing block on its own surface — the duplicate
-          // lands right after it, inside the same column.
+          // Resolve the caret's containing block on its own surface so plugin
+          // structural ancestors cannot become the accidental duplicate target.
           const bounds = surfaceBlockTextBoundsAtPos(state.doc, sel.from)
           if (!bounds) return false
           const blockFrom = bounds.from - 1

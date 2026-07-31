@@ -7,13 +7,13 @@
 // The AI-edit parse path — the read-side inverse of the styling-aware markdown
 // the export layer emits (see api/export/serializeInline.ts and
 // internal design notes). It is
-// SEPARATE from the paste path (`markdownToHtml` / `markdownToDoc`), which
-// stays `html: false` on purpose (paste safety + the list flattener). This
-// path runs `html: true` so the two raw-HTML constructs the dialect uses
-// (`<u>` and `<span data-*-color>`) survive, and adds a strict sanitizer so
-// nothing ELSE the (untrusted, model-supplied) markdown carries can be
-// injected. Everything then funnels into the SAME `transformPastedHTMLDoc` →
-// PM DOMParser core `markdownToDoc` uses, so read == write by construction.
+// SEPARATE from the Markdown paste path, which is the storage codec
+// (`markdown/`) and shares no code with this file. This path runs markdown-it
+// with `html: true` so the two raw-HTML constructs the dialect uses (`<u>` and
+// `<span data-*-color>`) survive, and adds a strict sanitizer so nothing ELSE
+// the (untrusted, model-supplied) markdown carries can be injected. It then
+// funnels into `transformPastedHTMLDoc` → PM DOMParser, the same core the HTML
+// paste path uses, so read == write by construction.
 
 /// <reference path="./markdown-it-task-lists.d.ts" />
 import MarkdownIt from "markdown-it"
@@ -22,8 +22,8 @@ import type { JSONContent } from "@tiptap/core"
 import { DOMParser as PMDOMParser, type Schema } from "@tiptap/pm/model"
 import { collectKnownBlockTags } from "./knownBlockTags"
 import { transformPastedHTMLDoc } from "./transformPastedHTML"
-import { shiftHeadings } from "./markdownToHtml"
-import type { ParseHTML } from "./markdownToDoc"
+/** Parses an HTML string into a `Document`. Defaults to the browser global. */
+export type ParseHTML = (html: string) => Document
 import { sanitizeRawHtml } from "./aiMarkdownSanitizer"
 
 // ── Dialect inline rules markdown-it's default preset can't read ───────────
@@ -86,7 +86,7 @@ const inlineMathRule: InlineRule = (state, silent) => {
 
 // ── The scoped instance ────────────────────────────────────────────────────
 
-// No `linkify` (unlike the paste path's `markdownToHtml`): the dialect always
+// No `linkify`: the dialect always
 // serializes links as explicit `[text](href)`, so auto-linking a bare URL/email
 // would give unlinked plain text a spurious `link` mark on re-parse — a silent
 // mutation of unedited text the round-trip contract exists to prevent.
@@ -106,48 +106,29 @@ md.renderer.rules.inlineMath = (tokens, idx) => {
   const { latex } = tokens[idx]!.meta as { latex: string }
   return `<span data-type="inline-math" data-latex="${md.utils.escapeHtml(latex)}"></span>`
 }
-// The exporter's inter-ordered-list-run separator (markdown.ts's
-// ORDERED_SEPARATOR): a standalone HTML comment, alone in its own block, that
-// `exportMarkdown` splices between two adjacent numbered-list runs so
-// CommonMark doesn't merge them into one continuously-numbered list (always
-// at a columnLayout boundary — see AV-1 in markdown.ts). markdown-it already
-// tokenizes the two runs as separate `ordered_list_open`/`_close` pairs
-// regardless (the comment interrupts list continuation at the block-grammar
-// level); the ONLY job left here is to make the comment ITSELF vanish rather
-// than survive as a literal-text node — left alone, that text would land
-// between the two `<ol>`s and get wrapped into a spurious paragraph on parse.
-// Scoped to the exact standalone form (`html_block`, trimmed content ===
-// "<!-- -->"): a comment mixed into running text is a DIFFERENT token type
-// (`html_inline`) and is untouched by this branch, unaffected by this special
-// case.
-const ORDERED_RUN_SEPARATOR = "<!-- -->"
-
 // Neutralize every raw-HTML token to the mark-contract whitelist. Only these
 // two token types carry model-supplied raw HTML; code fences / inline code are
 // separate token types markdown-it already escapes, and markdown-produced
 // elements (`<strong>`, `<a href>`, …) never pass through here.
 md.renderer.rules.html_inline = (tokens, idx) => sanitizeRawHtml(tokens[idx]!.content)
-md.renderer.rules.html_block = (tokens, idx) => {
-  const raw = tokens[idx]!.content
-  if (raw.trim() === ORDERED_RUN_SEPARATOR) return ""
-  return sanitizeRawHtml(raw)
-}
+md.renderer.rules.html_block = (tokens, idx) => sanitizeRawHtml(tokens[idx]!.content)
 
 const browserParseHTML: ParseHTML = (html) =>
   new DOMParser().parseFromString(html, "text/html")
 
 /** Render the styling-aware AI dialect to rune-pipeline HTML (sanitized raw
- * HTML + wikiLink/math shapes + the shared heading axis shift). */
+ * HTML + wikiLink/math shapes). */
 function aiMarkdownToHtml(markdown: string): string {
-  return shiftHeadings(md.render(markdown))
+  return md.render(markdown)
 }
 
 /**
  * markdown-it renders a standalone image as `<p><img></p>`; rune's `image` is a
  * BLOCK node, so PM's full-doc parse strands the emptied `<p>` above it. Unwrap
- * each lone-image paragraph to the bare `<img>`. Mirrors `markdownToDoc`'s
- * private helper — kept a small local copy rather than exporting from the paste
- * path (N=2 duplication, not shared-helper debt).
+ * each lone-image paragraph to the bare `<img>`. This used to mirror a private
+ * helper on the Markdown paste path; that path is the storage codec now and
+ * builds PM JSON directly, so no `<p>` is ever minted and nothing is left to
+ * share. This copy is the only one.
  */
 function unwrapLoneImageParagraphs(doc: Document) {
   for (const p of Array.from(doc.body.querySelectorAll("p"))) {
@@ -262,21 +243,10 @@ function splitCellLineBreaks(doc: Document): void {
  * ProseMirror JSON. The read-side inverse of `exportMarkdown`, gated by the
  * round-trip property test (api/export/__tests__/roundtrip.test.ts).
  *
- * Same signature/return convention as `markdownToDoc`: editor-less (only a
- * `Schema`), editor-less-but-NOT-DOM-less (pass a `parseHTML` backed by a
+ * Editor-less (takes only a `Schema`) but NOT DOM-less (pass a `parseHTML` backed by a
  * headless DOM in Node/worker contexts; the default uses the global
  * `DOMParser`). Returns `{ type: "doc", content: [...] }`.
  *
- * NOTE: `exportMarkdown` emits a standalone HTML-comment separator
- * (`<!-- -->`, alone in its own block) between two adjacent numbered-list
- * runs at a columnLayout boundary, to stop CommonMark from merging them into
- * one continuously-numbered list. This parser consumes that standalone form
- * silently (no node produced), so the two runs on either side survive
- * unmerged with their own `start`. It does NOT reconstruct the columnLayout
- * itself, though — a multi-column EXPORTED doc still flattens to root-level
- * blocks here, same as every other consumer of the flattened markdown. A
- * `<!-- -->` embedded inline in ordinary text is a different token path
- * (html_inline) and round-trips as before.
  */
 export function parseAiMarkdown(
   markdown: string,

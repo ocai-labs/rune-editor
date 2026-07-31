@@ -40,7 +40,6 @@ describe("createSourceMediaBlockSpec", () => {
 
     expect(extension.name).toBe("video")
     expect(metadata.supports).toMatchObject({
-      backgroundColor: true,
       resize: true,
       mediaSource: true,
     })

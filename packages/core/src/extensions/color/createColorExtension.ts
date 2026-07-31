@@ -6,21 +6,19 @@
 
 import { Extension, type Attributes, type CommandProps } from "@tiptap/core"
 import {
+  HIGHLIGHT_COLOR_NAME,
   nearestColorName,
   normalizeAttrValue,
   type ColorName,
 } from "../../shared/color-tokens"
 
 export type ColorKind = "text" | "background"
-export type ColorScope = "block" | "inline"
-
 export interface ColorExtensionOptions {
   types: string[]
 }
 
 interface CreateColorExtensionConfig {
   kind: ColorKind
-  scope: ColorScope
 }
 
 type ColorAttribute = "textColor" | "backgroundColor"
@@ -48,53 +46,14 @@ const COLOR_ATTRIBUTES = {
 >
 
 const EXTENSION_NAMES = {
-  block: {
-    text: "runeBlockTextColor",
-    background: "runeBlockBackgroundColor",
-  },
-  inline: {
-    text: "runeTextColor",
-    background: "runeBackgroundColor",
-  },
-} satisfies Record<ColorScope, Record<ColorKind, string>>
+  text: "runeTextColor",
+  background: "runeBackgroundColor",
+} satisfies Record<ColorKind, string>
 
-const DEFAULT_TYPES = {
-  block: ["paragraph", "heading"],
-  inline: ["textStyle"],
-} satisfies Record<ColorScope, string[]>
+const DEFAULT_TYPES = ["textStyle"]
 
 const storedColor = (name: ColorName | null) =>
   name === "default" ? null : name
-
-function createBlockColorAttribute(kind: ColorKind): Attributes[string] {
-  const { attr, dataAttr, styleProp } = COLOR_ATTRIBUTES[kind]
-
-  return {
-    default: null,
-    keepOnSplit: false,
-    parseHTML: (element) => {
-      // The color data-attr rides on `.rune-block-content`. Most blocks'
-      // parse rules match an element AT or BELOW that wrapper (e.g. <p>),
-      // so `closest` walks up to it. Blocks whose rule matches the OUTER
-      // `.rune-block` instead (callout — its rule keys on the icon attr that
-      // lives on the outer div) need a downward fallback to the direct-child
-      // wrapper; `:scope >` keeps it from reaching into a nested block.
-      const wrapper =
-        element.closest(".rune-block-content") ??
-        element.querySelector(":scope > .rune-block-content")
-      const raw =
-        wrapper?.getAttribute(dataAttr) ??
-        element.getAttribute(dataAttr) ??
-        element.style?.[styleProp] ??
-        null
-      return normalizeAttrValue(raw, kind)
-    },
-    renderHTML: (attrs) => {
-      const value = attrs[attr]
-      return typeof value === "string" ? { [dataAttr]: value } : {}
-    },
-  }
-}
 
 function createInlineColorAttribute(kind: ColorKind): Attributes[string] {
   const { attr, dataAttr, styleProp } = COLOR_ATTRIBUTES[kind]
@@ -104,6 +63,17 @@ function createInlineColorAttribute(kind: ColorKind): Attributes[string] {
     parseHTML: (element) => {
       const dataAttrValue = element.getAttribute(dataAttr)
       if (dataAttrValue) return normalizeAttrValue(dataAttrValue, kind)
+
+      // <mark> — the markdown-storage background form (D4). data-color
+      // carries a palette name; a bare <mark> (or an unusable value) is the
+      // HIGHLIGHT_COLOR_NAME anchor, matching what `==` reads back as.
+      if (kind === "background" && element.tagName?.toLowerCase() === "mark") {
+        const named = normalizeAttrValue(element.getAttribute("data-color"), kind)
+        if (named && named !== "default") return named
+        const inline = element.style?.[styleProp]
+        const styled = inline ? nearestColorName(inline, kind) : null
+        return styled && styled !== "default" ? styled : HIGHLIGHT_COLOR_NAME
+      }
 
       const inline = element.style?.[styleProp]
       if (inline) return nearestColorName(inline, kind)
@@ -115,23 +85,6 @@ function createInlineColorAttribute(kind: ColorKind): Attributes[string] {
       return typeof value === "string" ? { [dataAttr]: value } : {}
     },
   }
-}
-
-function setBlockColor(
-  attr: ColorAttribute,
-  pos: number,
-  name: ColorName | null,
-  { tr, state, dispatch }: CommandProps,
-) {
-  const node = state.doc.nodeAt(pos)
-  if (!node) return false
-
-  if (dispatch) {
-    tr.setNodeAttribute(pos, attr, storedColor(name))
-    dispatch(tr)
-  }
-
-  return true
 }
 
 function setInlineColor(
@@ -169,17 +122,14 @@ function pruneEmptyTextStyleMarks({ tr, state }: CommandProps) {
   return true
 }
 
-export function createColorExtension({
-  kind,
-  scope,
-}: CreateColorExtensionConfig) {
+export function createColorExtension({ kind }: CreateColorExtensionConfig) {
   const { attr } = COLOR_ATTRIBUTES[kind]
 
   return Extension.create<ColorExtensionOptions>({
-    name: EXTENSION_NAMES[scope][kind],
+    name: EXTENSION_NAMES[kind],
 
     addOptions() {
-      return { types: [...DEFAULT_TYPES[scope]] }
+      return { types: [...DEFAULT_TYPES] }
     },
 
     addGlobalAttributes() {
@@ -187,35 +137,14 @@ export function createColorExtension({
         {
           types: this.options.types,
           attributes: {
-            [attr]:
-              scope === "block"
-                ? createBlockColorAttribute(kind)
-                : createInlineColorAttribute(kind),
+            [attr]: createInlineColorAttribute(kind),
           },
         },
       ]
     },
 
     addCommands() {
-      if (scope === "block" && kind === "text") {
-        return {
-          setBlockTextColor:
-            (pos: number, name: ColorName | null) =>
-            (props: CommandProps) =>
-              setBlockColor(attr, pos, name, props),
-        }
-      }
-
-      if (scope === "block" && kind === "background") {
-        return {
-          setBlockBackgroundColor:
-            (pos: number, name: ColorName | null) =>
-            (props: CommandProps) =>
-              setBlockColor(attr, pos, name, props),
-        }
-      }
-
-      if (scope === "inline" && kind === "text") {
+      if (kind === "text") {
         return {
           setRuneTextColor:
             (name: ColorName) =>

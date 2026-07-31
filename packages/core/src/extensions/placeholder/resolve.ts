@@ -46,9 +46,8 @@ export function resolvePlaceholder(
   const seen = new Set<number>()
   const { selection, doc } = state
 
-  // Pass 1: always-on headings. Body-surface walk — root blocks AND column
-  // children (columns are a body surface; an empty heading inside one is
-  // just as much an outline row as a root heading).
+  // Pass 1: always-on headings. The body-surface walker covers the flat
+  // built-in schema and any plugin-provided body surface.
   const headingResolver = config.heading
   if (headingResolver !== undefined) {
     forEachBodyBlock(doc, ({ node, pos }) => {

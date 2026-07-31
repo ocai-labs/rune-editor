@@ -38,6 +38,31 @@ export const Table = createBlockSpec({
   // Notion's behavior; a sticky `fitWidth=true` mode was rejected
   // because it would silently mutate the user's column widths every
   // time the viewport changed.
+  props: {
+    // GFM column alignment — a fidelity passthrough in the D10 spirit
+    // ("能保真存回 ≠ 能在 UI 里编辑"): an external file's `|:--|:-:|--:|`
+    // delimiter row survives the storage roundtrip even though the UI
+    // offers no alignment control and cells render unaligned. null (the
+    // authored-in-rune case) serializes as the plain `---` row. Marshals
+    // to a comma-joined data attr ("left,,right" — empty slot = null) so
+    // the editor's own HTML roundtrip keeps it too.
+    columnAligns: {
+      default: null as ("left" | "center" | "right" | null)[] | null,
+      parseHTML: (el) => {
+        const raw = el.getAttribute("data-column-aligns")
+        if (!raw) return null
+        const aligns = raw
+          .split(",")
+          .map((v) => (v === "left" || v === "center" || v === "right" ? v : null))
+        return aligns.some((a) => a !== null) ? aligns : null
+      },
+      renderHTML: (attrs): Record<string, string> => {
+        const aligns = attrs.columnAligns
+        if (!Array.isArray(aligns) || !aligns.some((a: unknown) => a != null)) return {}
+        return { "data-column-aligns": aligns.map((a: unknown) => a ?? "").join(",") }
+      },
+    },
+  },
   parseDOM: [{ tag: "table" }],
   renderDOM: ({ HTMLAttributes }) => [
     "div",
@@ -171,8 +196,7 @@ export const Table = createBlockSpec({
     // although the raw input carried some means the cells sat under a shape we
     // can't map. Reject (null) so `insertBlocks` surfaces
     // `explainBlockInputRejection`'s actionable signal instead of a blank table
-    // reported as success — mirroring columnLayout's reject discipline and
-    // Heading's level validation. A genuinely all-empty populated request (no
+    // reported as success. A genuinely all-empty populated request (no
     // text anywhere) still builds: that's a valid empty table, not a dropped one.
     if (Array.isArray(inputAny.rows) && inputAny.rows.length > 0) {
       if (!tableInputRecoversText(inputAny.rows) && tableInputCarriesText(inputAny.rows)) {

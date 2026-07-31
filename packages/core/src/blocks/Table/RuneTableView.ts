@@ -121,11 +121,6 @@ export class RuneTableView implements NodeView {
     // they carry meaningful values. Empty id or depth=0 must not pollute the
     // DOM with empty / zero attrs (other blocks' renderDOM follows this rule;
     // see BLOCK_ATTRIBUTES handling in createSpec.ts).
-    //
-    // TODO(M8.x table coloring): when `table` joins BLOCK_COLOR_TYPES, also
-    // sync `data-text-color` / `data-background-color` here. The columnResizing
-    // plugin instantiates Views as `(node, cellMinWidth, view)` — there is no
-    // HTMLAttributes channel, so color attrs must be read from `node.attrs`.
     const id = node.attrs.id
     if (typeof id === "string" && id.length > 0) this.dom.setAttribute("data-id", id)
     else this.dom.removeAttribute("data-id")

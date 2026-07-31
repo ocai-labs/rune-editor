@@ -8,8 +8,6 @@ import { describe, it, expect } from "vitest"
 import { Editor } from "@tiptap/core"
 import { createRuneKit } from "../../kit"
 import type { SuggestionOptions } from "@tiptap/suggestion"
-import { BLOCK_COLOR_TYPES, deriveBlockColorTypes } from "../../kit"
-import { createBlockSpec } from "../../schema"
 
 describe("Table — kit integration", () => {
   it("registers table sub-structure nodes through the default kit", () => {
@@ -144,76 +142,5 @@ describe("Table — kit integration", () => {
     })
     expect(result).toBe(false)
     editor.destroy()
-  })
-})
-
-describe("createRuneKit — table cell color attrs", () => {
-  it("parses + renders backgroundColor on <td> via the default kit", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: createRuneKit(),
-    })
-    editor.commands.setContent(
-      "<table><tbody><tr><td data-background-color=\"blue\"><p>x</p></td></tr></tbody></table>",
-    )
-    let cellAttr: unknown = undefined
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === "tableCell") {
-        cellAttr = node.attrs.backgroundColor
-        return false
-      }
-      return true
-    })
-    expect(cellAttr).toBe("blue")
-    expect(editor.getHTML()).toContain('data-background-color="blue"')
-    editor.destroy()
-  })
-
-  it("parses + renders textColor on <th> via the default kit", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: createRuneKit(),
-    })
-    editor.commands.setContent(
-      "<table><tbody><tr><th data-text-color=\"red\"><p>x</p></th></tr></tbody></table>",
-    )
-    let headerAttr: unknown = undefined
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === "tableHeader") {
-        headerAttr = node.attrs.textColor
-        return false
-      }
-      return true
-    })
-    expect(headerAttr).toBe("red")
-    expect(editor.getHTML()).toContain('data-text-color="red"')
-    editor.destroy()
-  })
-
-  it("BLOCK_COLOR_TYPES includes tableCell and tableHeader", async () => {
-    expect(BLOCK_COLOR_TYPES).toContain("tableCell")
-    expect(BLOCK_COLOR_TYPES).toContain("tableHeader")
-  })
-
-  it("derives block color types from block supports metadata plus table cells", () => {
-    const Colorable = createBlockSpec({
-      type: "colorable",
-      content: "inline*",
-      supports: { textColor: true, backgroundColor: true },
-      parseDOM: [{ tag: "p[data-colorable]" }],
-      renderDOM: ({ HTMLAttributes }) => ["p", HTMLAttributes, 0],
-    })
-    const Plain = createBlockSpec({
-      type: "plain",
-      content: "inline*",
-      parseDOM: [{ tag: "p[data-plain]" }],
-      renderDOM: ({ HTMLAttributes }) => ["p", HTMLAttributes, 0],
-    })
-
-    expect(deriveBlockColorTypes([Colorable, Plain])).toEqual([
-      "colorable",
-      "tableCell",
-      "tableHeader",
-    ])
   })
 })

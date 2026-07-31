@@ -156,7 +156,7 @@ export function setInlineMark(
   if (!frame.node.isTextblock) {
     // Capability mismatch (not a bad value) — the block exists but holds no
     // inline text. `unsupported`, matching replaceSelectionText's "only text
-    // blocks" gate and set_block_color's "block can't be coloured".
+    // blocks" gate.
     return runeCommandError(
       "unsupported",
       `Block "${blockId}" has no inline text to format.`,

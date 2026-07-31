@@ -22,12 +22,8 @@ import {
 } from "./keymap"
 import { RUNE_BODY_BLOCKS, deriveBlockIdTypes, isFactoryBuiltBlockExtension, MediaImport, MediaPopover, CalloutEmojiPopover } from "./blocks"
 import type { RuneImportImageFile, RuneImportImageUrl, RuneImportMediaFile, RuneImportMediaUrl } from "./blocks"
-import { InlineMath, type InlineNodeViewFactory } from "./inlines"
-import {
-  RUNE_BLOCK_SPEC_METADATA,
-  type BlockNodeViewFactory,
-  type BlockSupportsSpec,
-} from "./schema"
+import { InlineMath, RawInline, type InlineNodeViewFactory } from "./inlines"
+import { type BlockNodeViewFactory } from "./schema"
 import {
   CellHandlePills,
   CellHandleDrag,
@@ -38,13 +34,7 @@ import {
 // through the barrel would create an import cycle.
 import { BlockCommands } from "./api/commands"
 import { BlockId } from "./extensions/block-id"
-import {
-  BlockTextColor,
-  BlockBackgroundColor,
-  TextStyleWithColorAttrs,
-  TextColor,
-  BackgroundColor,
-} from "./extensions/color"
+import { TextStyleWithColorAttrs, TextColor, BackgroundColor } from "./extensions/color"
 import { SuggestionMenus, slashMatcher, wikiLinkMatcher } from "./extensions/suggestion-menus"
 import { SideMenu } from "./extensions/side-menu"
 import { BlockDrag } from "./extensions/block-drag"
@@ -339,30 +329,6 @@ const RuneUnderline = Underline.extend({
   },
 })
 
-interface StaticBlockSpecMetadata {
-  supports?: BlockSupportsSpec
-}
-
-function staticBlockSupports(ext: AnyExtension): BlockSupportsSpec | undefined {
-  const direct = (ext as unknown as {
-    [RUNE_BLOCK_SPEC_METADATA]?: StaticBlockSpecMetadata
-  })[RUNE_BLOCK_SPEC_METADATA]
-  if (direct) return direct.supports
-  const config = (ext as unknown as Record<string, unknown>).config as Record<string, unknown> | undefined
-  return (config?.[RUNE_BLOCK_SPEC_METADATA] as StaticBlockSpecMetadata | undefined)?.supports
-}
-
-const TABLE_COLOR_TYPES = ["tableCell", "tableHeader"] as const
-
-export function deriveBlockColorTypes(extensions: readonly AnyExtension[]) {
-  const types: string[] = []
-  for (const ext of extensions) {
-    const supports = staticBlockSupports(ext)
-    if (supports?.textColor || supports?.backgroundColor) types.push(ext.name)
-  }
-  return [...types, ...TABLE_COLOR_TYPES]
-}
-
 function configureBodyBlocks(options: CreateRuneKitOptions): AnyExtension[] {
   const overrides: Record<string, Record<string, unknown>> = {
     equationBlock: { nodeView: options.mathNodeViews?.equationBlock },
@@ -374,12 +340,6 @@ function configureBodyBlocks(options: CreateRuneKitOptions): AnyExtension[] {
     return cfg ? ext.configure(cfg) : ext
   })
 }
-
-/** Node types that get block-level `textColor` / `backgroundColor` attrs.
- *  Derived from each block spec's `supports` flags; table cell nodes are
- *  appended because they share the same color DOM contract but are not
- *  factory-built page-body blocks. */
-export const BLOCK_COLOR_TYPES = deriveBlockColorTypes(RUNE_BODY_BLOCKS)
 
 function validateRunePlugins(plugins: readonly RunePlugin[] = []): void {
   const seen = new Set<string>()
@@ -514,6 +474,7 @@ export function createRuneKit(options: CreateRuneKitOptions = {}): AnyExtension[
     MediaPopover,
     CalloutEmojiPopover,
     InlineMath.configure({ nodeView: options.mathNodeViews?.inlineMath }),
+    RawInline,
     BlockCommands,
     BlockId.configure({ types: blockIdTypes }),
     Indent,
@@ -523,12 +484,6 @@ export function createRuneKit(options: CreateRuneKitOptions = {}): AnyExtension[
       titlePlaceholder: options.toggleTitlePlaceholder,
     }),
   ]
-
-  const allBodyBlocks = [...RUNE_BODY_BLOCKS, ...pluginBlocks]
-  extensions.push(
-    BlockTextColor.configure({ types: deriveBlockColorTypes(allBodyBlocks) }),
-    BlockBackgroundColor.configure({ types: deriveBlockColorTypes(allBodyBlocks) }),
-  )
 
   // Inline color (M4b). Order matters: the wrapper registers the
   // textStyle mark; TextColor + BackgroundColor hang attrs on it via

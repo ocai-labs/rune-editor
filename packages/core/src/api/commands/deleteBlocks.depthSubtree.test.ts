@@ -153,38 +153,6 @@ describe("deleteBlocks — depth-subtree carry (no orphaned children)", () => {
     expect(getDocument(editor).map((b) => b.id)).toEqual(["sibling"])
   })
 
-  // Same repro, but the parent+children live inside a column — the widen
-  // must stay surface-local (walk the column's own children), not leak past
-  // the column boundary or fall back to the root surface.
-  it("deleteBlocks([parentId]) carries the depth-subtree inside a column", () => {
-    const editor = createTestEditor({ kit: { suggestionMenus: false } })
-    const s = editor.schema
-    const para = (id: string, t: string, depth = 0) =>
-      s.nodes.paragraph!.create({ id, depth }, s.text(t))
-    const col = (id: string, ...children: ProseMirrorNode[]) =>
-      s.nodes.column!.create({ id, width: 1 }, children)
-    const doc = s.nodes.doc!.create(null, [
-      s.nodes.columnLayout!.create({ id: "lay", depth: 0 }, [
-        col(
-          "col_a",
-          para("parent", "Parent"),
-          para("child", HIDDEN, 1),
-          para("colSibling", "ColSibling"),
-        ),
-        col("col_b", para("b1", "B1")),
-      ]),
-    ])
-    editor.view.dispatch(
-      editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-    )
-    const ok = editor.commands.deleteBlocks(["parent"])
-    expect(ok).toBe(true)
-    expect(editor.state.doc.textContent).not.toContain(HIDDEN)
-    // The OTHER column's block must be untouched — widening stayed inside col_a.
-    expect(editor.state.doc.textContent).toContain("B1")
-    expect(editor.state.doc.textContent).toContain("ColSibling")
-  })
-
   // Deleting a CHILD by its own id must delete only ITS OWN subtree — the
   // parent and any OTHER child stay put. This is the counterpoint to the
   // parent-delete tests above: a child is not somehow "protected" by its

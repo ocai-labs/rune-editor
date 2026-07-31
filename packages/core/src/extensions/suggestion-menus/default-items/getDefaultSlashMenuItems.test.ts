@@ -142,10 +142,10 @@ describe("DefaultSuggestionItem.block payload", () => {
     const editor = createTestEditor();
     const items = getDefaultSlashMenuItems(editor);
     const expected: Record<string, number> = {
-      heading_1: 2,
-      heading_2: 3,
-      heading_3: 4,
-      heading_4: 5,
+      heading_1: 1,
+      heading_2: 2,
+      heading_3: 3,
+      heading_4: 4,
     };
     for (const [key, level] of Object.entries(expected)) {
       const item = items.find((i) => i.key === key)!;
@@ -157,9 +157,9 @@ describe("DefaultSuggestionItem.block payload", () => {
     const editor = createTestEditor();
     const items = getDefaultSlashMenuItems(editor);
     const expected: Record<string, number> = {
-      toggle_heading_1: 2,
-      toggle_heading_2: 3,
-      toggle_heading_3: 4,
+      toggle_heading_1: 1,
+      toggle_heading_2: 2,
+      toggle_heading_3: 3,
     };
     for (const [key, level] of Object.entries(expected)) {
       const item = items.find((i) => i.key === key)!;

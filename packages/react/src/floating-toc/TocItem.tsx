@@ -11,15 +11,18 @@ import type { TocHeading } from "./types"
 // individual buttons because hover on the column opens the card; clicking
 // happens inside the card.
 
-// Bar geometry by internal heading level (2/3/4/5 ↔ UI H1/H2/H3/H4).
+// Bar geometry by heading level. H5/H6 share the deepest visual step so the
+// bars remain visible instead of shrinking below the 4px minimum.
 // Numbers come from the Notion devtools snapshot — each level drops 4px
 // of width and gains 4px of margin-inline-start, so every bar shares the
 // same right edge inside the stack column.
-const BAR_GEOM: Record<2 | 3 | 4 | 5, { width: number; indent: number }> = {
-  2: { width: 16, indent: 0 },
-  3: { width: 12, indent: 4 },
-  4: { width: 8, indent: 8 },
+const BAR_GEOM: Record<TocHeading["level"], { width: number; indent: number }> = {
+  1: { width: 16, indent: 0 },
+  2: { width: 12, indent: 4 },
+  3: { width: 8, indent: 8 },
+  4: { width: 4, indent: 12 },
   5: { width: 4, indent: 12 },
+  6: { width: 4, indent: 12 },
 }
 
 export interface TocItemProps {

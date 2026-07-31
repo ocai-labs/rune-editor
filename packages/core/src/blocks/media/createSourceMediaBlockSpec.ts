@@ -5,10 +5,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { nanoid } from "nanoid"
+import type { JSONContent } from "@tiptap/core"
 import type { TagParseRule } from "@tiptap/pm/model"
 import { createBlockSpec, mergeBlockHTMLAttributes } from "../../schema"
 import type {
   RuneBlockSchemaContextSpec,
+  RuneMarkdownBlockContract,
   RuneMarkdownBlockSerializer,
 } from "../../schema"
 import { insertOrUpdateBlockForSlashMenu } from "../../extensions/suggestion-menus"
@@ -31,8 +33,12 @@ import { openMediaOriginal, originalMediaUrl } from "./assetActions"
 import { iframeAttrs, MEDIA_PAD_TOP, renderEmptyMediaDOM } from "./render"
 import {
   isSupportedMediaUrlReference,
+  mediaResultToAttrs,
+  normalizeMediaUrlInput,
+  URL_PARSE_BASE,
   validateMediaImportResult,
   type MediaEmbedProvider,
+  type MediaImportResult,
   type MediaSourceAttrs,
   type MediaSourceType,
   type SourcedBlockKind,
@@ -44,11 +50,13 @@ import {
   inputProviderOrDefault,
   inputSourceTypeOrDefault,
   inputStringOrDefault,
+  isMediaImportResult,
   isProvider,
   numAttr,
   slashSourceDepth,
 } from "./source-input-helpers"
 import { getMediaImportState } from "./import-plugin"
+import { escapeHtmlAttr, unescapeHtmlAttr } from "../../markdown/htmlAttr"
 
 export type SourceMediaBlockKind = Extract<SourcedBlockKind, "video" | "audio">
 
@@ -301,6 +309,169 @@ function assetDOMAttrs(
   }
 }
 
+// ─── markdown storage contract (PRD D5, Obsidian field-tested 2026-07-29) ───
+//
+// Split by kind: EMBEDS write `![title](sourceUrl)` — Obsidian renders the
+// provider iframe for that form, while a `<video>` tag pointed at a watch URL
+// is dead there. ASSETS write a paired `<video|audio src controls></tag>` —
+// Obsidian plays it, while `![](clip.mp4)` shows nothing. The pair must stay
+// explicit: these tags are not HTML void elements, so a self-closing `/` is
+// ignored by real parsers and the open tag would swallow following content.
+//
+// Identity in the `![](url)` grammar belongs to Image by default; a media
+// block claims it only on a URL-shape signal — a provider match, or a file
+// extension naming this kind. Extension-less asset URLs stay images: the
+// declared-lossy edge. The tag form needs no such gate (the tag IS the
+// identity), so extension-less uploads survive through it, and a tag whose
+// src turns out to be a provider URL normalizes forward into embed attrs.
+// embedUrl is never trusted from the file — normalizeMediaUrlInput recomputes
+// it from sourceUrl, so a stale or tampered embed URL cannot ride in.
+
+const MEDIA_FILE_EXTENSIONS: Record<SourceMediaBlockKind, ReadonlySet<string>> = {
+  video: new Set(["mp4", "webm", "mov", "m4v", "ogv"]),
+  audio: new Set(["mp3", "wav", "m4a", "ogg", "oga", "flac", "aac"]),
+}
+
+function urlFileExtension(url: string): string | null {
+  try {
+    const pathname = new URL(url, URL_PARSE_BASE).pathname
+    const last = pathname.split("/").pop() ?? ""
+    const dot = last.lastIndexOf(".")
+    return dot > 0 ? last.slice(dot + 1).toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+/** `![](url)` promotion gate: embed-provider match, or a file extension
+ *  naming this media kind. Anything else stays an image. */
+function classifyImageSyntaxUrl(
+  kind: SourceMediaBlockKind,
+  url: string,
+): MediaImportResult | null {
+  const normalized = normalizeMediaUrlInput(kind, url)
+  if (!isMediaImportResult(normalized)) return null
+  if (normalized.kind === "embed") return normalized
+  const ext = urlFileExtension(url)
+  return ext && MEDIA_FILE_EXTENSIONS[kind].has(ext) ? normalized : null
+}
+
+const TAG_ATTR = (name: string, value: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(value)
+
+/** Parse a paired (or, generously, self-closing) asset tag emitted by us or
+ *  hand-written: `<video src="…" title="…" width="640" controls></video>`. */
+function parseAssetTag(
+  tag: "video" | "audio",
+  value: string,
+): { src: string; title: string | null; width: number | null; height: number | null } | null {
+  const shape = new RegExp(`^<${tag}\\b([^>]*?)/?>(?:\\s*</${tag}>)?\\s*$`).exec(value.trim())
+  if (!shape) return null
+  const attrs = shape[1]!
+  const src = TAG_ATTR("src", attrs)?.[1]
+  if (!src) return null
+  const num = (name: string): number | null => {
+    const raw = TAG_ATTR(name, attrs)?.[1]
+    const parsed = raw ? Number(raw) : Number.NaN
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+  }
+  const title = TAG_ATTR("title", attrs)?.[1]
+  return {
+    src: unescapeHtmlAttr(src),
+    title: title ? unescapeHtmlAttr(title) : null,
+    width: num("width"),
+    height: num("height"),
+  }
+}
+
+/** Build the block's PM JSON from a normalized import result; null/empty
+ *  attrs are omitted (schema defaults fill them identically). */
+function mediaBlockFromResult(
+  config: SourceMediaBlockConfig,
+  result: MediaImportResult,
+  fallbackTitle: string,
+): JSONContent {
+  const full = mediaResultToAttrs(result)
+  if (!full.title && fallbackTitle) full.title = fallbackTitle
+  const attrs = Object.fromEntries(
+    Object.entries(full).filter(([, v]) => v !== null && v !== ""),
+  )
+  return { type: config.type, ...(Object.keys(attrs).length ? { attrs } : {}) }
+}
+
+function createMediaMarkdownContract(config: SourceMediaBlockConfig): RuneMarkdownBlockContract {
+  return {
+    toMdast(blockJson) {
+      const attrs = (blockJson.attrs ?? {}) as Partial<SourceMediaAttrs>
+      const title = typeof attrs.title === "string" ? attrs.title : ""
+      if (attrs.sourceType === "embed") {
+        const sourceUrl =
+          (typeof attrs.sourceUrl === "string" && attrs.sourceUrl) ||
+          (typeof attrs.embedUrl === "string" && attrs.embedUrl) ||
+          ""
+        if (!sourceUrl) return null
+        return {
+          type: "paragraph",
+          children: [{ type: "image", url: sourceUrl, alt: title }],
+        }
+      }
+      const src = typeof attrs.src === "string" && attrs.src ? attrs.src : null
+      if (!src) return null // placeholder block, no source picked — nothing to store
+      const parts = [
+        `src="${escapeHtmlAttr(src)}"`,
+        ...(title ? [`title="${escapeHtmlAttr(title)}"`] : []),
+        ...(typeof attrs.width === "number" ? [`width="${attrs.width}"`] : []),
+        ...(typeof attrs.height === "number" ? [`height="${attrs.height}"`] : []),
+        "controls",
+      ]
+      return {
+        type: "html",
+        value: `<${config.assetTag} ${parts.join(" ")}></${config.assetTag}>`,
+      }
+    },
+    fromMdast(node) {
+      const claimTagSource = (value: string): JSONContent | null => {
+        const parsed = parseAssetTag(config.assetTag, value)
+        if (!parsed) return null
+        const normalized = normalizeMediaUrlInput(config.type, parsed.src)
+        if (!isMediaImportResult(normalized)) return null
+        const result: MediaImportResult = {
+          ...normalized,
+          ...(parsed.title ? { title: parsed.title } : {}),
+          ...(parsed.width != null ? { width: parsed.width } : {}),
+          ...(parsed.height != null ? { height: parsed.height } : {}),
+        }
+        if (!validateMediaImportResult(config.type, result).ok) return null
+        return mediaBlockFromResult(config, result, "")
+      }
+      if (node.type === "paragraph") {
+        const lone = node.children.length === 1 ? node.children[0] : null
+        if (lone?.type === "image" && lone.url) {
+          const result = classifyImageSyntaxUrl(config.type, lone.url)
+          return result ? mediaBlockFromResult(config, result, lone.alt ?? "") : null
+        }
+        // A single-line `<video src="…"></video>` is INLINE html to
+        // CommonMark (video/audio are absent from the type-6 block-element
+        // list, and the same-line close tag disqualifies type 7), so the
+        // pair arrives as a paragraph of html nodes. Rejoin and claim it.
+        if (
+          node.children.length > 0 &&
+          node.children.every(
+            (c) => c.type === "html" || (c.type === "text" && !c.value.trim()),
+          )
+        ) {
+          const joined = node.children
+            .map((c) => (c.type === "html" || c.type === "text" ? c.value : ""))
+            .join("")
+          return claimTagSource(joined)
+        }
+        return null
+      }
+      if (node.type === "html") return claimTagSource(node.value)
+      return null
+    },
+  }
+}
+
 export function createSourceMediaBlockSpec(config: SourceMediaBlockConfig) {
   return createBlockSpec({
     type: config.type,
@@ -346,7 +517,6 @@ export function createSourceMediaBlockSpec(config: SourceMediaBlockConfig) {
         : {}),
     },
     supports: {
-      backgroundColor: true,
       resize: true,
       mediaSource: true,
       align: config.supportsAlign,
@@ -388,6 +558,7 @@ export function createSourceMediaBlockSpec(config: SourceMediaBlockConfig) {
       },
     ],
     toMarkdown: config.toMarkdown,
+    markdown: createMediaMarkdownContract(config),
     parseDOM: [
       ...(config.extraParseDOM ?? []),
       genericAssetParseDOM(config),

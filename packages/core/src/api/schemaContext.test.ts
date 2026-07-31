@@ -127,7 +127,7 @@ describe("getRuneSchemaContext — built-in block projection", () => {
     const heading = findBlock(ctx, "heading")
     expect(heading).toBeDefined()
     expect(heading!.props.level).toBeDefined()
-    expect(heading!.props.level!.default).toBe(2)
+    expect(heading!.props.level!.default).toBe(1)
     expect(heading!.input.examples).toBeDefined()
     expect(heading!.input.examples!.length).toBeGreaterThan(0)
   })
@@ -408,28 +408,6 @@ describe("getRuneSchemaContext — plugin and configure regression", () => {
         kit: { plugins: [{ id: "test-raw", blockExtensions: [RawNode] }] },
       }),
     ).toThrow(/createBlockSpec/)
-  })
-
-  it("plugin block supports.textColor / supports.backgroundColor flags project through", () => {
-    const Colorful = createBlockSpec({
-      type: "colorfulPluginBlock",
-      content: "inline*",
-      supports: { textColor: true, backgroundColor: true },
-      parseDOM: [{ tag: "div.colorful-plugin-block" }],
-      renderDOM: ({ HTMLAttributes }) => [
-        "div",
-        { ...HTMLAttributes, class: "rune-block colorful-plugin-block" },
-        ["div", { class: "rune-block-content" }, 0],
-      ],
-    })
-    const editor = createTestEditor({
-      kit: { plugins: [{ id: "test-colorful", blockExtensions: [Colorful] }] },
-    })
-    const ctx = getRuneSchemaContext(editor)
-    const block = findBlock(ctx, "colorfulPluginBlock")
-    expect(block).toBeDefined()
-    expect(block!.supports.textColor).toBe(true)
-    expect(block!.supports.backgroundColor).toBe(true)
   })
 })
 

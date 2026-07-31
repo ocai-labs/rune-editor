@@ -49,11 +49,6 @@ export function writeClipboard(view: EditorView, event: ClipboardEvent, cut: boo
   // "lazy slice capture" optimization that fetched the slice inside the cut
   // branch would silently serialize the empty post-delete selection.
   //
-  // Tag the delete with `uiEvent: "cut"` (PM's own convention for its native
-  // cut handler, which this replaces). Downstream appendTransactions key off
-  // it — notably TitleKit's boundary, which on a cut that empties the body
-  // re-seeds an empty line and moves the caret into it.
-  //
   // MultiBlockSelection widens over any collapsed toggle's hidden body before
   // deleting — otherwise the copy above (which already expands via
   // expandCollapsedToggles) puts the body on the clipboard AND leaves it
@@ -76,7 +71,7 @@ export function writeClipboard(view: EditorView, event: ClipboardEvent, cut: boo
     } else {
       tr.deleteSelection()
     }
-    view.dispatch(tr.scrollIntoView().setMeta("uiEvent", "cut"))
+    view.dispatch(tr.scrollIntoView())
   }
   return true
 }

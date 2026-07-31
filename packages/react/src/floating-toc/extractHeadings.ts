@@ -15,10 +15,10 @@ export function extractHeadings(editor: Editor): TocHeading[] {
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name !== "heading") return true
     const level = node.attrs.level as number
-    if (level !== 2 && level !== 3 && level !== 4 && level !== 5) return false
+    if (level < 1 || level > 6) return false
     const id = typeof node.attrs.id === "string" ? node.attrs.id : ""
     if (!id) return false
-    out.push({ id, level, text: node.textContent, pos })
+    out.push({ id, level: level as TocHeading["level"], text: node.textContent, pos })
     return false
   })
   return out

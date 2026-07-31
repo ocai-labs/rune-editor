@@ -38,11 +38,8 @@ export type TurnIntoAdapter = (
 /**
  * Classify a node type STRUCTURALLY, not by name. A "container" is any
  * non-atom type whose content is structured nodes rather than inline text —
- * `table` (tableRow+) and `columnLayout` (column{2,5}) both land here, as
- * does any future structured block, with zero per-name edits. The old
- * `type.name === "table"` special case classified `columnLayout` as
- * "inline", which routed it through the textblock adapter and built an
- * invalid layout that normalization silently deleted (COL-2).
+ * `table` (tableRow+) lands here, as does any future structured block, with
+ * zero per-name edits.
  */
 export function classifyKind(type: NodeType): TurnIntoKind {
   if (type.isAtom) return "atom"
@@ -52,8 +49,8 @@ export function classifyKind(type: NodeType): TurnIntoKind {
 
 /**
  * Validate explicit `props` the same way the insert/update path does: build the
- * target via `fromInput` and reject if it refuses (e.g. a heading `level:1`,
- * which is schema-illegal — h1 is reserved for the page title). Gated on props
+ * target via `fromInput` and reject if it refuses (e.g. a heading `level:7`).
+ * Gated on props
  * PRESENCE, so a no-props turn-into keeps the target's defaults (unchanged
  * behavior). Returns false ⇒ the conversion must reject. Without this, the
  * textblock/same-type paths wrote `props` straight onto attrs unvalidated and
@@ -227,9 +224,8 @@ function buildContainer(
       depth: typeof sourceNode.attrs.depth === "number" ? sourceNode.attrs.depth : 0,
     },
   )
-  // `fromInput` refusal (e.g. a columnLayout target without a `columns`
-  // payload) rejects the conversion — the old throw crashed the command
-  // for what is an addressable-but-invalid input.
+  // A `fromInput` refusal rejects the conversion — invalid structured input
+  // must not crash the command.
   if (!built) return null
   const type = schema.nodes[target.type]!
   const node = type.create(
@@ -242,10 +238,7 @@ function buildContainer(
 
 /**
  * Carry the source's inline content into a freshly built container by
- * seeding it into the container's first EMPTY body-block textblock — for a
- * `columnLayout` that is column 1's E2-seeded paragraph, so "Hello" →
- * "/2 columns · Turn into" lands "Hello" in the first column instead of
- * dropping it.
+ * seeding it into the container's first EMPTY body-block textblock.
  *
  * Scoped to BODY-BLOCK textblocks ("has a `depth` attr in its type spec",
  * the same node-local discriminator bodySurface.ts uses): `table`'s cells

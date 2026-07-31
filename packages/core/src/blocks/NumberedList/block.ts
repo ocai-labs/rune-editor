@@ -39,7 +39,6 @@ function parseListStart(el: HTMLElement) {
 export const NumberedList = createBlockSpec({
   type: "numberedList",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   indent: { mode: "structural" },
   props: {
     start: {
@@ -116,14 +115,8 @@ export const NumberedList = createBlockSpec({
     },
   ],
   renderDOM: ({ HTMLAttributes }) => {
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (textColor) contentAttrs["data-text-color"] = textColor
-    if (bgColor) contentAttrs["data-background-color"] = bgColor
     return [
       "div",
       { ...outer, class: "rune-block rune-numbered-list" },

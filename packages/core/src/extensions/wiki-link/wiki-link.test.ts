@@ -204,6 +204,46 @@ function attrOnWikiLinkOrChild(
 }
 
 describe("createRuneKit", () => {
+  it("kit-level: wikiLink onClick reaches this.options AND fires through the full plugin stack", () => {
+    // Field report (zyler-new 2026-07-29): kit.wikiLink.onClick never fired
+    // in the app. The pre-existing onClick tests run a MINIMAL extension
+    // set and a harness that stops at the FIRST handleClickOn found — they
+    // can't catch full-kit plugin ordering or option-forwarding breaks.
+    // This probe uses the full kit and PM's actual dispatch semantics:
+    // iterate handlers in plugin order, stop only on a truthy return.
+    const onClick = vi.fn()
+    const editor = makeKitEditor({ wikiLink: { onClick } })
+    editor.commands.setContent('<p><a data-wikilink="研究/竞品分析">竞品分析</a></p>')
+
+    const ext = editor.extensionManager.extensions.find((e) => e.name === "wikiLink")
+    expect(ext?.options.onClick).toBe(onClick)
+
+    const pos = 1
+    const node = editor.state.doc.nodeAt(pos)
+    if (!node) throw new Error("expected text at pos 1")
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true })
+    const claimed = editor.view.someProp("handleClickOn", (handler) =>
+      handler(editor.view, pos, node, pos, event, true),
+    )
+
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(onClick).toHaveBeenCalledWith({ target: "研究/竞品分析" }, event)
+    expect(claimed).toBeFalsy() // no kit plugin claims a wiki-link text click
+    editor.destroy()
+  })
+
+  it("kit-level: a real mousedown→mouseup sequence on the anchor reaches onClick (full PM pipeline)", () => {
+    const onClick = vi.fn()
+    const editor = makeKitEditor({ wikiLink: { onClick } })
+    editor.commands.setContent('<p><a data-wikilink="n1">Node</a></p>')
+
+    dispatchProseMirrorClick(editor, wikiLinkElement(editor), 1, 1)
+
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(onClick).toHaveBeenCalledWith({ target: "n1" }, expect.any(MouseEvent))
+    editor.destroy()
+  })
+
   it("registers WikiLink in the default kit", () => {
     const element = document.createElement("div")
     document.body.appendChild(element)

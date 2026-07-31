@@ -52,15 +52,8 @@
   padding-bottom: 30vh;
 }
 
-/* Body-block base rhythm + positioning context, on BOTH body surfaces: the
-   root (.ProseMirror direct children) and a column's interior (.rune-column
-   direct children — a flat body surface of its own, columns Phase 2). One
-   selector keeps the two surfaces from drifting; per-block --block-pad-top
-   overrides (heading/toggle/image/media) use the same :is() so the side-menu
-   grip contract (invariant 8) holds inside columns too. `:is()` carries the
-   specificity of its most specific argument — one class, same as the bare
-   `.ProseMirror` — so root output is unchanged. */
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block {
+/* Body-block base rhythm + positioning context. */
+.rune-editor .ProseMirror > .rune-block {
   position: relative;
   --block-pad-top: 3px;
   padding-top: var(--block-pad-top);

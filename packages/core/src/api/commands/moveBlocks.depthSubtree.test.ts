@@ -59,12 +59,13 @@ describe("moveBlocks — depth-subtree carry (no orphaned children left at sourc
       "parent",
       "child",
     ])
-    // The child kept its relative depth under the moved parent.
+    // The legacy depth-run moves atomically, then the Markdown boundary
+    // flattens it because an ordinary paragraph cannot own a child.
     let childDepth: number | undefined
     editor.state.doc.forEach((node) => {
       if (node.attrs.id === "child") childDepth = node.attrs.depth as number
     })
-    expect(childDepth).toBe(1)
+    expect(childDepth).toBe(0)
   })
 
   it("moveBlocks carries a MULTI-LEVEL depth-subtree (grandchildren too)", () => {
@@ -192,37 +193,5 @@ describe("moveBlocks — depth-subtree carry (no orphaned children left at sourc
       "target",
       "childA",
     ])
-  })
-
-  // Same repro, but source and destination both live inside a column — the
-  // widen must stay surface-local (the column's own children), and the
-  // OTHER column must be untouched.
-  it("moveBlocks([parentId], ...) carries the depth-subtree inside a column", () => {
-    const editor = createTestEditor({ kit: { suggestionMenus: false } })
-    const s = editor.schema
-    const para = (id: string, t: string, depth = 0) =>
-      s.nodes.paragraph!.create({ id, depth }, s.text(t))
-    const col = (id: string, ...children: ProseMirrorNode[]) =>
-      s.nodes.column!.create({ id, width: 1 }, children)
-    const doc = s.nodes.doc!.create(null, [
-      s.nodes.columnLayout!.create({ id: "lay", depth: 0 }, [
-        col(
-          "col_a",
-          para("parent", "Parent"),
-          para("child", HIDDEN, 1),
-          para("target", "Target"),
-        ),
-        col("col_b", para("b1", "B1")),
-      ]),
-    ])
-    editor.view.dispatch(
-      editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-    )
-    const ok = editor.commands.moveBlocks(["parent"], { id: "target", side: "after" })
-    expect(ok).toBe(true)
-    // Doc order within col_a: target, parent, child.
-    expect(editor.state.doc.textContent).toContain("TargetParentHIDDEN-CHILD")
-    // col_b untouched.
-    expect(editor.state.doc.textContent).toContain("B1")
   })
 })

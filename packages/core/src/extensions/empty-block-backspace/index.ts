@@ -27,12 +27,9 @@ import {
  * second Backspace.
  *
  * Scope is deliberately narrow: both blocks must be empty textblocks and
- * adjacent siblings on the SAME body surface (the doc root, or a `column`
- * for an in-column caret — `nearestBodyBlock` / `surfaceChildrenAt` resolve
- * both surface-locally). A caret in a column's FIRST block has no previous
- * sibling on its surface, so we decline and let PM defaults / the
- * ColumnsKeyboard boundary guard run — this extension never reaches across
- * a column or layout boundary. Atom blocks (divider) and same-depth indent
+ * adjacent siblings on the same body surface. Built-in Rune blocks live at
+ * the root; the surface-aware resolution also prevents plugin blocks from
+ * reaching across a structural boundary. Atom blocks (divider) and same-depth indent
  * moves are left
  * to their own handlers (Divider's `preserveDividerOnBackspace`, the
  * Indent extension's outdent path).
@@ -61,12 +58,9 @@ export const EmptyBlockBackspace = Extension.create({
         const current = nearest.node
         if (current.content.size !== 0) return false
 
-        // `prev` must resolve on the SAME surface as `current` (the doc
-        // root, or a `column` for an in-column caret) — never the root
-        // block before a whole `columnLayout`. The first block on its
-        // surface has no previous sibling here; a column's leading
-        // boundary is cross-surface and deliberately NOT handled (PM
-        // defaults + the ColumnsKeyboard no-op guard own it).
+        // `prev` must resolve on the same surface as `current`. The first block
+        // on a plugin surface has no previous sibling here, so we never cross
+        // a structural boundary.
         if (nearest.indexInSurface === 0) return false
         const surface = surfaceChildrenAt(state.doc, nearest.pos)
         if (!surface) return false

@@ -6,9 +6,9 @@
 
 /* Media blocks here means video/audio. Image block styles live in image.css. */
 
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block.rune-video,
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block.rune-audio,
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block > .rune-audio {
+.rune-editor .ProseMirror > .rune-block.rune-video,
+.rune-editor .ProseMirror > .rune-block.rune-audio,
+.rune-editor .ProseMirror > .rune-block > .rune-audio {
   --block-pad-top: var(--rune-media-pad-top);
   padding-top: var(--block-pad-top);
   padding-bottom: 0.5rem;

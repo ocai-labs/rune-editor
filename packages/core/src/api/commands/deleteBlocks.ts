@@ -70,8 +70,8 @@ export function resolveDeleteRanges(
           rootSurface: r.surfacePos === -1,
         }
       })
-    // A recursive id list can name a container (columnLayout) AND one of its
-    // descendants (exactly what findBlocks hands out). The descendant's range
+    // A recursive id list can name a plugin container AND one of its
+    // descendants. The descendant's range
     // is fully contained in the container's; deleting both against pre-tr
     // positions would re-delete through stale offsets and eat into the next
     // block. Keep outermost ranges only. Widening runs BEFORE this filter, so

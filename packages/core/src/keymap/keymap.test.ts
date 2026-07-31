@@ -170,11 +170,11 @@ describe("mark chords through the full keymap chain", () => {
 })
 
 describe("block-conversion actions (factory shortcutActions path)", () => {
-  it("default: Mod-Alt-1 turns a paragraph into UI-H1 (<h2>, level 2)", () => {
+  it("default: Mod-Alt-1 turns a paragraph into H1 (level 1)", () => {
     const editor = createTestEditor({ content: "<p>hello</p>" })
     editor.commands.setTextSelection(3)
     expect(press(editor, { key: "1", ctrlKey: true, altKey: true })).toBe(true)
-    expect(editor.isActive("heading", { level: 2 })).toBe(true)
+    expect(editor.isActive("heading", { level: 1 })).toBe(true)
   })
 
   it("rebound: new chord converts, default chord is dead", () => {
@@ -186,7 +186,7 @@ describe("block-conversion actions (factory shortcutActions path)", () => {
     expect(press(editor, { key: "1", ctrlKey: true, altKey: true })).toBe(false)
     expect(editor.isActive("paragraph")).toBe(true)
     expect(press(editor, { key: "9", ctrlKey: true, altKey: true })).toBe(true)
-    expect(editor.isActive("heading", { level: 2 })).toBe(true)
+    expect(editor.isActive("heading", { level: 1 })).toBe(true)
   })
 })
 

@@ -21,7 +21,6 @@ import {
   type RuneBlock,
   type RuneBlockInput,
 } from "../../index"
-import type { RuneColumnsBlock } from "../../blocks/Columns/block"
 
 function makeEditor(content: unknown = { type: "doc", content: [] }) {
   const element = document.createElement("div")
@@ -44,6 +43,17 @@ function ids(editor: Editor) {
   return getDocument(editor).map((block) => block.id)
 }
 
+function docWithBlocks(blocks: { type: string; id?: string; depth?: number; text?: string }[]) {
+  return {
+    type: "doc" as const,
+    content: blocks.map((block, index) => ({
+      type: block.type,
+      attrs: { id: block.id ?? `b${index}`, depth: block.depth ?? 0 },
+      content: block.text != null ? [{ type: "text", text: block.text }] : [],
+    })),
+  }
+}
+
 // Chain-safety fixture (task #17): a 5-token paragraph inserted at doc start
 // shifts every later position by +5. Under `editor.chain()`, `state.doc` IS
 // the live, already-mutated `tr.doc` (it reflects prior chain steps) — so a
@@ -52,7 +62,7 @@ function ids(editor: Editor) {
 // double-counts those prior steps. The tests tagged "chain-safety" below pin
 // that contract for both the always-safe commands (insertBlocks, deleteBlocks,
 // updateBlock, indentBlock) and the ones that needed the `tr.mapping.slice
-// (mapFrom)` fix (moveBlocks, turnInto, wrapIntoColumns, splitListBlock).
+// (mapFrom)` fix (moveBlocks, turnInto, splitListBlock).
 const PRE = {
   type: "paragraph",
   attrs: { id: "PRE", depth: 0 },
@@ -63,7 +73,7 @@ describe("commands.insertBlocks", () => {
   it("keeps RuneBlockInput tied to the built-in RuneBlock union", () => {
     expectTypeOf<RuneBlockInput>().toMatchTypeOf<
       | { type: "paragraph"; id?: string; depth?: number; text: string }
-      | { type: "heading"; id?: string; depth?: number; level: 2 | 3 | 4 | 5; text: string }
+      | { type: "heading"; id?: string; depth?: number; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
       | { type: "divider"; id?: string; depth?: number }
       | { type: "bulletList"; id?: string; depth?: number; text: string }
       | { type: "numberedList"; id?: string; depth?: number; text: string; start: number | null }
@@ -77,7 +87,7 @@ describe("commands.insertBlocks", () => {
           depth?: number
           rows: { cells: { text: string }[]; isHeader: boolean }[]
         }
-      | { type: "toggle"; id?: string; depth?: number; level: 0 | 2 | 3 | 4; expanded: boolean; text: string }
+      | { type: "toggle"; id?: string; depth?: number; level: 0 | 1 | 2 | 3; expanded: boolean; text: string }
       | { type: "equationBlock"; id?: string; depth?: number; latex: string }
       | { type: "tableOfContents"; id?: string; depth?: number }
       | {
@@ -117,10 +127,11 @@ describe("commands.insertBlocks", () => {
           height: number | null
         }
       | {
-          type: "columnLayout"
+          type: "rawBlock"
           id?: string
           depth?: number
-          columns: { id: string; width: number; children: RuneBlock[] }[]
+          source: string
+          origin: "html" | "footnote" | "table" | "markdown"
         }
     >()
 
@@ -334,7 +345,7 @@ describe("commands.insertBlocks", () => {
     ).toBe(true)
 
     expect(ids(editor)).toEqual(["first", "after-first", "middle", "last"])
-    expect(getDocument(editor)[1]).toMatchObject({ id: "after-first", depth: 1 })
+    expect(getDocument(editor)[1]).toMatchObject({ id: "after-first", depth: 0 })
     destroy()
   })
 
@@ -379,7 +390,7 @@ describe("commands.insertBlocks", () => {
     destroy()
   })
 
-  it("clamps options.depth to a legal destination depth when a predecessor exists (Task 5)", () => {
+  it("does not treat an ordinary predecessor as a Markdown depth owner", () => {
     const { editor, destroy } = makeEditor({
       type: "doc",
       content: [
@@ -391,9 +402,41 @@ describe("commands.insertBlocks", () => {
       ],
     })
 
-    // prev sibling depth 0 -> cap 1; requested depth 5 clamps to 1.
+    // A paragraph cannot own a deeper sibling in Markdown.
     editor.commands.insertBlocks([{ type: "paragraph", text: "B" }], { at: "end", depth: 5 })
+    expect(getDocument(editor)[1]).toMatchObject({ type: "paragraph", depth: 0 })
+    destroy()
+  })
+
+  it("allows an inserted direct child after a Markdown depth owner", () => {
+    const { editor, destroy } = makeEditor({
+      type: "doc",
+      content: [{
+        type: "toggle",
+        attrs: { id: "owner", depth: 0 },
+        content: [{ type: "text", text: "Owner" }],
+      }],
+    })
+
+    editor.commands.insertBlocks([{ type: "paragraph", text: "Child" }], {
+      at: "end",
+      depth: 5,
+    })
     expect(getDocument(editor)[1]).toMatchObject({ type: "paragraph", depth: 1 })
+    destroy()
+  })
+
+  it("flattens an orphaned owner body when insertion breaks its predecessor", () => {
+    const { editor, destroy } = makeEditor(docWithBlocks([
+      { type: "toggle", id: "owner", depth: 0, text: "Owner" },
+      { type: "paragraph", id: "child", depth: 1, text: "Child" },
+    ]))
+
+    editor.commands.insertBlocks(
+      [{ type: "paragraph", id: "separator", text: "Separator" }],
+      { at: { id: "child", side: "before" } },
+    )
+    expect(getDocument(editor).map((block) => block.depth)).toEqual([0, 0, 0])
     destroy()
   })
 
@@ -591,15 +634,14 @@ describe("commands.updateBlock", () => {
     const { editor, destroy } = makeEditor({
       type: "doc",
       content: [
-        // Predecessors at depth 0 then 1 so the target's cap is 2 — the
-        // explicit depth: 2 override below is legal (Task 5 clamps to the cap).
+        // Nested list owners make depth 2 a Markdown-representable destination.
         {
-          type: "paragraph",
+          type: "bulletList",
           attrs: { id: "pre0", depth: 0 },
           content: [{ type: "text", text: "Pre0" }],
         },
         {
-          type: "paragraph",
+          type: "bulletList",
           attrs: { id: "pre1", depth: 1 },
           content: [{ type: "text", text: "Pre1" }],
         },
@@ -646,7 +688,7 @@ describe("commands.updateBlock", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { id: "target", depth: 1 },
+          attrs: { id: "target", depth: 0 },
           content: [{ type: "text", text: "hello" }],
         },
       ],
@@ -654,8 +696,21 @@ describe("commands.updateBlock", () => {
 
     expect(editor.commands.updateBlock("target", { type: "heading", level: 3 })).toBe(true)
     expect(getDocument(editor)).toEqual([
-      { type: "heading", id: "target", depth: 1, level: 3, text: "hello" },
+      { type: "heading", id: "target", depth: 0, level: 3, text: "hello" },
     ])
+    destroy()
+  })
+
+  it("flattens the former body when a Markdown depth owner changes type", () => {
+    const { editor, destroy } = makeEditor(docWithBlocks([
+      { type: "toggle", id: "owner", depth: 0, text: "Owner" },
+      { type: "paragraph", id: "child", depth: 1, text: "Child" },
+      { type: "heading", id: "sibling", depth: 1, text: "Sibling" },
+      { type: "paragraph", id: "outside", depth: 0, text: "Outside" },
+    ]))
+
+    expect(editor.commands.updateBlock("owner", { type: "paragraph" })).toBe(true)
+    expect(getDocument(editor).map((block) => block.depth)).toEqual([0, 0, 0, 0])
     destroy()
   })
 
@@ -725,10 +780,9 @@ describe("commands.updateBlock", () => {
     const { editor, destroy } = makeEditor({
       type: "doc",
       content: [
-        // Leading sibling at depth 0 so the depth: 1 update below is legal
-        // under Task 5 destination clamping (cap = prev depth + 1 = 1).
+        // A structural list predecessor owns the depth-1 paragraph.
         {
-          type: "paragraph",
+          type: "bulletList",
           attrs: { id: "lead", depth: 0 },
           content: [{ type: "text", text: "Lead" }],
         },
@@ -753,78 +807,6 @@ describe("commands.updateBlock", () => {
     expect(getDocument(editor)[1]).toEqual(
       { type: "paragraph", id: "p1", depth: 1, text: "Bold" },
     )
-    destroy()
-  })
-
-  it("preserves block color attrs for attr-only updates", () => {
-    const { editor, destroy } = makeEditor({
-      type: "doc",
-      content: [
-        // Leading sibling at depth 0 so the depth: 1 update below is legal
-        // under Task 5 destination clamping (cap = prev depth + 1 = 1).
-        {
-          type: "paragraph",
-          attrs: { id: "lead", depth: 0 },
-          content: [{ type: "text", text: "Lead" }],
-        },
-        {
-          type: "paragraph",
-          attrs: { id: "p1", depth: 0 },
-          content: [{ type: "text", text: "Colorful" }],
-        },
-      ],
-    })
-
-    const p1Pos = editor.state.doc.child(0).nodeSize
-    editor.commands.setBlockTextColor(p1Pos, "blue")
-    editor.commands.setBlockBackgroundColor(p1Pos, "gray")
-
-    expect(editor.commands.updateBlock("p1", { depth: 1 })).toBe(true)
-
-    const node = editor.state.doc.child(1)
-    expect(node.attrs.textColor).toBe("blue")
-    expect(node.attrs.backgroundColor).toBe("gray")
-    expect(getDocument(editor)[1]).toEqual(
-      { type: "paragraph", id: "p1", depth: 1, text: "Colorful" },
-    )
-    destroy()
-  })
-
-  it("updates image attrs while preserving block background color", () => {
-    const { editor, destroy } = makeEditor({
-      type: "doc",
-      content: [
-        {
-          type: "image",
-          attrs: {
-            id: "img1",
-            depth: 0,
-            src: "https://example.com/old.png",
-            alt: "Old",
-            width: 320,
-            height: 200,
-          },
-        },
-      ],
-    })
-
-    editor.commands.setBlockBackgroundColor(0, "blue")
-
-    expect(editor.commands.updateBlock("img1", { alt: "New" })).toBe(true)
-
-    const node = editor.state.doc.child(0)
-    expect(node.attrs.backgroundColor).toBe("blue")
-    expect(getDocument(editor)).toEqual([
-      {
-        type: "image",
-        id: "img1",
-        depth: 0,
-        src: "https://example.com/old.png",
-        alt: "New",
-        width: 320,
-        height: 200,
-      },
-    ])
     destroy()
   })
 
@@ -866,8 +848,8 @@ describe("commands.updateBlock", () => {
       content: {
         type: "doc",
         content: [
-          // Leading sibling at depth 0 so the depth: 1 update is legal under
-          // Task 5 destination clamping (cap = prev depth + 1 = 1).
+          // This custom block declares no Markdown owner contract, so an
+          // explicit positive depth is safely clamped to zero.
           {
             type: "custom-projection",
             attrs: { id: "lead", depth: 0 },
@@ -884,7 +866,7 @@ describe("commands.updateBlock", () => {
 
     expect(editor.commands.updateBlock("custom-id", { depth: 1 })).toBe(true)
     expect((getDocument(editor) as unknown[])[1]).toEqual(
-      { type: "custom-projection", id: "custom-id", depth: 1, label: "x" },
+      { type: "custom-projection", id: "custom-id", depth: 0, label: "x" },
     )
 
     editor.destroy()
@@ -1074,7 +1056,7 @@ describe("commands.moveBlocks", () => {
     expect(editor.commands.moveBlocks(["b", "c"], { id: "d", side: "after" })).toBe(true)
 
     expect(ids(editor)).toEqual(["a", "d", "b", "c"])
-    expect(getDocument(editor)[2]).toMatchObject({ id: "b", depth: 1 })
+    expect(getDocument(editor)[2]).toMatchObject({ id: "b", depth: 0 })
     destroy()
   })
 
@@ -1136,7 +1118,7 @@ describe("commands.moveBlocks", () => {
     destroy()
   })
 
-  it("D1: preserves internal depth deltas when re-basing a multi-block move", () => {
+  it("D1: flattens a moved free-depth chain that has no Markdown owner", () => {
     const { editor, destroy } = makeEditor({
       type: "doc",
       content: [
@@ -1149,9 +1131,9 @@ describe("commands.moveBlocks", () => {
 
     expect(editor.commands.moveBlocks(["p", "ch"], { id: "a", side: "before" })).toBe(true)
     expect(ids(editor)).toEqual(["p", "ch", "a"])
-    // First block re-based 1 -> 0 (delta -1); child shifts by the same delta 2 -> 1.
+    // The raw move delta would produce p0/ch1, but a paragraph cannot own ch.
     expect(getDocument(editor)[0]).toMatchObject({ id: "p", depth: 0 })
-    expect(getDocument(editor)[1]).toMatchObject({ id: "ch", depth: 1 })
+    expect(getDocument(editor)[1]).toMatchObject({ id: "ch", depth: 0 })
     destroy()
   })
 
@@ -1223,61 +1205,9 @@ describe("commands.moveBlocks", () => {
     destroy()
   })
 
-  it("chain-safety: F2 unwrap branch (move into a surviving column) survives a chained prior step", () => {
-    const { editor, destroy } = makeEditor({
-      type: "doc",
-      content: [
-        { type: "paragraph", attrs: { id: "r1", depth: 0 }, content: [{ type: "text", text: "root-1" }] },
-        {
-          type: "columnLayout",
-          attrs: { id: "lay", depth: 0 },
-          content: [
-            {
-              type: "column",
-              attrs: { id: "col_a", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "a1", depth: 0 }, content: [{ type: "text", text: "A1" }] },
-              ],
-            },
-            {
-              type: "column",
-              attrs: { id: "col_b", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "b1", depth: 0 }, content: [{ type: "text", text: "B1" }] },
-              ],
-            },
-          ],
-        },
-        { type: "paragraph", attrs: { id: "r2", depth: 0 }, content: [{ type: "text", text: "root-2" }] },
-      ],
-    })
-    editor
-      .chain()
-      .insertContentAt(0, PRE)
-      .moveBlocks(["a1"], { columnId: "col_b", at: "end" })
-      .run()
-    // col_a empties -> the layout unwraps (F2); "content stays put" at the
-    // layout's original slot, now shifted by PRE. The F2 branch never used
-    // `tr.mapping` (it reads `tr.doc` directly, still safe pre-fix) — this
-    // pins that it stays correct once chained after a position-shifting step.
-    expect(getDocument(editor).some((b) => b.type === "columnLayout")).toBe(false)
-    expect(ids(editor)).toEqual(["PRE", "r1", "b1", "a1", "r2"])
-    destroy()
-  })
 })
 
 describe("commands.indentBlock / outdentBlock", () => {
-  function docWithBlocks(blocks: { type: string; id?: string; depth?: number; text?: string }[]) {
-    return {
-      type: "doc" as const,
-      content: blocks.map((b, i) => ({
-        type: b.type,
-        attrs: { id: b.id ?? `b${i}`, depth: b.depth ?? 0 },
-        content: b.text != null ? [{ type: "text", text: b.text }] : [],
-      })),
-    }
-  }
-
   it("3.1 indentBlock(id) on lone paragraph d=0 → no-op under follow-prev (no predecessor → cap=0)", () => {
     const { editor, destroy } = makeEditor(docWithBlocks([{ type: "paragraph", id: "p1", text: "hi" }]))
     expect(editor.commands.indentBlock("p1")).toBe(false)
@@ -1305,6 +1235,33 @@ describe("commands.indentBlock / outdentBlock", () => {
     const { editor, destroy } = makeEditor(docWithBlocks([{ type: "paragraph", id: "p1", text: "hi" }]))
     expect(editor.commands.outdentBlock("p1")).toBe(false)
     expect(getDocument(editor)[0]!.depth).toBe(0)
+    destroy()
+  })
+
+  it("outdents the remaining Toggle-body suffix so no orphan depth survives", () => {
+    const { editor, destroy } = makeEditor(docWithBlocks([
+      { type: "toggle", id: "owner", depth: 0, text: "Owner" },
+      { type: "paragraph", id: "p1", depth: 1, text: "First" },
+      { type: "heading", id: "h1", depth: 1, text: "Second" },
+      { type: "paragraph", id: "outside", depth: 0, text: "Outside" },
+    ]))
+
+    expect(editor.commands.outdentBlock("p1")).toBe(true)
+    expect(getDocument(editor).map((block) => block.depth)).toEqual([0, 0, 0, 0])
+    destroy()
+  })
+
+  it("outdents an owner, its subtree, and its following siblings as one suffix", () => {
+    const { editor, destroy } = makeEditor(docWithBlocks([
+      { type: "bulletList", id: "root", depth: 0, text: "Root" },
+      { type: "toggle", id: "nested", depth: 1, text: "Nested" },
+      { type: "paragraph", id: "child", depth: 2, text: "Child" },
+      { type: "bulletList", id: "sibling", depth: 1, text: "Sibling" },
+      { type: "paragraph", id: "outside", depth: 0, text: "Outside" },
+    ]))
+
+    expect(editor.commands.outdentBlock("nested")).toBe(true)
+    expect(getDocument(editor).map((block) => block.depth)).toEqual([0, 0, 1, 0, 0])
     destroy()
   })
 
@@ -1365,31 +1322,27 @@ describe("commands.indentBlock / outdentBlock", () => {
     destroy()
   })
 
-  it("3.13 block with no indent field defaults to follow-prev (cap = prev sibling depth + 1)", () => {
+  it("3.13 block with no indent field cannot nest under an ordinary predecessor", () => {
     const { editor, destroy } = makeEditor(docWithBlocks([
       { type: "paragraph", id: "p1", text: "hi" },
       { type: "paragraph", id: "p2", text: "there" },
     ]))
-    // p2's prev is p1 at d=0 → cap=1 → first Tab indents to d=1
-    expect(editor.commands.indentBlock("p2")).toBe(true)
-    expect(getDocument(editor)[1]!.depth).toBe(1)
-    // Now at cap (current=1, cap=1) → no-op
     expect(editor.commands.indentBlock("p2")).toBe(false)
-    expect(getDocument(editor)[1]!.depth).toBe(1)
+    expect(getDocument(editor)[1]!.depth).toBe(0)
     destroy()
   })
 
   describe("MBS spread", () => {
-    it("3.10 indentBlock() MBS over [paragraph d=0, paragraph d=1, paragraph d=0] → [d=0, d=1, d=1]", () => {
+    it("3.10 indentBlock() MBS does not create a free paragraph depth chain", () => {
       const { editor, destroy } = makeEditor(docWithBlocks([
         { type: "paragraph", id: "p1", depth: 0, text: "a" },
-        { type: "paragraph", id: "p2", depth: 1, text: "b" },
+        { type: "paragraph", id: "p2", depth: 0, text: "b" },
         { type: "paragraph", id: "p3", depth: 0, text: "c" },
       ]))
       editor.commands.setBlockSelection({ from: "p1", to: "p3" })
-      expect(editor.commands.indentBlock()).toBe(true)
+      expect(editor.commands.indentBlock()).toBe(false)
       const doc = getDocument(editor)
-      expect(doc.map((b) => b.depth)).toEqual([0, 1, 1])
+      expect(doc.map((b) => b.depth)).toEqual([0, 0, 0])
       destroy()
     })
 
@@ -1431,65 +1384,59 @@ describe("commands.indentBlock / outdentBlock", () => {
       destroy()
     })
 
-    it("3.16 indentBlock cannot exceed prev sibling depth + 1 (multiple Tabs)", () => {
+    it("3.16 indentBlock can reach the direct child depth of a nested list owner", () => {
       const { editor, destroy } = makeEditor(docWithBlocks([
         { type: "numberedList", id: "n1", depth: 0, text: "a" },
-        { type: "numberedList", id: "n2", depth: 2, text: "b" },
+        { type: "numberedList", id: "n2", depth: 1, text: "b" },
+        { type: "numberedList", id: "n3", depth: 2, text: "c" },
         { type: "paragraph", id: "p1", depth: 0, text: "c" },
       ]))
-      // prev = numList d=2 → cap=3; can reach d=3 (aligns with list content column)
       expect(editor.commands.indentBlock("p1")).toBe(true)
-      expect(getDocument(editor)[2]!.depth).toBe(1)
+      expect(getDocument(editor)[3]!.depth).toBe(1)
       expect(editor.commands.indentBlock("p1")).toBe(true)
-      expect(getDocument(editor)[2]!.depth).toBe(2)
+      expect(getDocument(editor)[3]!.depth).toBe(2)
       expect(editor.commands.indentBlock("p1")).toBe(true)
-      expect(getDocument(editor)[2]!.depth).toBe(3)
+      expect(getDocument(editor)[3]!.depth).toBe(3)
       expect(editor.commands.indentBlock("p1")).toBe(false)
-      expect(getDocument(editor)[2]!.depth).toBe(3)
+      expect(getDocument(editor)[3]!.depth).toBe(3)
       destroy()
     })
 
-    it("3.17 indentBlock follow-prev works when prev is also non-list", () => {
+    it("3.17 indentBlock never treats a non-list predecessor as an owner", () => {
       const { editor, destroy } = makeEditor(docWithBlocks([
         { type: "paragraph", id: "p1", depth: 3, text: "anchored deep somehow" },
         { type: "paragraph", id: "p2", depth: 0, text: "after" },
       ]))
-      // prev = paragraph d=3 → cap=4
-      expect(editor.commands.indentBlock("p2")).toBe(true)
-      expect(getDocument(editor)[1]!.depth).toBe(1)
-      expect(editor.commands.indentBlock("p2")).toBe(true)
-      expect(getDocument(editor)[1]!.depth).toBe(2)
-      expect(editor.commands.indentBlock("p2")).toBe(true)
-      expect(getDocument(editor)[1]!.depth).toBe(3)
-      expect(editor.commands.indentBlock("p2")).toBe(true)
-      expect(getDocument(editor)[1]!.depth).toBe(4)
       expect(editor.commands.indentBlock("p2")).toBe(false)
+      expect(getDocument(editor)[1]!.depth).toBe(0)
       destroy()
     })
 
     it("3.18 indentBlock MBS reads pre-transaction doc for each target's cap (discriminating)", () => {
-      // Seed: [numList d=2, paragraph d=0, paragraph d=1]
+      // Seed has a valid d0→d1→d2 list owner chain, then two paragraphs.
       // MBS over [p1, p2]:
       //   p1's prev = numList d=2 → cap=3; current=0 < cap → +1 → d=1
       //   p2's prev IN THE ORIGINAL DOC = p1 d=0 → cap=1; current=1 ≥ cap → no-op (stays 1)
       // If implementation reads the live (in-pass) doc, p2 would see p1 now at d=1,
       // cap=2, current=1 < cap, and incorrectly indent to d=2. p2.depth=1 catches that.
       const { editor, destroy } = makeEditor(docWithBlocks([
-        { type: "numberedList", id: "n1", depth: 2, text: "anchor" },
+        { type: "numberedList", id: "n0", depth: 0, text: "root" },
+        { type: "numberedList", id: "n1", depth: 1, text: "child" },
+        { type: "numberedList", id: "n2", depth: 2, text: "anchor" },
         { type: "paragraph", id: "p1", depth: 0, text: "first" },
         { type: "paragraph", id: "p2", depth: 1, text: "second" },
       ]))
       editor.commands.setBlockSelection({ from: "p1", to: "p2" })
       expect(editor.commands.indentBlock()).toBe(true)
       const doc = getDocument(editor)
-      expect(doc.map((b) => b.depth)).toEqual([2, 1, 1])
+      expect(doc.map((b) => b.depth)).toEqual([0, 1, 2, 1, 1])
       destroy()
     })
   })
 
   it("chain-safety: indents 'b', chained after insertContentAt(0)", () => {
     const { editor, destroy } = makeEditor(docWithBlocks([
-      { type: "paragraph", id: "a", text: "A" },
+      { type: "bulletList", id: "a", text: "A" },
       { type: "paragraph", id: "b", text: "B" },
     ]))
     editor.chain().insertContentAt(0, PRE).indentBlock("b").run()
@@ -1560,59 +1507,6 @@ describe("commands.turnInto — chain safety (task #17)", () => {
         .run()
     expect(run).not.toThrow()
     expect(ids(editor)).toEqual(["a"])
-    destroy()
-  })
-})
-
-describe("commands.wrapIntoColumns — chain safety (task #17)", () => {
-  function flatDoc(blockIds: string[]) {
-    return {
-      type: "doc" as const,
-      content: blockIds.map((id) => ({
-        type: "paragraph",
-        attrs: { id, depth: 0 },
-        content: [{ type: "text", text: id.toUpperCase() }],
-      })),
-    }
-  }
-
-  function layoutOf(editor: Editor): RuneColumnsBlock | undefined {
-    return getDocument(editor).find(
-      (b): b is RuneColumnsBlock => b.type === "columnLayout",
-    )
-  }
-
-  it("wraps 'a' + 'c' into a 2-column layout, chained after insertContentAt(0)", () => {
-    const { editor, destroy } = makeEditor(flatDoc(["a", "b", "c"]))
-    editor
-      .chain()
-      .insertContentAt(0, PRE)
-      .wrapIntoColumns(["c"], { id: "a", side: "right" })
-      .run()
-    const layout = layoutOf(editor)
-    expect(layout).toBeDefined()
-    expect(layout!.columns.map((c) => c.children.map((ch) => ch.id))).toEqual([["a"], ["c"]])
-    expect(ids(editor)).toEqual(["PRE", layout!.id, "b"])
-    destroy()
-  })
-
-  it("wraps 'b' + 'd' into a 2-column layout, chained after a prior deleteBlocks (shrinking step)", () => {
-    const { editor, destroy } = makeEditor(flatDoc(["a", "b", "c", "d"]))
-    editor.chain().deleteBlocks(["a"]).wrapIntoColumns(["d"], { id: "b", side: "right" }).run()
-    const layout = layoutOf(editor)
-    expect(layout).toBeDefined()
-    expect(layout!.columns.map((c) => c.children.map((ch) => ch.id))).toEqual([["b"], ["d"]])
-    expect(ids(editor)).toEqual([layout!.id, "c"])
-    destroy()
-  })
-
-  it("no-ops (no throw) when its wrap target was deleted by a prior chained step", () => {
-    const { editor, destroy } = makeEditor(flatDoc(["a", "b", "c"]))
-    const run = () =>
-      editor.chain().deleteBlocks(["a"]).wrapIntoColumns(["c"], { id: "a", side: "right" }).run()
-    expect(run).not.toThrow()
-    expect(layoutOf(editor)).toBeUndefined()
-    expect(ids(editor)).toEqual(["b", "c"])
     destroy()
   })
 })

@@ -57,8 +57,7 @@ export function surfacePrevBlockStart($from: ResolvedPos): number {
  * sibling whose `depth <= toggle.depth`, or at the surface's boundary (end
  * of the toggle's parent's children).
  *
- * "Surface" is the toggle's PARENT node — `<doc>` at the root, a `column`
- * inside a `columnLayout`. The walk is pure node-tree + depth-attr math
+ * "Surface" is the toggle's parent node. The walk is pure node-tree + depth-attr math
  * (`doc.resolve(togglePos).parent` + `$pos.index()`), NOT a registry/editor
  * lookup, so `handleKeyDown(view)` sites (which have no `editor`) keep
  * working unchanged.
@@ -159,8 +158,8 @@ export function expandRangeOverToggleBodies(
 
 /**
  * Find the absolute position of a `toggle` node by its `id` attribute,
- * searching the WHOLE document — root surface AND nested surfaces (a
- * `column` inside a `columnLayout`). Returns `-1` when no toggle carries
+ * searching the whole document, including plugin-provided nested surfaces.
+ * Returns `-1` when no toggle carries
  * that id.
  *
  * Pure node-tree walk — no editor / registry — so `handleDOMEvents` /

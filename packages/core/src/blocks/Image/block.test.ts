@@ -26,6 +26,7 @@ describe("Image block", () => {
     const node = type!.create()
     expect(node.attrs.src).toBe("")
     expect(node.attrs.alt).toBe("")
+    expect(node.attrs.title).toBeNull()
     expect(node.attrs.width).toBeNull()
     expect(node.attrs.height).toBeNull()
     expect(node.attrs.sourceUrl).toBeNull()
@@ -42,13 +43,14 @@ describe("Image block", () => {
     const editor = createTestEditor()
 
     editor.commands.setContent(
-      '<img src="https://example.com/a.png" alt="Alt text" width="640" height="480">',
+      '<img src="https://example.com/a.png" alt="Alt text" title="Advisory" width="640" height="480">',
     )
 
     const node = editor.state.doc.firstChild
     expect(node?.type.name).toBe("image")
     expect(node?.attrs.src).toBe("https://example.com/a.png")
     expect(node?.attrs.alt).toBe("Alt text")
+    expect(node?.attrs.title).toBe("Advisory")
     expect(node?.attrs.width).toBe(640)
     expect(node?.attrs.height).toBe(480)
     expect(node?.attrs.contentWidth).toBeNull()
@@ -86,6 +88,7 @@ describe("Image block", () => {
               depth: 0,
               src: "https://example.com/a.png",
               alt: "A",
+              title: "Advisory",
               width: 640,
               height: 480,
             },
@@ -103,6 +106,7 @@ describe("Image block", () => {
     expect(img).not.toBeNull()
     expect(img!.getAttribute("src")).toBe("https://example.com/a.png")
     expect(img!.getAttribute("alt")).toBe("A")
+    expect(img!.getAttribute("title")).toBe("Advisory")
     expect(img!.getAttribute("width")).toBe("640")
     expect(img!.getAttribute("height")).toBe("480")
     // Native HTML5 image drag must be off so it doesn't trigger
@@ -183,34 +187,6 @@ describe("Image block", () => {
     expect(outer?.querySelector(".rune-resize-handle")).toBeNull()
   })
 
-  it("places background color on .rune-block-content and not on outer .rune-block", () => {
-    const editor = createTestEditor({
-      content: {
-        type: "doc",
-        content: [
-          {
-            type: "image",
-            attrs: {
-              id: "img-color",
-              src: "https://example.com/a.png",
-              alt: "",
-            },
-          },
-        ],
-      } as never,
-    })
-
-    editor.commands.setBlockBackgroundColor(0, "blue")
-
-    const outer = editor.view.dom.querySelector<HTMLElement>(".rune-block.rune-image")
-    const content = outer?.querySelector<HTMLElement>(":scope > .rune-block-content")
-
-    expect(outer).not.toBeNull()
-    expect(content).not.toBeNull()
-    expect(outer!.hasAttribute("data-background-color")).toBe(false)
-    expect(content!.getAttribute("data-background-color")).toBe("blue")
-  })
-
   it("preserves depth style while adding --block-pad-top", () => {
     const editor = createTestEditor({
       content: {
@@ -243,13 +219,14 @@ describe("Image block", () => {
     const node = editor.schema.nodes.image!.create({
       src: "https://example.com/a.png",
       alt: "Alt",
+      title: "Advisory",
       width: 640,
       height: 480,
     })
 
     expect(spec?.clipboardRenderDOM?.({ node })).toEqual([
       "img",
-      { src: "https://example.com/a.png", alt: "Alt" },
+      { src: "https://example.com/a.png", alt: "Alt", title: "Advisory" },
     ])
   })
 
@@ -269,6 +246,7 @@ describe("Image block", () => {
       depth: 1,
       src: "https://cdn.example/a.png",
       alt: "Alt",
+      title: "Advisory",
       width: 640,
       height: 480,
       sourceUrl: "https://source.example/a.png",
@@ -280,6 +258,7 @@ describe("Image block", () => {
       depth: 1,
       src: "https://cdn.example/a.png",
       alt: "Alt",
+      title: "Advisory",
       width: 640,
       height: 480,
       sourceUrl: "https://source.example/a.png",
@@ -317,6 +296,7 @@ describe("Image block", () => {
         id: "img2",
         src: "https://cdn.example/b.png",
         alt: "B",
+        title: "Imported title",
         contentWidth: 2,
       },
       defaults: { depth: 0 },
@@ -324,6 +304,7 @@ describe("Image block", () => {
     })
 
     expect(built?.attrs.contentWidth).toBe(10)
+    expect(built?.attrs.title).toBe("Imported title")
   })
 
   it("round-trips image contentWidth through generated HTML", () => {
@@ -469,7 +450,6 @@ describe("Image block", () => {
     const spec = getBlockSpecs(editor).image
 
     expect(spec?.supports).toMatchObject({
-      backgroundColor: true,
       resize: true,
       mediaSource: true,
     })

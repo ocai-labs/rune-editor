@@ -9,7 +9,6 @@ import { Editor } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import { Heading } from "./block";
-import { BlockBackgroundColor, BlockTextColor } from "../../extensions/color";
 
 describe("Heading block", () => {
   it("contributes four slash items — heading_1, heading_2, heading_3, heading_4", () => {
@@ -29,17 +28,48 @@ describe("Heading block", () => {
     editor.destroy();
   });
 
-  it("renderDOM produces .rune-block > .rune-block-content > <hN> for each level (UI H1/H2/H3/H4 → h2/h3/h4/h5)", () => {
+  it("levels 1–6 render and parse with identity-preserving HTML tags", () => {
     const editor = new Editor({
       element: document.createElement("div"),
       extensions: [Document, Heading, Text],
       content: {
         type: "doc",
         content: [
+          ...[1, 2, 3, 4, 5, 6].map((level) => ({
+            type: "heading",
+            attrs: { level },
+            content: [{ type: "text", text: `h${level}` }],
+          })),
+        ],
+      } as never,
+    });
+    const html = editor.getHTML();
+    for (const level of [1, 2, 3, 4, 5, 6]) {
+      expect(html).toContain(`<h${level}>h${level}</h${level}>`)
+    }
+    expect(html).not.toContain("data-level=")
+
+    editor.commands.setContent(html);
+    const levels: number[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "heading") levels.push(node.attrs.level);
+      return true;
+    });
+    expect(levels).toEqual([1, 2, 3, 4, 5, 6]);
+    editor.destroy();
+  });
+
+  it("renderDOM produces .rune-block > .rune-block-content > <hN> with identity levels", () => {
+    const editor = new Editor({
+      element: document.createElement("div"),
+      extensions: [Document, Heading, Text],
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "h1 text" }] },
           { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "h2 text" }] },
           { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "h3 text" }] },
           { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "h4 text" }] },
-          { type: "heading", attrs: { level: 5 }, content: [{ type: "text", text: "h5 text" }] },
         ],
       } as never,
     });
@@ -52,12 +82,12 @@ describe("Heading block", () => {
       expect(inner.classList.contains("rune-block-content")).toBe(true);
       return (inner.firstElementChild as HTMLElement).tagName;
     });
-    expect(tags).toEqual(["H2", "H3", "H4", "H5"]);
+    expect(tags).toEqual(["H1", "H2", "H3", "H4"]);
 
     editor.destroy();
   });
 
-  it("registers heading--extras with Mod-Alt-1/2/3/4 shortcuts mapped to internal levels 2/3/4/5", () => {
+  it("registers heading--extras with Mod-Alt-1/2/3/4 identity levels", () => {
     const editor = new Editor({
       element: document.createElement("div"),
       extensions: [Document, Heading, Text],
@@ -86,44 +116,21 @@ describe("Heading block", () => {
 
     shortcuts["Mod-Alt-1"]({ editor });
     expect(editor.state.doc.firstChild?.type.name).toBe("heading");
-    expect(editor.state.doc.firstChild?.attrs.level).toBe(2);
+    expect(editor.state.doc.firstChild?.attrs.level).toBe(1);
 
     shortcuts["Mod-Alt-2"]({ editor });
-    expect(editor.state.doc.firstChild?.attrs.level).toBe(3);
+    expect(editor.state.doc.firstChild?.attrs.level).toBe(2);
 
     shortcuts["Mod-Alt-3"]({ editor });
-    expect(editor.state.doc.firstChild?.attrs.level).toBe(4);
+    expect(editor.state.doc.firstChild?.attrs.level).toBe(3);
 
     shortcuts["Mod-Alt-4"]({ editor });
-    expect(editor.state.doc.firstChild?.attrs.level).toBe(5);
+    expect(editor.state.doc.firstChild?.attrs.level).toBe(4);
 
     editor.destroy();
   });
 
-  it("places block-color attrs on .rune-block-content for every heading level", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: [Document, Heading, Text, BlockBackgroundColor, BlockTextColor],
-    })
-
-    for (const [tag, level] of [["h2", 2], ["h3", 3], ["h4", 4], ["h5", 5]] as const) {
-      editor.commands.setContent(`<${tag}>x</${tag}>`)
-      editor.commands.setBlockBackgroundColor(0, "blue")
-      const html = editor.getHTML()
-      expect(html).toMatch(
-        new RegExp(
-          `<div[^>]*class="rune-block-content"[^>]*data-background-color="blue"[^>]*><${tag}>x</${tag}>`,
-        ),
-      )
-      expect(html).not.toMatch(
-        /<div[^>]*class="rune-block"[^>]*data-background-color/,
-      )
-      void level // exercised via setContent tag only — level is intrinsic to <h${n}>
-    }
-    editor.destroy()
-  })
-
-  it("registers four Markdown input rules — # / ## / ### / #### — mapped to internal levels 2/3/4/5", () => {
+  it("registers four Markdown input rules — # / ## / ### / #### — mapped to identity levels 1/2/3/4", () => {
     const editor = new Editor({
       element: document.createElement("div"),
       extensions: [Document, Heading, Text],
@@ -155,7 +162,7 @@ describe("Heading block", () => {
 });
 
 describe("Heading — clipboardRenderDOM", () => {
-  it.each([2, 3, 4, 5] as const)("emits bare <h%i> for level %i", (level) => {
+  it.each([1, 2, 3, 4, 5, 6] as const)("emits bare <h%i> for level %i", (level) => {
     const editor = new Editor({
       element: document.createElement("div"),
       extensions: [Document, Heading, Text],

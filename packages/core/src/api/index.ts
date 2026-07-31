@@ -46,8 +46,6 @@ export {
 export { getSelectionSnapshot, replaceSelectionText } from "./selection"
 export { setInlineMark, posAtBlockOffset } from "./inlineMark"
 export type { SetInlineMarkInput, SetInlineMarkData } from "./inlineMark"
-export { setBlockColor } from "./blockColor"
-export type { SetBlockColorInput, SetBlockColorData, BlockColorKind } from "./blockColor"
 export type {
   RuneSelectionBlockRange,
   RuneSelectionKind,
@@ -62,7 +60,6 @@ export type {
   BlockIdInsertTarget,
   BlockInsertTarget,
   BlockUpdate,
-  ColumnInsertTarget,
   DeleteBlocksTarget,
   InsertBlocksByIdOptions,
   InsertBlocksOptions,
@@ -70,5 +67,4 @@ export type {
   RuneBlockInput,
   TurnIntoBlockInput,
   TurnIntoTarget,
-  WrapIntoColumnsTarget,
 } from "./types"

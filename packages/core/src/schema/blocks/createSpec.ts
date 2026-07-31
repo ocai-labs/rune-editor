@@ -23,6 +23,7 @@ import {
   type RuneBlockProjectionContext,
   type RuneBlockExtensionInput,
   type RuneBlockSchemaContextSpec,
+  type RuneMarkdownBlockContract,
   type RuneMarkdownBlockSerializer,
   type RuneSchemaContextPropMetadata,
   type RuneSchemaContextPropType,
@@ -77,8 +78,6 @@ export interface BlockSideMenuSpec {
 }
 
 export interface BlockSupportsSpec {
-  textColor?: boolean
-  backgroundColor?: boolean
   resize?: boolean
   mediaSource?: boolean
   fitToWidth?: boolean
@@ -137,7 +136,7 @@ export interface BlockMetaSpec {
    * The ProseMirror node-spec `marks` allow-list. Omit (the default) → the node
    * permits every registered mark. `""` → the node permits NO inline marks, so
    * bold/italic/color/link/etc. can never be applied or pasted into it. Use for
-   * plain-text display nodes like the page title. rune-react's InlineToolbar
+   * plugin-provided plain-text display nodes. rune-react's InlineToolbar
    * reads this off the schema and stays closed over a selection wholly inside a
    * marks-free block (a formatting toolbar with nothing to format is noise).
    */
@@ -172,11 +171,10 @@ export type BlockSpecFromInput = (args: {
  * - `structural`: no numeric cap. Tab succeeds only when the block has a
  *   same-kind same-depth predecessor (Notion list behavior). Used by
  *   bullet / numbered / task lists.
- * - `follow-prev`: cap = (immediately preceding top-level block's
- *   `depth`) + 1. If there is no preceding block, the cap is 0. The +1
- *   accounts for rune's list-marker layout: list[d=N] text content sits
- *   at column (N+1)*step, so a paragraph aligned with that content needs
- *   depth N+1. See spec 2026-05-19-issue-254.
+ * - `follow-prev`: follows the Markdown depth-owner boundary. Structural
+ *   list items and contracts with `markdown.absorbsDeeperRun` may open one
+ *   child level. Ordinary blocks may continue that owner's body level but
+ *   cannot own another deeper level. Without an owner the cap is 0.
  *
  * When omitted from a block spec, the consumer treats it as
  * `{ mode: "follow-prev" }`. Spec §4.
@@ -208,7 +206,7 @@ export interface BlockSpecConfig {
    * and is not passed to clipboardRenderDOM.
    */
   bleed?: "content" | "full"
-  /** Indent mode declaration. Spec §4. Default when omitted: `follow-prev`. */
+  /** Indent mode declaration. Default when omitted: `follow-prev`. */
   indent?: IndentConfig
   /** ParseRules in Tiptap's format. `getAttrs` / `attrs` are merged
    *  with the shared-attribute parsers the factory injects.
@@ -219,7 +217,7 @@ export interface BlockSpecConfig {
    *  linkedom/jsdom one whose classes are not (and in a bare Node process,
    *  where the global doesn't exist at all, cannot be) the page globals.
    *  the architecture notes §13; regression test in
-   *  `extensions/clipboard/markdownToDoc.headless.test.ts`. */
+   *  `extensions/clipboard/realmSafety.headless.test.ts`. */
   parseDOM: TagParseRule[]
   /** Serializer. Receives the Tiptap node and the merged HTMLAttributes
    *  object (already containing `data-id` / `data-depth` when non-empty).
@@ -309,8 +307,8 @@ export interface BlockSpecConfig {
   /** Gutter/side-menu integration. */
   sideMenu?: BlockSideMenuSpec
   /**
-   * A block marked `agentHidden` is excluded from rune-ai read-tool outputs
-   * (the AI can't target it) — e.g. a structural page title.
+   * A block marked `agentHidden` is excluded from rune-ai read-tool outputs,
+   * so host/plugin chrome cannot be targeted by the model.
    */
   agentHidden?: boolean
   /** Block-owned capability flags consumed by schema/UI integration. */
@@ -352,6 +350,15 @@ export interface BlockSpecConfig {
    * switch. Return `null` to skip the block entirely.
    */
   toMarkdown?: RuneMarkdownBlockSerializer
+  /**
+   * Bidirectional STORAGE-markdown contract (markdown-storage PRD §5.2) —
+   * the remark/mdast pipeline in `core/src/markdown`. Distinct from
+   * `toMarkdown` above (the legacy one-way export dialect, scheduled to be
+   * replaced): this pair must round-trip. Collected statically from the
+   * extension — no editor involved. See `RuneMarkdownBlockContract` for the
+   * walker/contract division of labor.
+   */
+  markdown?: RuneMarkdownBlockContract
   /** Per-block declarative extensions (shortcuts + input rules). The factory
    *  compiles these into Tiptap Extensions registered via `addExtensions()`,
    *  so kit assembly does NOT need to know about them. */
@@ -580,6 +587,7 @@ export function createBlockSpec(config: BlockSpecConfig) {
     indent: config.indent,
     dragSourceRange: config.dragSourceRange,
     toMarkdown: config.toMarkdown,
+    markdown: config.markdown,
     blockActions: config.blockActions,
   }
 

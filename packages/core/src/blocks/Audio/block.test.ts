@@ -242,8 +242,7 @@ describe("Audio block", () => {
 
   it("insertBlocks supports populated audio blocks", () => {
     const editor = createTestEditor({
-      // Leading block at depth 0 so the inserted depth: 1 is legal under Task 5
-      // destination clamping (cap = prev depth + 1 = 1).
+      // An ordinary leading paragraph is not a Markdown depth owner.
       content: {
         type: "doc",
         content: [{ type: "paragraph", content: [{ type: "text", text: "lead" }] }],
@@ -257,7 +256,7 @@ describe("Audio block", () => {
     ).toBe(true)
 
     expect(getDocument(editor)[1]).toEqual(
-      { type: "audio", id: "aud1", depth: 1, ...audioAttrs },
+      { type: "audio", id: "aud1", depth: 0, ...audioAttrs },
     )
   })
 

@@ -9,7 +9,7 @@ import { Editor } from "@tiptap/core"
 import Document from "@tiptap/extension-document"
 import Text from "@tiptap/extension-text"
 import { NodeSelection } from "@tiptap/pm/state"
-import { Divider, ColumnLayout, Column } from "../../blocks"
+import { Divider } from "../../blocks"
 import { createBlockSpec } from "../../schema"
 import { resolvePlaceholder } from "./resolve"
 import type { PlaceholderConfig } from "./types"
@@ -24,23 +24,14 @@ const Para = createBlockSpec({
 const Heading = createBlockSpec({
   type: "heading",
   content: "inline*",
-  props: { level: { default: 2, renderHTML: () => ({}) } },
+  props: { level: { default: 1, renderHTML: () => ({}) } },
   parseDOM: [
+    { tag: "h1", attrs: { level: 1 } },
     { tag: "h2", attrs: { level: 2 } },
     { tag: "h3", attrs: { level: 3 } },
     { tag: "h4", attrs: { level: 4 } },
   ],
   renderDOM: ({ node }) => [`h${node.attrs.level as number}`, {}, 0],
-})
-
-// Minimal stand-in for the opt-in TitleKit block — enough to register a
-// `title` node type so the resolver opt-out path can be exercised here
-// without pulling in TitleBoundary's keymaps/normalization.
-const Title = createBlockSpec({
-  type: "title",
-  content: "inline*",
-  parseDOM: [{ tag: "h1" }],
-  renderDOM: () => ["h1", {}, 0],
 })
 
 function makeEditor(html: string) {
@@ -55,7 +46,7 @@ function makeEditor(html: string) {
 
 const baseConfig: PlaceholderConfig = {
   default: '"/" for commands',
-  heading: (node) => `Heading ${(node.attrs.level as number) - 1}`,
+  heading: (node) => `Heading ${node.attrs.level as number}`,
 }
 
 function firstHit(
@@ -137,41 +128,11 @@ describe("resolvePlaceholder", () => {
     editor.destroy()
   })
 
-  it("opts the in-document title out: a focused empty title gets no placeholder (CSS owns 'New page')", () => {
-    // rune-react ships `title: undefined` in its default placeholders so the
-    // ONLY empty-title hint is title.css's always-on "New page" ::before.
-    // A focused empty title must therefore NOT also fall through to the
-    // `default` slash hint — otherwise it double-renders (the bug FIX 1
-    // closes).
-    const element = document.createElement("div")
-    document.body.appendChild(element)
-    const editor = new Editor({
-      element,
-      extensions: [Document, Text, Title, Para],
-      content: "<h1></h1><p>body</p>",
-    })
-    editor.commands.setTextSelection(1) // caret inside the empty title
-    const optedOut: PlaceholderConfig = {
-      ...baseConfig,
-      // `title` isn't in the typed key union (opt-in TitleKit block); spread
-      // a Record so the literal doesn't trip the excess-property check.
-      ...({ title: undefined } as Record<string, undefined>),
-    }
-    expect(resolvePlaceholder(editor.state, optedOut, true, true)).toEqual([])
-
-    // Control: WITHOUT the opt-out the focused empty title falls through to
-    // `default` — exactly the hint that would double up with the CSS ::before.
-    const hit = firstHit(resolvePlaceholder(editor.state, baseConfig, true, true))
-    expect(hit?.node.type.name).toBe("title")
-    expect(hit?.text).toBe('"/" for commands')
-    editor.destroy()
-  })
-
-  it("maps single-block empty headings from internal 2/3/4 to UI 1/2/3", () => {
+  it("maps empty heading tags directly to their UI levels", () => {
     for (const [tag, label] of [
-      ["h2", "Heading 1"],
-      ["h3", "Heading 2"],
-      ["h4", "Heading 3"],
+      ["h1", "Heading 1"],
+      ["h2", "Heading 2"],
+      ["h3", "Heading 3"],
     ] as const) {
       const editor = makeEditor(`<${tag}></${tag}>`)
       const hit = firstHit(resolvePlaceholder(editor.state, baseConfig, true, true))
@@ -184,7 +145,7 @@ describe("resolvePlaceholder", () => {
     const editor = makeEditor("<p>title</p><h2></h2>")
     editor.commands.setTextSelection(editor.state.doc.content.size)
     const hit = firstHit(resolvePlaceholder(editor.state, baseConfig, true, true))
-    expect(hit?.text).toBe("Heading 1")
+    expect(hit?.text).toBe("Heading 2")
     editor.destroy()
   })
 
@@ -202,7 +163,7 @@ describe("resolvePlaceholder", () => {
       const hits = resolvePlaceholder(editor.state, baseConfig, true, true)
       const headingHits = hits.filter((h) => h.node.type.name === "heading")
       expect(headingHits).toHaveLength(2)
-      expect(headingHits.map((h) => h.text)).toEqual(["Heading 1", "Heading 2"])
+      expect(headingHits.map((h) => h.text)).toEqual(["Heading 2", "Heading 3"])
       expect(headingHits.every((h) => h.state === "per-type")).toBe(true)
     })
 
@@ -229,7 +190,7 @@ describe("resolvePlaceholder", () => {
       const editor = makeEditor("<h2>title</h2><h3></h3>")
       const hits = resolvePlaceholder(editor.state, baseConfig, false, true)
       expect(hits).toHaveLength(1)
-      expect(hits[0]?.text).toBe("Heading 2")
+      expect(hits[0]?.text).toBe("Heading 3")
     })
 
     it("opts out cleanly when `heading: undefined` is configured", () => {
@@ -305,55 +266,4 @@ describe("resolvePlaceholder", () => {
     expect(typo).toBeDefined()
   })
 
-  describe("columns (nested body surface)", () => {
-    function makeColumnsEditor(html: string) {
-      const element = document.createElement("div")
-      document.body.appendChild(element)
-      return new Editor({
-        element,
-        extensions: [Document, Text, Para, Heading, Divider, ColumnLayout, Column],
-        content: html,
-      })
-    }
-
-    const COLS = (left: string, right = "<p>right</p>") =>
-      `<div data-rune-columns><div data-rune-column>${left}</div><div data-rune-column>${right}</div></div>`
-
-    it("focused empty paragraph inside a column gets the default placeholder", () => {
-      const editor = makeColumnsEditor(COLS("<p>left</p><p></p>"))
-      // Caret into the column's empty paragraph (second child of column 1).
-      let target = -1
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "paragraph" && node.content.size === 0) target = pos
-      })
-      expect(target).toBeGreaterThan(-1)
-      editor.commands.setTextSelection(target + 1)
-      const hit = firstHit(resolvePlaceholder(editor.state, baseConfig, true, true))
-      expect(hit?.text).toBe('"/" for commands')
-      expect(hit?.node.type.name).toBe("paragraph")
-      expect(hit?.pos).toBe(target)
-      editor.destroy()
-    })
-
-    it("empty heading inside a column is always-on, even unfocused", () => {
-      const editor = makeColumnsEditor(COLS("<p>left</p><h2></h2>"))
-      const hits = resolvePlaceholder(editor.state, baseConfig, false, true)
-      expect(hits).toHaveLength(1)
-      expect(hits[0]?.node.type.name).toBe("heading")
-      expect(hits[0]?.text).toBe("Heading 1")
-      editor.destroy()
-    })
-
-    it("does not double-emit when the focused column block is also a heading", () => {
-      const editor = makeColumnsEditor(COLS("<p>left</p><h2></h2>"))
-      let target = -1
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "heading") target = pos
-      })
-      editor.commands.setTextSelection(target + 1)
-      const hits = resolvePlaceholder(editor.state, baseConfig, true, true)
-      expect(hits).toHaveLength(1)
-      editor.destroy()
-    })
-  })
 })

@@ -84,7 +84,7 @@ function flattenOne(doc: Document, root: Element, depthOffset: number): void {
 
 interface Extracted {
   titleEl: Element
-  level: 0 | 2 | 3 | 4
+  level: 0 | 1 | 2 | 3
   expanded: boolean
   bodyEls: Element[]
 }
@@ -119,15 +119,14 @@ function extractTitleAndBody(doc: Document, root: Element): Extracted {
   return { titleEl, level, expanded, bodyEls }
 }
 
-function headingLevelFromTag(tag: string): 0 | 2 | 3 | 4 {
-  // Toggle Heading caps at UI H3 (internal 4 → <h4>). Pasted H5/H6 from
-  // other tools collapses to H4 here so a "Heading 5" toggle from an
+function headingLevelFromTag(tag: string): 0 | 1 | 2 | 3 {
+  // Toggle Heading caps at H3. Pasted H4/H5/H6 from other tools collapses to
+  // H3 here so a deeper toggle heading from an
   // external doc still lands as a toggle — just one level shallower.
   const m = /^H([1-6])$/.exec(tag.toUpperCase())
   if (!m) return 0
   const n = Number(m[1])
-  if (n === 1) return 2
+  if (n === 1) return 1
   if (n === 2) return 2
-  if (n === 3) return 3
-  return 4
+  return 3
 }

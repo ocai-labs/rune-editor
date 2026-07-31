@@ -88,8 +88,8 @@ export const RUNE_SHORTCUT_ACTIONS: Readonly<
   // only the Mod-Enter chord participates in remapping.
   hardBreak: { keys: ["Mod-Enter"], label: "Hard break" },
   blockParagraph: { keys: ["Mod-Alt-0"], label: "Turn into text" },
-  // UI heading 1..4 store internal level 2..5 (<h2>..<h5>) — the page reserves
-  // <h1> for the document title. The action ids follow the UI numbering.
+  // UI heading 1..4 map directly to schema/HTML levels 1..4. The action ids
+  // follow that same numbering.
   blockHeading1: { keys: ["Mod-Alt-1"], label: "Turn into heading 1" },
   blockHeading2: { keys: ["Mod-Alt-2"], label: "Turn into heading 2" },
   blockHeading3: { keys: ["Mod-Alt-3"], label: "Turn into heading 3" },

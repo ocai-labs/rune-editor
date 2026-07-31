@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest"
 import { Editor } from "@tiptap/core"
 import { TextSelection } from "@tiptap/pm/state"
 import { createRuneKit as kit } from "../../kit"
+import { createBlockSpec } from "../../schema"
 import { handlePaste } from "./handlePaste"
 
 function makeEditor(content = "<p>seed</p>") {
@@ -17,6 +18,25 @@ function makeEditor(content = "<p>seed</p>") {
     element: document.createElement("div"),
   })
 }
+
+const ContractPasteBlock = createBlockSpec({
+  type: "contractPasteBlock",
+  content: "",
+  parseDOM: [{ tag: "div[data-contract-paste-block]" }],
+  renderDOM: ({ HTMLAttributes }) => [
+    "div",
+    { ...HTMLAttributes, class: "rune-block", "data-contract-paste-block": "" },
+  ],
+  markdown: {
+    toMdast: () => ({
+      type: "heading",
+      depth: 1,
+      children: [{ type: "text", value: "Plugin" }],
+    }),
+    fromMdast: (node) =>
+      node.type === "heading" ? { type: "contractPasteBlock" } : null,
+  },
+})
 
 // jsdom doesn't ship ClipboardEvent / DataTransfer. Mint a minimal mock.
 function makePasteEvent(mimes: Record<string, string>): ClipboardEvent {
@@ -134,14 +154,14 @@ describe("handlePaste — markdown text path", () => {
     editor.destroy()
   })
 
-  it("maps Markdown `#` to Heading level 2, not <h1>/paragraph (decision a)", () => {
+  it("maps Markdown `#` to Heading level 1", () => {
     const editor = makeEditor()
     editor.commands.selectAll()
     const event = makePasteEvent({ "text/plain": "# Title\n\nbody\n" })
 
     expect(handlePaste(editor.view as any, event, editor)).toBe(true)
     const heading = findBlocks(editor, "heading").find((h) => h.textContent === "Title")
-    expect(heading?.attrs.level).toBe(2)
+    expect(heading?.attrs.level).toBe(1)
     editor.destroy()
   })
 
@@ -198,14 +218,14 @@ describe("handlePaste — markdown text path", () => {
     editor.destroy()
   })
 
-  // #20 — markdown-it renders a standalone image as `<p><img></p>` (an image
-  // is inline in Markdown; rune's `image` is a block node). The headless
-  // `markdownToDoc` unwraps that lone-image wrapper paragraph
-  // (`unwrapLoneImageParagraphs`); this paste path (`markdownToSlice`) did
-  // not, on the theory that `parseSlice`'s open boundaries merge the empty
-  // wrapper away — true only for an image at the very start/end of the
-  // pasted slice, not one sandwiched between two other blocks.
-  describe("markdown paste — image paragraph unwrap (#20)", () => {
+  // #20 — an image is inline in Markdown but a BLOCK node in rune. The HTML
+  // detour minted `<p><img></p>` and stranded the emptied `<p>` as a blank
+  // block above every interior image; the fix was to unwrap that wrapper. The
+  // storage codec emits the block directly and never mints the `<p>` at all,
+  // so these cases now assert the absence of a defect that has no way to occur
+  // rather than the presence of its repair. Kept because they pin the SHAPE a
+  // standalone image must paste into, whichever parser is behind it.
+  describe("markdown paste — standalone image lands as a clean block (#20)", () => {
     function blockTypes(editor: Editor): string[] {
       const out: string[] = []
       editor.state.doc.forEach((node) => out.push(node.type.name))
@@ -261,6 +281,132 @@ describe("handlePaste — markdown text path", () => {
       expect(blockTypes(editor)).toEqual(["paragraph", "image", "paragraph"])
       expect(editor.state.doc.child(0).textContent).toBe("sea")
       expect(editor.state.doc.child(2).textContent).toBe("ed")
+    })
+  })
+})
+
+// Behaviour that changed when the Markdown paste path moved from
+// markdown-it → HTML → `parseSlice` onto the storage codec. Each case here is
+// one bucket a divergence probe found between the two implementations over
+// 1,118 real Markdown files, where they agreed on only 14.8%. They are written
+// against the NEW behaviour — pasting Markdown and opening the same Markdown as
+// a file now produce the same document, by construction rather than by repair.
+describe("handlePaste — markdown path parity with the storage codec", () => {
+  function findBlocks(editor: Editor, typeName: string) {
+    const out: import("@tiptap/pm/model").Node[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === typeName) out.push(node)
+    })
+    return out
+  }
+
+  it("keeps a soft wrap soft instead of baking in a hardBreak", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    // The heading is only there to pass the `isMarkdown` gate; the paragraph is
+    // the subject. The HTML detour split this on `\n` into a `hardBreak`, so a
+    // wrapped source file gained a forced line break on every paste.
+    const event = makePasteEvent({ "text/plain": "# T\n\nFirst line\nsecond line\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(findBlocks(editor, "hardBreak")).toHaveLength(0)
+    const body = findBlocks(editor, "paragraph").find((p) => p.textContent.includes("First line"))
+    expect(body?.textContent).toBe("First line\nsecond line")
+    editor.destroy()
+  })
+
+  it("keeps a paragraph whole around an inline image", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const md = "Before ![a](https://example.com/a.png) after. [x](https://e.com)\n"
+    const event = makePasteEvent({ "text/plain": md })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    // The HTML detour hoisted the image to a top-level block and tore the
+    // sentence into paragraph + image + paragraph.
+    expect(findBlocks(editor, "image")).toHaveLength(0)
+    const paras = findBlocks(editor, "paragraph").filter((p) => p.textContent.includes("Before"))
+    expect(paras).toHaveLength(1)
+    expect(paras[0]?.textContent).toContain("after.")
+    editor.destroy()
+  })
+
+  it("leaves a fenced block's text exact — no trailing newline, no code mark", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({ "text/plain": "```js\nconst a = 1\n```\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    const code = findBlocks(editor, "codeBlock")[0]
+    expect(code?.textContent).toBe("const a = 1")
+    // `<pre><code>` gave every code block's text a redundant `code` mark.
+    expect(code?.firstChild?.marks ?? []).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it("keeps pasted frontmatter as body content rather than swallowing it", () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const event = makePasteEvent({ "text/plain": "---\ntitle: My Note\n---\n\nBody starts.\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    // Carving it off is right on the FILE path, where the caller owns it. A
+    // paste has no file, so carving here would silently drop the top of what
+    // was copied. The HTML detour instead rendered it as divider + heading.
+    const raw = findBlocks(editor, "rawBlock")[0]
+    expect(raw?.attrs.source).toBe("---\ntitle: My Note\n---")
+    expect(findBlocks(editor, "divider")).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it("uses the active editor's plugin markdown contracts", () => {
+    const editor = new Editor({
+      extensions: kit({
+        plugins: [
+          { id: "paste-contract", blockExtensions: [ContractPasteBlock] },
+        ],
+      }),
+      content: "<p>seed</p>",
+      element: document.createElement("div"),
+    })
+    editor.commands.selectAll()
+    const event = makePasteEvent({ "text/plain": "# Plugin\n" })
+
+    expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+    expect(editor.state.doc.firstChild?.type.name).toBe("contractPasteBlock")
+    editor.destroy()
+  })
+
+  describe("slice openness", () => {
+    it("merges a single inline run into the paragraph at the caret", () => {
+      const editor = makeEditor("<p>seed</p>")
+      editor.commands.setTextSelection(3) // se|ed
+      const event = makePasteEvent({ "text/plain": "**bold**" })
+
+      expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+      expect(findBlocks(editor, "paragraph")).toHaveLength(1)
+      expect(editor.state.doc.textContent).toBe("sebolded")
+      editor.destroy()
+    })
+
+    it("inserts a leading container as its own block instead of opening into it", () => {
+      const editor = makeEditor("<p>seed</p>")
+      editor.commands.setTextSelection(5) // caret at end of "seed"
+      // Trailing newline is load-bearing: `isMarkdown`'s blockquote rule only
+      // fires on a TERMINATED quote run, which a real copy of this block has.
+      const event = makePasteEvent({ "text/plain": "> [!NOTE]\n> body text\n" })
+
+      expect(handlePaste(editor.view as any, event, editor)).toBe(true)
+      // Regression for a real miss: opening the boundary on `isTextblock` looks
+      // right until you notice `callout` IS one (it holds `inline*` and nests by
+      // `depth`). The open edge then merged its content into the seed paragraph
+      // and the callout node vanished entirely. `Slice.maxOpen` fails the same
+      // way. Only `paragraph` may open.
+      expect(findBlocks(editor, "callout")).toHaveLength(1)
+      expect(
+        findBlocks(editor, "paragraph").some((p) => p.textContent === "seed"),
+      ).toBe(true)
+      editor.destroy()
     })
   })
 })

@@ -215,20 +215,10 @@ export function blockSelectionDragExtendPlugin(): Plugin {
         activeGesture.anchorIdx === mbs.anchorIdx &&
         activeGesture.headIdx === mbs.headIdx
 
-      // F5 head resolution for a block-mode drag. Decides the granularity from
-      // the anchor's surface (captured at promotion) vs the head's surface at
-      // the cursor:
-      //   - anchor in a column AND head in the SAME column → COLUMN-LOCAL MBS
-      //     (Notion-aligned in-column case): head index resolved within the
-      //     column, dispatched with the column surface.
-      //   - anchor at root AND head at root → ROOT MBS, byte-identical to the
-      //     pre-Phase-2 path (`headIndexAtY` root, surfacePos -1).
-      //   - ANY boundary cross (head's surface != anchor's surface, either
-      //     direction) → RE-ANCHOR at ROOT granularity: the anchor's root-level
-      //     ancestor index (the `columnLayout` itself when the anchor is in a
-      //     column) and the head's ROOT index. NEVER a cross-surface pair.
-      // Returns null when no head resolves under the cursor (caller leaves the
-      // selection unchanged / lets autoscroll continue).
+      // Resolve a block-mode drag at the anchor's surface. Plugin-provided
+      // nested surfaces stay local when anchor and head match; any boundary
+      // crossing re-anchors at root granularity. Returns null when no head
+      // resolves under the cursor.
       const computeBlockMbs = (
         anchorSurfacePos: number,
         anchorIdx: number,

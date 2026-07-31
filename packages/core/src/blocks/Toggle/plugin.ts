@@ -194,8 +194,8 @@ function buildDecos(
         )
       }
     }
-    // Keep descending so toggles nested inside a structural surface
-    // (a `column` within a `columnLayout`) are also decorated.
+    // Keep descending so toggles in plugin-provided structural surfaces are
+    // also decorated.
     return true
   })
   return DecorationSet.create(state.doc, decos)
@@ -274,7 +274,7 @@ export const ToggleBodyPlugin = Extension.create<ToggleBodyOptions>({
                   if (landingPos < surfaceEnd) {
                     // +1 steps past the node boundary; Selection.near resolves to the
                     // nearest valid cursor pos — handles the case where the next block
-                    // after the hidden body is a structural node (e.g. columnLayout)
+                    // after the hidden body is a structural plugin node
                     // rather than a textblock, where raw TextSelection.create would
                     // produce a non-text-position selection (console warning + wrong caret).
                     view.dispatch(

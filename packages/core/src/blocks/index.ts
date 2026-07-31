@@ -53,9 +53,8 @@ export type { RuneEquationBlock } from "./Equation/block"
 
 export { TableOfContents } from "./TableOfContents/block"
 export type { RuneTableOfContentsBlock } from "./TableOfContents/block"
-
-export { ColumnLayout, Column } from "./Columns/block"
-export type { RuneColumnsBlock, RuneColumn } from "./Columns/block"
+export { RawBlock } from "./RawBlock/block"
+export type { RuneRawBlock, RuneRawOrigin } from "./RawBlock/block"
 
 export { Image } from "./Image/block"
 export type { RuneImageBlock } from "./Image/block"
@@ -137,7 +136,7 @@ import type { RuneTableBlock } from "./Table/block"
 import type { RuneToggleBlock } from "./Toggle/block"
 import type { RuneEquationBlock } from "./Equation/block"
 import type { RuneTableOfContentsBlock } from "./TableOfContents/block"
-import type { RuneColumnsBlock } from "./Columns/block"
+import type { RuneRawBlock } from "./RawBlock/block"
 import type { RuneImageBlock } from "./Image/block"
 import type { RuneVideoBlock } from "./Video/block"
 import type { RuneAudioBlock } from "./Audio/block"
@@ -159,10 +158,10 @@ export type RuneBlock =
   | RuneToggleBlock
   | RuneEquationBlock
   | RuneTableOfContentsBlock
+  | RuneRawBlock
   | RuneImageBlock
   | RuneVideoBlock
   | RuneAudioBlock
-  | RuneColumnsBlock
 
 export {
   RUNE_BODY_BLOCKS,

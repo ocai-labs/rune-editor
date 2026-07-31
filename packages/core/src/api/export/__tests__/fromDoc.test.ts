@@ -40,7 +40,7 @@ describe("exportMarkdownFromDoc", () => {
   it("converts a doc with heading, paragraph and nested list", () => {
     const out = exportMarkdownFromDoc(
       doc([
-        block("heading", "Title", { level: 2 }),
+        block("heading", "Title", { level: 1 }),
         block("paragraph", "Hello world"),
         block("bulletList", "parent"),
         block("bulletList", "child", { depth: 1 }),

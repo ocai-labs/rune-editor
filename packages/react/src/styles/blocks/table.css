@@ -268,52 +268,6 @@
   text-align: left;
 }
 
-/* Cell color from the pill drop-down (M8.4e-e). Specificity (0,3,1)
- * beats the default header background `.rune-table th` at (0,2,1) and
- * matches the flat palette rules for `<td>`. Tokens come from
- * color-palette.css; this block only lifts specificity. */
-.rune-editor .rune-table td[data-background-color="gray"],
-.rune-editor .rune-table th[data-background-color="gray"]   { background-color: var(--rune-color-gray-bg); }
-.rune-editor .rune-table td[data-background-color="brown"],
-.rune-editor .rune-table th[data-background-color="brown"]  { background-color: var(--rune-color-brown-bg); }
-.rune-editor .rune-table td[data-background-color="orange"],
-.rune-editor .rune-table th[data-background-color="orange"] { background-color: var(--rune-color-orange-bg); }
-.rune-editor .rune-table td[data-background-color="yellow"],
-.rune-editor .rune-table th[data-background-color="yellow"] { background-color: var(--rune-color-yellow-bg); }
-.rune-editor .rune-table td[data-background-color="green"],
-.rune-editor .rune-table th[data-background-color="green"]  { background-color: var(--rune-color-green-bg); }
-.rune-editor .rune-table td[data-background-color="blue"],
-.rune-editor .rune-table th[data-background-color="blue"]   { background-color: var(--rune-color-blue-bg); }
-.rune-editor .rune-table td[data-background-color="purple"],
-.rune-editor .rune-table th[data-background-color="purple"] { background-color: var(--rune-color-purple-bg); }
-.rune-editor .rune-table td[data-background-color="pink"],
-.rune-editor .rune-table th[data-background-color="pink"]   { background-color: var(--rune-color-pink-bg); }
-.rune-editor .rune-table td[data-background-color="red"],
-.rune-editor .rune-table th[data-background-color="red"]    { background-color: var(--rune-color-red-bg); }
-
-/* Text-color rules. <th> already has font-weight:600 but no `color`
- * override, so the flat palette rule would technically match. Mirror
- * the bg pattern anyway for symmetry and to insulate against future
- * `.rune-table th { color: ... }` additions. */
-.rune-editor .rune-table td[data-text-color="gray"],
-.rune-editor .rune-table th[data-text-color="gray"]   { color: var(--rune-color-gray-fg); }
-.rune-editor .rune-table td[data-text-color="brown"],
-.rune-editor .rune-table th[data-text-color="brown"]  { color: var(--rune-color-brown-fg); }
-.rune-editor .rune-table td[data-text-color="orange"],
-.rune-editor .rune-table th[data-text-color="orange"] { color: var(--rune-color-orange-fg); }
-.rune-editor .rune-table td[data-text-color="yellow"],
-.rune-editor .rune-table th[data-text-color="yellow"] { color: var(--rune-color-yellow-fg); }
-.rune-editor .rune-table td[data-text-color="green"],
-.rune-editor .rune-table th[data-text-color="green"]  { color: var(--rune-color-green-fg); }
-.rune-editor .rune-table td[data-text-color="blue"],
-.rune-editor .rune-table th[data-text-color="blue"]   { color: var(--rune-color-blue-fg); }
-.rune-editor .rune-table td[data-text-color="purple"],
-.rune-editor .rune-table th[data-text-color="purple"] { color: var(--rune-color-purple-fg); }
-.rune-editor .rune-table td[data-text-color="pink"],
-.rune-editor .rune-table th[data-text-color="pink"]   { color: var(--rune-color-pink-fg); }
-.rune-editor .rune-table td[data-text-color="red"],
-.rune-editor .rune-table th[data-text-color="red"]    { color: var(--rune-color-red-fg); }
-
 .rune-editor .rune-table p {
   margin: 0;
 }

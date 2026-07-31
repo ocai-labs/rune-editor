@@ -22,7 +22,7 @@ import { CodeBlock } from "./CodeBlock/block"
 import { Toggle } from "./Toggle/block"
 import { Table } from "./Table/block"
 import { TableOfContents } from "./TableOfContents/block"
-import { ColumnLayout } from "./Columns/block"
+import { RawBlock } from "./RawBlock/block"
 
 type StaticBlockSpecExtension = AnyExtension & {
   [RUNE_BLOCK_SPEC_METADATA]?: unknown
@@ -60,11 +60,7 @@ export const RUNE_BODY_BLOCKS = [
   Toggle,
   Table,
   TableOfContents,
-  // columnLayout is a body block (createBlockSpec → carries the
-  // __runeBlockSpec marker), so deriveBlockIdTypes auto-includes it in
-  // BlockId.types. Its structural `column` child (Node.create, no marker)
-  // is auto-excluded. No manual BlockId edit needed.
-  ColumnLayout,
+  RawBlock,
 ] as const
 
 export function deriveBlockIdTypes(

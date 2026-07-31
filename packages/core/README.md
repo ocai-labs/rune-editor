@@ -69,7 +69,6 @@ table below is a stable public export.
 |---|---|
 | `createRuneKit(options)` | Returns the default extension array. The entry point most consumers use. |
 | `CreateRuneKitOptions`   | Type for the options object. |
-| `BLOCK_COLOR_TYPES`      | Node names that get block-level color attrs. Append when adding a colorisable block. |
 
 ### Block factory
 
@@ -101,7 +100,6 @@ table below is a stable public export.
 | `CaretComfort`, `caretComfortKey`           | Caret behavior tweaks across atom blocks / dividers. |
 | `Placeholder`, `placeholderPluginKey`, `PlaceholderConfig`, `PlaceholderHit`, `PlaceholderPluginState`, `PlaceholderResolver`, `PlaceholderOptions` | Placeholder text on empty blocks. |
 | `SuggestionMenus`, `getSuggestionMenus`, `commitSuggestion`, `insertOrUpdateBlockForSlashMenu`, `wikiLinkMatcher`, `filterSuggestionItems`, `getDefaultSlashMenuItems`, `TriggerConfig`, `TriggerState`, `TriggerStore`, `TriggerKeyHandler`, `SuggestionMenusOptions`, `SuggestionMenusStorage`, `DefaultSuggestionItem`, `DefaultGridSuggestionItem`, `SuggestionCommitContext` | Multi-trigger suggestion menus on top of `@tiptap/suggestion`. |
-| `BlockTextColor`, `BlockBackgroundColor`, `BlockTextColorOptions`, `BlockBackgroundColorOptions` | Block-level color extensions. |
 | `GestureStatePlugin`, `gestureKey`, `ActiveGesture`, `GestureState` | Cross-extension pointer-gesture state. |
 
 ### Color tokens
@@ -109,6 +107,9 @@ table below is a stable public export.
 | Export | What |
 |---|---|
 | `COLORS`, `COLOR_NAMES`, `ColorName`, `NamedColorEntry` | The Notion-style 9-color palette + name list. UI consumers iterate `COLOR_NAMES` to render swatches. |
+
+Rune color commands apply to inline text and highlights only. Blocks and table
+cells do not expose block-level color attributes.
 
 ---
 

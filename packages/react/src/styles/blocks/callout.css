@@ -35,14 +35,11 @@
  * padding stays the universal 6px so the box — inset by --block-content-pad-x
  * below — lands its left edge at 8px, the same x as paragraph text and the
  * code card. */
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block.rune-callout {
+.rune-editor .ProseMirror > .rune-block.rune-callout {
   --block-pad-top: 8px;
   padding-bottom: 8px;
 }
 
-/* The colored box IS .rune-block-content, so the side-menu background-color
- * palette (data-background-color rides here) tints the box for free and the
- * light/dark flip comes along. */
 .rune-editor .rune-callout > .rune-block-content {
   display: flex;
   align-items: flex-start;
@@ -53,11 +50,8 @@
   border-radius: var(--rune-callout-radius);
 }
 
-/* Default (no explicit bg color) == Notion's gray callout. Guarded with
- * :not([data-background-color]) so an explicit palette pick — whose rule is
- * only (0,2,0) in color-palette.css — still wins instead of being shadowed by
- * this (0,4,0) selector. */
-.rune-editor .rune-callout > .rune-block-content:not([data-background-color]) {
+/* Notion-style gray callout surface. */
+.rune-editor .rune-callout > .rune-block-content {
   background-color: var(--rune-color-gray-bg);
 }
 

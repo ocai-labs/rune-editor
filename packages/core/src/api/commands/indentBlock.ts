@@ -10,7 +10,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import { getBlockSpecs, surfaceChildrenAt } from "../../schema"
 import { DEFAULT_INDENT, type IndentConfig } from "../../schema/blocks/createSpec"
 import { collectBlockTargets, type BlockTarget } from "./collectBlockTargets"
-import { normalizeDepthAt } from "../depth"
+import { markdownDepthOwnerTypes, normalizeDepthAt } from "../depth"
 
 function resolveIndentConfig(editor: Editor, typeName: string): IndentConfig {
   return getBlockSpecs(editor)[typeName]?.indent ?? DEFAULT_INDENT
@@ -46,18 +46,17 @@ function planIndent(
   editor: Editor,
   doc: ProseMirrorNode,
   block: BlockTarget,
+  ownerTypes: ReadonlySet<string>,
 ): { changed: boolean; newDepth: number } {
   const config = resolveIndentConfig(editor, block.node.type.name)
   const currentDepth = (block.node.attrs.depth as number | undefined) ?? 0
-  // numeric (cap at maxDepth) and follow-prev (cap at immediately-preceding
-  // sibling's depth + 1) share the same shape: request one deeper, clamp to
-  // the legal max for this block at its position, succeed only if it grew.
-  // The follow-prev +1 accounts for rune's CSS marker offset (a list marker
-  // at depth=N puts its text content at column (N+1)*step), and the clamp
-  // returns currentDepth when there's no preceding block (lone block can't
-  // indent). Both rules live in `normalizeDepthAt`.
+  // Numeric and follow-prev share the same shape: request one deeper, clamp
+  // to the Markdown-representable max at this position, succeed only if it
+  // grew. A structural list item or an absorbsDeeperRun contract may open a
+  // child level; an ordinary child may only continue its owner's body level.
+  // Both rules live in `normalizeDepthAt`.
   if (config.mode === "numeric" || config.mode === "follow-prev") {
-    const newDepth = normalizeDepthAt(doc, block.pos, currentDepth + 1, config)
+    const newDepth = normalizeDepthAt(doc, block.pos, currentDepth + 1, config, ownerTypes)
     return { changed: newDepth > currentDepth, newDepth: Math.max(newDepth, currentDepth) }
   }
   if (!hasIndentablePredecessor(doc, block.pos, block.node)) {
@@ -72,9 +71,13 @@ export function indentBlockImpl(
   return ({ editor, state, dispatch }) => {
     const targets = collectBlockTargets(editor, state.selection, id)
     if (targets.length === 0) return false
+    const ownerTypes = markdownDepthOwnerTypes(editor)
     // All plans read the same pre-transaction doc, so MBS caps are not
     // affected by earlier targets in this same command pass.
-    const plans = targets.map((t) => ({ target: t, plan: planIndent(editor, state.doc, t) }))
+    const plans = targets.map((t) => ({
+      target: t,
+      plan: planIndent(editor, state.doc, t, ownerTypes),
+    }))
     const anyChanged = plans.some((p) => p.plan.changed)
     if (!anyChanged) return false
     if (!dispatch) return true

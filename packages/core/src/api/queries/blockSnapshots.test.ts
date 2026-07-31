@@ -57,93 +57,6 @@ describe("block snapshots", () => {
     editor.destroy()
   })
 
-  it("getBlockOutline includes column children with a surface field (column id); root blocks omit it", () => {
-    const editor = makeEditor({
-      type: "doc",
-      content: [
-        {
-          type: "paragraph",
-          attrs: { id: "root-a", depth: 0 },
-          content: [{ type: "text", text: "root" }],
-        },
-        {
-          type: "columnLayout",
-          attrs: { id: "cl", depth: 0 },
-          content: [
-            {
-              type: "column",
-              attrs: { id: "colL", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "L0", depth: 0 }, content: [{ type: "text", text: "L0" }] },
-              ],
-            },
-            {
-              type: "column",
-              attrs: { id: "colR", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "R0", depth: 0 }, content: [{ type: "text", text: "R0" }] },
-              ],
-            },
-          ],
-        },
-      ],
-    })
-
-    const outline = getBlockOutline(editor)
-    const byId = (id: string) => outline.find((o) => o.id === id)
-
-    // Root blocks have no surface field (root surface is implicit).
-    expect(byId("root-a")?.surface).toBeUndefined()
-    expect(byId("cl")?.surface).toBeUndefined()
-    expect(byId("cl")?.type).toBe("columnLayout")
-
-    // Column children carry their containing column's id as `surface`.
-    expect(byId("L0")?.surface).toBe("colL")
-    expect(byId("R0")?.surface).toBe("colR")
-
-    // Document order: root-a, layout, L0, R0.
-    expect(outline.map((o) => o.id)).toEqual(["root-a", "cl", "L0", "R0"])
-
-    editor.destroy()
-  })
-
-  it("getBlockOutline reports the COLUMN id as surface for leaf/atom blocks (divider)", () => {
-    const editor = makeEditor({
-      type: "doc",
-      content: [
-        {
-          type: "columnLayout",
-          attrs: { id: "cl", depth: 0 },
-          content: [
-            {
-              type: "column",
-              attrs: { id: "colL", width: 1 },
-              content: [
-                { type: "divider", attrs: { id: "dv", depth: 0 } },
-                { type: "paragraph", attrs: { id: "L1", depth: 0 }, content: [{ type: "text", text: "L1" }] },
-              ],
-            },
-            {
-              type: "column",
-              attrs: { id: "colR", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "R0", depth: 0 }, content: [{ type: "text", text: "R0" }] },
-              ],
-            },
-          ],
-        },
-      ],
-    })
-
-    const outline = getBlockOutline(editor)
-    const byId = (id: string) => outline.find((o) => o.id === id)
-    // An atom (nodeSize 1) must report its containing COLUMN, not the layout —
-    // resolving pos + 1 lands after the node and used to misreport "cl".
-    expect(byId("dv")?.surface).toBe("colL")
-    expect(byId("L1")?.surface).toBe("colL")
-    expect(byId("R0")?.surface).toBe("colR")
-  })
-
   it("returns block-local markdown and text for a built-in block", () => {
     const editor = makeEditor({
       type: "doc",
@@ -167,7 +80,7 @@ describe("block snapshots", () => {
         level: 3,
         text: "Heading text",
       })
-      expect(result.data.markdown).toBe("## Heading text")
+      expect(result.data.markdown).toBe("### Heading text")
       expect(result.data.text).toBe("Heading text")
     }
 
@@ -298,44 +211,5 @@ describe("block snapshots", () => {
     })
 
     editor.destroy()
-  })
-})
-
-describe("getBlockSnapshot — column children (review fix)", () => {
-  it("snapshots a block nested inside a column by id", () => {
-    const editor = makeEditor({
-      type: "doc",
-      content: [
-        {
-          type: "columnLayout",
-          attrs: { id: "cl", depth: 0 },
-          content: [
-            {
-              type: "column",
-              attrs: { id: "colL", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "L0", depth: 0 }, content: [{ type: "text", text: "in column" }] },
-              ],
-            },
-            {
-              type: "column",
-              attrs: { id: "colR", width: 1 },
-              content: [
-                { type: "paragraph", attrs: { id: "R0", depth: 0 }, content: [{ type: "text", text: "right" }] },
-              ],
-            },
-          ],
-        },
-      ],
-    })
-    const result = getBlockSnapshot(editor, "L0")
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data.block.id).toBe("L0")
-      expect(result.data.text).toBe("in column")
-    }
-    // Unknown ids still report not-found.
-    const missing = getBlockSnapshot(editor, "nope")
-    expect(missing.ok).toBe(false)
   })
 })

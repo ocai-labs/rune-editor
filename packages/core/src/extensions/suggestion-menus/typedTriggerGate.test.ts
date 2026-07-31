@@ -59,8 +59,30 @@ function mk(content = "<p></p>") {
   })
 }
 
+// The kit's `:` (emoji) trigger shape: default matcher, no
+// `requireTypedTrigger` — the gate the `/` tests below lean on doesn't
+// exist here, which is why the whole-doc branch has to arm suppression.
+function mkColon(content = "<p></p>") {
+  return new Editor({
+    element: container,
+    extensions: [
+      Document,
+      Text,
+      Para,
+      SuggestionMenus.configure({
+        triggers: [{ char: ":", shouldShow: ({ query }) => query.length > 0 }],
+      }),
+    ],
+    content,
+  })
+}
+
 function snap(editor: Editor) {
   return getSuggestionMenus(editor).triggers["/"]!.getSnapshot()
+}
+
+function colonSnap(editor: Editor) {
+  return getSuggestionMenus(editor).triggers[":"]!.getSnapshot()
 }
 
 describe("requireTypedTrigger — caret placement never opens a session", () => {
@@ -207,6 +229,59 @@ describe("requireTypedTrigger — an agent write never opens a session", () => {
     expect(snap(editor).show).toBe(false)
 
     // User types a fresh '/' at a new anchor — a real keystroke, unsuppressed.
+    editor.commands.insertContent(" /")
+    await Promise.resolve()
+    expect(snap(editor).show).toBe(true)
+  })
+})
+
+// A host `setContent` — an external/remote write landing in an open tab, a
+// snapshot restore, a rehydrate — replaces the whole document. ProseMirror
+// maps the old selection to the END of the incoming content, so the matcher
+// scans the last text block of prose the user never typed, and the full-doc
+// ReplaceStep makes `transactionInsertedAt` true at EVERY position — the
+// `requireTypedTrigger` gate can't tell it from a keystroke. Reproduces the
+// field report: an MCP write into the focused document popped an item-less
+// slash menu (query = a sentence, zero matches, "Close menu" footer only).
+describe("a whole-document swap never opens a session", () => {
+  // The host sequence verbatim: swap the doc, then restore the caret the
+  // swap blew away. The restore lands INSIDE the incoming `/` run, which is
+  // what kept the menu on screen instead of closing it a tick later.
+  function swapAndRestoreCaret(editor: Editor, html: string, caret: number) {
+    editor.commands.setContent(html, { emitUpdate: false })
+    const size = editor.state.doc.content.size
+    editor.commands.setTextSelection(Math.min(caret, size))
+  }
+
+  it("setContent onto prose containing a legal '/' run stays closed", async () => {
+    const editor = mk("<p>hello</p>")
+    editor.commands.setTextSelection(3)
+    swapAndRestoreCaret(editor, "<p>hello</p><p>data source /update daily</p>", 26)
+    await Promise.resolve()
+    expect(snap(editor).show).toBe(false)
+  })
+
+  it("a trigger WITHOUT requireTypedTrigger is covered too (suppression survives the caret restore)", async () => {
+    const editor = mkColon("<p>hello</p>")
+    editor.commands.setTextSelection(3)
+    editor.commands.setContent("<p>hello</p><p>ping :smile</p>", { emitUpdate: false })
+    await Promise.resolve()
+    expect(colonSnap(editor).show).toBe(false)
+
+    // The caret restore is a selection-only transaction: nothing but the
+    // armed suppression stands between it and a fresh session here.
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    await Promise.resolve()
+    expect(colonSnap(editor).show).toBe(false)
+  })
+
+  it("the trigger still works after a swap — a '/' typed into the new doc opens", async () => {
+    const editor = mk("<p>hello</p>")
+    swapAndRestoreCaret(editor, "<p>hello</p><p>data source /update daily</p>", 26)
+    await Promise.resolve()
+    expect(snap(editor).show).toBe(false)
+
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
     editor.commands.insertContent(" /")
     await Promise.resolve()
     expect(snap(editor).show).toBe(true)

@@ -14,7 +14,6 @@ const PluginBlock = createBlockSpec({
   parseDOM: [{ tag: "p[data-plugin-block]", priority: 51 }],
   renderDOM: ({ HTMLAttributes }) => ["p", { ...HTMLAttributes, "data-plugin-block": "" }, 0],
   sideMenu: { draggable: true },
-  supports: { textColor: true, backgroundColor: true },
   toRuneBlock(node) {
     return {
       type: "pluginBlock",
@@ -62,31 +61,6 @@ describe("createRuneKit plugins", () => {
 
     const blockId = editor.extensionManager.extensions.find((ext) => ext.name === "blockId")!
     expect((blockId.options as { types: string[] }).types).toContain("pluginBlock")
-
-    editor.destroy()
-  })
-
-  it("adds color attrs for plugin blocks that declare color support", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: createRuneKit({
-        plugins: [{ id: "plugin-a", blockExtensions: [PluginBlock] }],
-      }),
-    })
-
-    // Verify the pluginBlock node type exists in the schema
-    expect(editor.schema.nodes.pluginBlock).toBeDefined()
-
-    editor.commands.setContent(
-      '<p data-plugin-block="" data-text-color="red" data-background-color="blue">Plugin</p>',
-    )
-    const node = editor.state.doc.firstChild
-
-    expect(node?.type.name).toBe("pluginBlock")
-    expect(node?.attrs.textColor).toBe("red")
-    expect(node?.attrs.backgroundColor).toBe("blue")
-    expect(editor.getHTML()).toContain('data-text-color="red"')
-    expect(editor.getHTML()).toContain('data-background-color="blue"')
 
     editor.destroy()
   })

@@ -11,7 +11,7 @@
 // subscribe to isHeader directly (see TableActionsDropdown.tsx) or the
 // switch never reflects the toggle.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react"
 import { Editor } from "@tiptap/core"
 import { createRuneKit } from "@ocai/rune-core"
@@ -60,6 +60,26 @@ afterEach(() => {
 })
 
 describe("TableActionsDropdown — header switch", () => {
+  it("renders a disabled Color row and clicking it dispatches no transaction", async () => {
+    const { editor, cleanupEditor } = makeTableEditor()
+    render(<TableActionsDropdown editor={editor} />)
+    const pill = editor.view.dom.querySelector(".rune-col-pill") as HTMLElement
+    fireEvent.click(pill)
+
+    const row = await screen.findByRole("menuitem", {
+      name: "Color Inline text only",
+    })
+    expect(row).toBeDisabled()
+    expect(row).not.toHaveAttribute("aria-haspopup")
+
+    const onTransaction = vi.fn()
+    editor.on("transaction", onTransaction)
+    fireEvent.click(row)
+    expect(onTransaction).not.toHaveBeenCalled()
+    editor.off("transaction", onTransaction)
+    cleanupEditor()
+  })
+
   it("flips checked state on header-column toggle and flips back", async () => {
     const { editor, cleanupEditor } = makeTableEditor()
     render(<TableActionsDropdown editor={editor} />)

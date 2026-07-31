@@ -74,10 +74,8 @@ function expandFragment(
       const surface = doc.resolve(togglePos).parent
       expandedIds.add(id)
       doc.nodesBetween(body.from, body.to, (n, _p, parent) => {
-        // Descend through any structural layer (`columnLayout` > `column`) to
-        // reach the toggle's surface, but only COLLECT that surface's own
-        // children — returning undefined (not false) here lets the walk step
-        // into the column to find them.
+        // Descend through plugin-provided structural layers to reach the
+        // toggle's surface, but collect only that surface's own children.
         if (parent !== surface) return
         // Skip body nodes already present in the slice to avoid duplicates
         // when the selection already covers the hidden body blocks.

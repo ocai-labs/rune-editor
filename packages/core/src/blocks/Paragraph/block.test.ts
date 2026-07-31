@@ -10,7 +10,6 @@ import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import { Paragraph } from "./block";
 import { Heading } from "../Heading/block";
-import { BlockBackgroundColor, BlockTextColor } from "../../extensions/color";
 
 describe("Paragraph block", () => {
   it("exposes slashMenuItems() on its Tiptap storage", () => {
@@ -90,33 +89,6 @@ describe("Paragraph block", () => {
 
     editor.destroy();
   });
-
-  it("places block-color attrs on .rune-block-content, NOT on .rune-block outer", () => {
-    const editor = new Editor({
-      element: document.createElement("div"),
-      extensions: [Document, Paragraph, Text, BlockBackgroundColor, BlockTextColor],
-    })
-    editor.commands.setContent("<p>hello</p>")
-    editor.commands.setBlockBackgroundColor(0, "blue")
-    editor.commands.setBlockTextColor(0, "gray")
-
-    const html = editor.getHTML()
-    // Outer .rune-block must NOT carry the color attrs.
-    expect(html).toMatch(
-      /<div[^>]*class="rune-block"(?![^>]*data-(text|background)-color)/,
-    )
-    // Inner .rune-block-content must carry both.
-    expect(html).toMatch(
-      /<div[^>]*class="rune-block-content"[^>]*data-background-color="blue"/,
-    )
-    expect(html).toMatch(
-      /<div[^>]*class="rune-block-content"[^>]*data-text-color="gray"/,
-    )
-    // The semantic <p> tag itself stays attr-clean.
-    expect(html).toMatch(/<p>hello<\/p>/)
-
-    editor.destroy()
-  })
 });
 
 describe("Paragraph — clipboardRenderDOM", () => {

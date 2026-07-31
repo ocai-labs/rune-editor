@@ -8,7 +8,7 @@
 // hover-popover extension a pure render change, not a data-flow refactor.
 export interface TocHeading {
   id: string
-  level: 2 | 3 | 4 | 5
+  level: 1 | 2 | 3 | 4 | 5 | 6
   text: string
   pos: number
 }

@@ -11,7 +11,6 @@ import {
   resolveBodyBlockById,
   surfaceChildrenAt,
 } from "../../schema/bodySurface"
-import { insertWouldNestColumnLayout } from "./insertBlocks"
 import type { TurnIntoTarget, TurnIntoBlockInput } from "../types"
 import { classifyKind, getAdapter } from "./turnIntoAdapters"
 
@@ -69,11 +68,8 @@ export function canTurnInto(
   schema: Schema,
 ): boolean {
   if (!schema.nodes[target.type]) return false
-  // Container SOURCES (table, columnLayout — any structured-content block)
-  // cannot convert: their content is rows/columns, not inline text, so no
-  // textblock/atom target can absorb it. Classified structurally, not by
-  // name — the old `=== "table"` check let `columnLayout` through and
-  // persisted a schema-invalid doc (COL-2).
+  // Container sources cannot convert: their structured content cannot be
+  // absorbed by textblock or atom targets.
   if (classifyKind(sourceNode.type) === "container") return false
   return true
 }
@@ -117,18 +113,6 @@ export function applyTurnIntoTr(
     }
 
     if (!canTurnInto(currentNode, target, schema)) {
-      rejected++
-      continue
-    }
-
-    // No-nesting guard (same rule as the insert leg): a `columnLayout`
-    // target for a source that already sits inside a column must refuse —
-    // the replace would nest a layout, which normalization then flattens
-    // into stray paragraphs.
-    if (
-      target.type === "columnLayout" &&
-      insertWouldNestColumnLayout(tr.doc, currentPos, [{ type: "columnLayout" }])
-    ) {
       rejected++
       continue
     }

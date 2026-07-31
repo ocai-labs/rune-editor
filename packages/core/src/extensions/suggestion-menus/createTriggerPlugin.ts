@@ -25,6 +25,28 @@ const IME_COMPOSING_SETTLE_MS = 50;
 type FadeRange = { from: number; to: number };
 type FadeState = { range: FadeRange | null; expiresAt: number };
 
+// Did this transaction REPLACE the whole document? `setContent` (host
+// document swaps: an external/remote sync landing, a snapshot restore, a
+// tab rehydrate) lowers to a single ReplaceStep spanning [0, docSize], and
+// ProseMirror maps the old selection to the END of the inserted content —
+// so the trigger matcher then scans the last text block of the incoming
+// document and happily anchors on any `/` that was already in the prose.
+// A document swap is never a user input event, so no trigger may open a
+// session on it. Checked per step against `tr.docs[i]` (the doc BEFORE that
+// step), since only step 0 shares coordinates with `tr.before`.
+function replacesEntireDoc(tr: Transaction): boolean {
+  if (!tr.docChanged) return false;
+  let whole = false;
+  tr.steps.forEach((step, i) => {
+    if (whole) return;
+    const size = (tr.docs[i] ?? tr.before).content.size;
+    step.getMap().forEach((oldStart, oldEnd) => {
+      if (oldStart === 0 && oldEnd === size) whole = true;
+    });
+  });
+  return whole;
+}
+
 // Did this transaction INSERT content covering `pos` (final-doc coords)?
 // Walks each step's inserted ranges and maps them through the remaining
 // steps. Typing is a single ReplaceStep, so this is cheap in practice.
@@ -117,17 +139,24 @@ export function createTriggerPlugin(
     //      accepted edge: an undo that re-inserts the run also re-opens —
     //      the undo transaction genuinely inserts the anchor char.
     shouldShow: (props) => {
-      // A paste and an AGENT_WRITE both insert content programmatically — the
-      // user did not type the trigger char, so neither opens a fresh session
-      // (Notion treats paste the same). Without the agent-write branch an AI
-      // tool that inserts block text containing a `/` trips the
-      // `requireTypedTrigger` gate below (`transactionInsertedAt` can't tell a
-      // programmatic insert from a keystroke) and pops the slash menu. Arm
-      // once-per-trigger suppression at the anchor like paste so a trailing
-      // caret-move there doesn't reopen it either.
+      // A paste, an AGENT_WRITE and a whole-document swap all put content in
+      // the doc programmatically — the user did not type the trigger char, so
+      // none of them opens a fresh session (Notion treats paste the same).
+      // Without the agent-write branch an AI tool that inserts block text
+      // containing a `/` trips the `requireTypedTrigger` gate below
+      // (`transactionInsertedAt` can't tell a programmatic insert from a
+      // keystroke) and pops the slash menu; without the whole-doc branch a
+      // host `setContent` does the same, and worse — its full-doc ReplaceStep
+      // covers EVERY position, so `transactionInsertedAt` is true no matter
+      // where the matcher anchored. Arm once-per-trigger suppression at the
+      // anchor like paste so a trailing caret-move there doesn't reopen it
+      // either — the caret restore hosts run right after a `setContent` is
+      // exactly such a move, and triggers without `requireTypedTrigger`
+      // (`:`, `[[`) have nothing else standing in its way.
       if (
         props.transaction.getMeta("uiEvent") === "paste" ||
-        props.transaction.getMeta(AGENT_WRITE_META)
+        props.transaction.getMeta(AGENT_WRITE_META) ||
+        replacesEntireDoc(props.transaction)
       ) {
         store.suppressedAt.current = props.range.from;
         store.suppressedAtIsCurrentDocPos.current = true;

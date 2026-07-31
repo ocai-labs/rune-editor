@@ -7,28 +7,28 @@
 /* Heading block — owns all heading visuals: per-level font-size/weight,
    the graduated vertical-rhythm override, and the block-color pill geometry.
 
-   UI H1/H2/H3/H4 render as <h2>/<h3>/<h4>/<h5> per CLAUDE.md invariant
-   #5 — the page reserves <h1> for the document title, so selectors
-   target the rendered HTML tag, not the UI label. Don't add an h1 rule:
-   it would target consumer page chrome (e.g. a sibling document title)
-   and never the editor's own headings.
+   Heading levels map directly to <h1>…<h6>. The host-owned page title sits
+   outside .ProseMirror, so editor h1 rules cannot style host chrome.
 
    Kept flat (no `@apply my-*`) because block rhythm lives on
    .rune-editor .ProseMirror > .rune-block via padding, not per-tag
    margin — see editor-chrome.css. */
 
-/* Font-size / weight: UI H1/H2/H3/H4 → <h2>/<h3>/<h4>/<h5>. Every heading
+/* Font-size / weight: UI H1/H2/H3/H4 → <h1>/<h2>/<h3>/<h4>. Every heading
    level shares font-weight 600 and line-height 1.3 — Notion's authored
    values for in-content headings (only the 40px page TITLE is 700, and
    that's host chrome, not an editor heading). Weight + line-height live in
-   one shared rule; font-size steps per level. UI H4 (<h5>) now gets its
-   OWN step (1.125em / 18px) to match Notion's distinct Heading 4 — it no
-   longer clones H3's step. */
-.ProseMirror :is(h2, h3, h4, h5) { font-weight: 600; line-height: 1.3; }
-.ProseMirror h2 { font-size: 1.875em; }   /* UI H1 */
-.ProseMirror h3 { font-size: 1.5em;   }   /* UI H2 */
-.ProseMirror h4 { font-size: 1.25em;  }   /* UI H3 */
-.ProseMirror h5 { font-size: 1.125em; }   /* UI H4 */
+   one shared rule; font-size steps per level. UI H4 gets its OWN step
+   (1.125em / 18px) to match Notion's distinct Heading 4 — it no longer clones
+   H3's step. (This said "<h5>" until D3: heading levels used to be offset by
+   one because the Title node reserved <h1>. Title is host chrome now and the
+   mapping is the identity — UI Hn is <hn>.) */
+.ProseMirror :is(h1, h2, h3, h4, h5, h6) { font-weight: 600; line-height: 1.3; }
+.ProseMirror h1 { font-size: 1.875em; }   /* UI H1 */
+.ProseMirror h2 { font-size: 1.5em;   }   /* UI H2 */
+.ProseMirror h3 { font-size: 1.25em;  }   /* UI H3 */
+.ProseMirror h4 { font-size: 1.125em; }   /* UI H4 */
+.ProseMirror :is(h5, h6) { font-size: 1em; }
 
 /* Heading vertical rhythm — graduated top padding so larger headings get
    more air above them and read as section breaks (vs the old flat 18px).
@@ -41,21 +41,24 @@
    widget stays aligned (it reads --block-pad-top via CSS cascade per
    the gutter contract). One block matches exactly one level, so the four
    per-level rules never conflict. */
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block:not(.rune-toggle):has(> .rune-block-content > :is(h2, h3, h4, h5)) {
+.rune-editor .ProseMirror > .rune-block:not(.rune-toggle):has(> .rune-block-content > :is(h1, h2, h3, h4, h5, h6)) {
   padding-top: var(--block-pad-top);
   padding-bottom: 8px;
 }
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block:not(.rune-toggle):has(> .rune-block-content > h2) {
+.rune-editor .ProseMirror > .rune-block:not(.rune-toggle):has(> .rune-block-content > h1) {
   --block-pad-top: 32px;
 }
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block:not(.rune-toggle):has(> .rune-block-content > h3) {
+.rune-editor .ProseMirror > .rune-block:not(.rune-toggle):has(> .rune-block-content > h2) {
   --block-pad-top: 28px;
 }
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block:not(.rune-toggle):has(> .rune-block-content > h4) {
+.rune-editor .ProseMirror > .rune-block:not(.rune-toggle):has(> .rune-block-content > h3) {
   --block-pad-top: 24px;
 }
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block:not(.rune-toggle):has(> .rune-block-content > h5) {
+.rune-editor .ProseMirror > .rune-block:not(.rune-toggle):has(> .rune-block-content > h4) {
   --block-pad-top: 20px;
+}
+.rune-editor .ProseMirror > .rune-block:not(.rune-toggle):has(> .rune-block-content > :is(h5, h6)) {
+  --block-pad-top: 16px;
 }
 
 /* Block-color pill — soft rounded rectangle that hugs the heading text
@@ -65,7 +68,7 @@
    the tokens on a per-block selector when a single block needs a
    different shape. data-background-color rides on .rune-block-content
    so the pill paints there. */
-.rune-editor .rune-block:has(> .rune-block-content > :is(h2, h3, h4, h5)) > .rune-block-content {
+.rune-editor .rune-block:has(> .rune-block-content > :is(h1, h2, h3, h4, h5, h6)) > .rune-block-content {
   padding-inline: var(--block-content-pad-x);
   border-radius: var(--block-content-radius);
 }

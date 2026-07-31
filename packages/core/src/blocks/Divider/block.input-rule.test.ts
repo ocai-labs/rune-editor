@@ -10,7 +10,6 @@ import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import { Paragraph } from "../Paragraph/block";
 import { Heading } from "../Heading/block";
-import { ColumnLayout, Column } from "../Columns/block";
 import { Divider } from "./block";
 import { createTestEditor } from "../../test-utils/createTestEditor";
 
@@ -95,85 +94,6 @@ describe("Divider block — input rule", () => {
 
     expect(docChildTypes(editor)).toEqual(["divider", "paragraph"]);
     editor.destroy();
-  });
-
-  describe("inside a column (regression: depth-1 replace swallowed the layout)", () => {
-    function makeColumnsEditor(content: object) {
-      return new Editor({
-        element: document.createElement("div"),
-        extensions: [Document, Paragraph, Heading, Text, Divider, ColumnLayout, Column],
-        content: content as never,
-      });
-    }
-
-    const para = (text?: string) => ({
-      type: "paragraph",
-      ...(text ? { content: [{ type: "text", text }] } : {}),
-    });
-
-    it("replaces only the column child, never the layout", async () => {
-      const editor = makeColumnsEditor({
-        type: "doc",
-        content: [
-          {
-            type: "columnLayout",
-            content: [
-              { type: "column", content: [para("left"), para()] },
-              { type: "column", content: [para("right")] },
-            ],
-          },
-        ],
-      });
-
-      // Caret into the left column's empty paragraph.
-      let target = -1;
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "paragraph" && node.content.size === 0) target = pos;
-      });
-      editor.commands.setTextSelection(target + 1);
-      await typeAtCaret(editor, "--- ");
-
-      expect(docChildTypes(editor)).toEqual(["columnLayout"]);
-      const layout = editor.state.doc.child(0);
-      const leftTypes: string[] = [];
-      layout.child(0).forEach((n) => leftTypes.push(n.type.name));
-      // Divider became the column's last child → a paragraph is appended
-      // INSIDE the column so the caret has a surface-local landing spot.
-      expect(leftTypes).toEqual(["paragraph", "divider", "paragraph"]);
-      expect(layout.child(1).textContent).toBe("right");
-      expect(editor.state.selection.$from.parent.type.name).toBe("paragraph");
-      editor.destroy();
-    });
-
-    it("lands the caret in the existing next sibling when the divider is not last", async () => {
-      const editor = makeColumnsEditor({
-        type: "doc",
-        content: [
-          {
-            type: "columnLayout",
-            content: [
-              { type: "column", content: [para(), para("below")] },
-              { type: "column", content: [para("right")] },
-            ],
-          },
-        ],
-      });
-
-      let target = -1;
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "paragraph" && node.content.size === 0 && target < 0) target = pos;
-      });
-      editor.commands.setTextSelection(target + 1);
-      await typeAtCaret(editor, "--- ");
-
-      const layout = editor.state.doc.child(0);
-      const leftTypes: string[] = [];
-      layout.child(0).forEach((n) => leftTypes.push(n.type.name));
-      // No spurious trailing paragraph — "below" is the landing spot.
-      expect(leftTypes).toEqual(["divider", "paragraph"]);
-      expect(editor.state.selection.$from.parent.textContent).toBe("below");
-      editor.destroy();
-    });
   });
 
   describe("inside a table cell (regression: fitter ejected the divider to doc root)", () => {

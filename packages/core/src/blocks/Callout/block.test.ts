@@ -47,29 +47,6 @@ describe("Callout — schema", () => {
     expect(editor.getHTML()).toContain('data-rune-callout-icon="💡"')
   })
 
-  // Regression: block-level color rides on `.rune-block-content`, but callout's
-  // parse rule matches the OUTER `.rune-block`. The color attr's parseHTML must
-  // reach DOWN to the content wrapper or the color is dropped on round-trip.
-  it("keeps a block background color across a getHTML round-trip", () => {
-    const editor = withCallout()
-    editor.commands.setBlockBackgroundColor(0, "blue")
-    const html = editor.getHTML()
-    expect(html).toContain('data-background-color="blue"')
-
-    editor.commands.setContent(html)
-    expect(editor.getHTML()).toContain('data-background-color="blue"')
-  })
-
-  it("keeps a block text color across a getHTML round-trip", () => {
-    const editor = withCallout()
-    editor.commands.setBlockTextColor(0, "red")
-    const html = editor.getHTML()
-    expect(html).toContain('data-text-color="red"')
-
-    editor.commands.setContent(html)
-    expect(editor.getHTML()).toContain('data-text-color="red"')
-  })
-
   it("parses an external <aside> callout without slurping the leading emoji", () => {
     const editor = fresh()
     editor.commands.setContent(

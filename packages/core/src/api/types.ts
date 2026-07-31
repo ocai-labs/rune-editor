@@ -21,28 +21,16 @@ type DistributiveBlockUpdate<T> = T extends unknown
  */
 export type RuneBlockInput = OptionalInputCommon<RuneBlock>
 
-/**
- * Address a column surface for insert: a block at a 0-based `index` within
- * the column, or appended at the column's tail. `columnId` is the column's
- * stable (`col_`-prefixed) id. Columns Phase 1 (Task 5).
- */
-export type ColumnInsertTarget =
-  | { columnId: string; index: number }
-  | { columnId: string; at: "end" }
-
 export type BlockInsertTarget =
   | number
   | "end"
   | { id: string; side: "before" | "after" }
-  | ColumnInsertTarget
 
 // AI-facing insert target: block-id-relative (or "end"), never a raw PM
-// numeric boundary. Inherits the column-surface target so an agent can also
-// place a block inside a named column.
+// numeric boundary.
 export type BlockIdInsertTarget =
   | "end"
   | { id: string; side: "before" | "after" }
-  | ColumnInsertTarget
 
 export interface InsertBlocksOptions {
   at?: BlockInsertTarget
@@ -67,31 +55,6 @@ export interface TurnIntoBlockInput {
   content?: string
 }
 
-/**
- * Move destination. A root/sibling target (`{ id, side }`) places the moved
- * slice relative to a block on its surface; a column target
- * (`{ columnId, index | at:"end" }`) places it inside a named column. Columns
- * Phase 1 (Task 5) — cross-surface RANGE moves stay out of scope (rejected).
- */
-export type MoveBlocksTarget =
-  | { id: string; side: "before" | "after" }
-  | { columnId: string; index: number }
-  | { columnId: string; at: "end" }
-
-/**
- * Drag-to-create-columns destination (columns Phase 2, F6).
- *
- * `{ id, side }` wraps the named ROOT block together with the moved run into
- * a NEW 2-column layout (both columns `width: 1`); `side` is the side the
- * MOVED run lands on ("left" → moved run becomes the left column).
- *
- * `{ layoutId, index }` inserts a NEW column at boundary `index`
- * (`0..columnCount`) of an existing layout — its width is the mean of the
- * existing column widths — and the moved run becomes its children. Refused at
- * the 5-column schema cap.
- */
-export type WrapIntoColumnsTarget =
-  | { id: string; side: "left" | "right" }
-  | { layoutId: string; index: number }
+export type MoveBlocksTarget = { id: string; side: "before" | "after" }
 
 export type BlockUpdate = DistributiveBlockUpdate<RuneBlock>

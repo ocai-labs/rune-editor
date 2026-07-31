@@ -16,12 +16,11 @@ import { INTERNAL_NORMALIZATION_META } from "../internal-meta"
 // The logic is identical to block-id's original `computeIdPatches` /
 // `buildBackfillTransaction`, lifted out and parameterized by:
 //
-//   - `attrName`      — which attr holds the id (block-id: "id"; column: "id").
+//   - `attrName`      — which attr holds the id.
 //   - `nodePredicate` — which nodes to scan/patch.
-//   - `generateId`    — id factory (block-id: nanoid(8); column: col_<nanoid(8)>).
+//   - `generateId`    — id factory.
 //   - `extraMeta`     — optional extra meta keys to set true on the tr, each
-//                       consumer's own tag (block-id's BLOCK_ID_META, columns'
-//                       COLUMN_NORMALIZE_META). These are an output signal for
+//                       consumer's own tag. These are an output signal for
 //                       any meta-aware consumer; they are NOT what stops the
 //                       appendTransaction from looping. INTERNAL_NORMALIZATION_META
 //                       + addToHistory=false are ALWAYS set.
@@ -149,12 +148,10 @@ export function buildBackfillTransaction(
       applied += 1
     } catch {
       // setNodeMarkup RE-CREATES the node and re-validates its content
-      // expression. A node that is currently schema-invalid — e.g. an
-      // id-less 1-column `columnLayout` (content `column{2,5}`) landed via
-      // Node.fromJSON, which does NOT re-fit (setContent / collab) — throws
-      // RangeError here BEFORE the owning normalization pass can repair it.
-      // Skip it: structural normalization (e.g. ColumnsNormalization's
-      // unwrap) fixes the shape in the same appendTransaction round, and
+      // expression. A schema-invalid structured node landed via Node.fromJSON,
+      // which does NOT re-fit (setContent / collab), throws RangeError here
+      // BEFORE the owning normalization pass can repair it. Skip it: structural
+      // normalization fixes the shape in the same appendTransaction round, and
       // the backfill converges on the next. The failed call appends no
       // step, so the tr stays usable for the remaining patches.
       // Probed 2026-06-10: tr.setNodeAttribute (AttrStep) throws the

@@ -55,10 +55,9 @@ export interface RuneSelectionSnapshot {
 }
 
 /**
- * One body block's absolute span. Emitted by `forEachBodyBlock`, so frames can
- * NEST: a `columnLayout` frame contains the frames of its in-column children
- * (`index` is surface-local). Every consumer below must account for that —
- * disjoint-frame assumptions double-count the layout AND its children.
+ * One body block's absolute span. Rune's built-in schema is flat; the
+ * innermost-frame handling below also keeps plugin-provided structured blocks
+ * from being double-counted.
  */
 interface BodyBlockFrame {
   index: number
@@ -107,8 +106,7 @@ function bodyBlockFrames(doc: PMNode): BodyBlockFrame[] {
 /**
  * The INNERMOST frame containing `pos`. Frames arrive in document order and a
  * nested frame always starts after its container, so the last containing frame
- * is the innermost — a caret inside a column child resolves to that child, not
- * to the enclosing `columnLayout`. The backward scan also resolves the boundary
+ * is the innermost. The backward scan also resolves the boundary
  * tie between adjacent siblings toward the block that STARTS at `pos` (a
  * NodeSelection's `from` is both the previous sibling's end and the selected
  * node's start).

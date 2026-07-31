@@ -24,12 +24,12 @@ describe("buildClipboardSerializer", () => {
     })
   })
 
-  it("heading serializes to bare <h2>/<h3>/<h4>", () => {
+  it("heading serializes to its identity HTML tag", () => {
     withEditor((editor) => {
       const ser = buildClipboardSerializer(editor)
-      const node = editor.schema.nodes.heading!.create({ level: 2 }, editor.schema.text("T"))
+      const node = editor.schema.nodes.heading!.create({ level: 1 }, editor.schema.text("T"))
       const dom = ser.serializeNode(node) as HTMLElement
-      expect(dom.outerHTML).toBe("<h2>T</h2>")
+      expect(dom.outerHTML).toBe("<h1>T</h1>")
     })
   })
 

@@ -43,45 +43,6 @@ describe("Toggle.dragSourceRange", () => {
     const r = hook({ node: toggleNode, pos: 0, doc: editor.state.doc })
     expect(r).toEqual({ from: 0, to: toggleNode.nodeSize + editor.state.doc.child(1).nodeSize })
   })
-
-  it("inside a column: drag range is column-local, never spilling past the column", () => {
-    const editor = fresh()
-    editor.commands.setContent([
-      {
-        type: "columnLayout",
-        attrs: { depth: 0 },
-        content: [
-          {
-            type: "column",
-            attrs: { width: 1 },
-            content: [
-              { type: "toggle", attrs: { level: 0, expanded: true }, content: [{ type: "text", text: "t" }] },
-              { type: "paragraph", attrs: { depth: 1 }, content: [{ type: "text", text: "c1" }] },
-            ],
-          },
-          {
-            type: "column",
-            attrs: { width: 1 },
-            content: [
-              { type: "paragraph", attrs: { depth: 0 }, content: [{ type: "text", text: "col2" }] },
-            ],
-          },
-        ],
-      },
-    ])
-    let togglePos = -1
-    editor.state.doc.descendants((n, p) => {
-      if (n.type.name === "toggle") togglePos = p
-    })
-    const toggleNode = editor.state.doc.nodeAt(togglePos)!
-    const $pos = editor.state.doc.resolve(togglePos)
-    const column = $pos.parent
-    const child = column.child(1) // the depth-1 body paragraph
-    const hook = getBlockSpecs(editor)["toggle"]!.dragSourceRange!
-    const r = hook({ node: toggleNode, pos: togglePos, doc: editor.state.doc })
-    // from = before the toggle; to = after its single column-local body block.
-    expect(r).toEqual({ from: togglePos, to: togglePos + toggleNode.nodeSize + child.nodeSize })
-  })
 })
 
 // v1.1 follow-up: drop INTO a collapsed toggle requires geometry-layer

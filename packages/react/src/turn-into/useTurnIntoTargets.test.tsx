@@ -21,53 +21,39 @@ function track(editor: Editor) {
   return editor
 }
 
-/**
- * Editor whose doc is: r1 · columnLayout[ col_a[pa] · col_b[pb] ] · r2.
- * `pa` is a paragraph INSIDE a column — the block whose turn-into targets used
- * to come back empty (findBlockNodeById scanned only root children).
- */
-function columnEditor() {
+function rootEditor() {
   const editor = new Editor({
     element: document.createElement("div"),
     extensions: createRuneKit(),
   })
-  const s = editor.schema
-  const para = (id: string, t: string) =>
-    s.nodes.paragraph!.create({ id, depth: 0 }, s.text(t))
-  const col = (id: string, child: ReturnType<typeof para>) =>
-    s.nodes.column!.create({ id, width: 1 }, child)
-  const doc = s.nodes.doc!.create(null, [
-    para("r1", "root-1"),
-    s.nodes.columnLayout!.create({ id: "lay", depth: 0 }, [
-      col("col_a", para("pa", "in-column")),
-      col("col_b", para("pb", "other")),
-    ]),
-    para("r2", "root-2"),
-  ])
-  editor.view.dispatch(
-    editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-  )
+  editor.commands.setContent({
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        attrs: { id: "r1", depth: 0 },
+        content: [{ type: "text", text: "root-1" }],
+      },
+      {
+        type: "paragraph",
+        attrs: { id: "r2", depth: 0 },
+        content: [{ type: "text", text: "root-2" }],
+      },
+    ],
+  })
   return track(editor)
 }
 
-describe("useTurnIntoTargets — in-column source", () => {
-  it("resolves turn-into targets for a paragraph inside a column", () => {
-    const editor = columnEditor()
-    const { result } = renderHook(() => useTurnIntoTargets(editor, ["pa"]))
-    // The in-column paragraph resolves as a source…
-    expect(result.current.sources).toHaveLength(1)
-    expect(result.current.sources[0]!.textContent).toBe("in-column")
-    // …and the menu offers convertible targets (was empty before the fix).
-    expect(result.current.groups.length).toBeGreaterThan(0)
-    const titles = result.current.groups.flatMap((g) => g.items.map((i) => i.title))
-    expect(titles).toContain("Heading 1")
-  })
-
-  it("still resolves root sources", () => {
-    const editor = columnEditor()
+describe("useTurnIntoTargets — root source", () => {
+  it("resolves a body block and offers convertible targets", () => {
+    const editor = rootEditor()
     const { result } = renderHook(() => useTurnIntoTargets(editor, ["r1"]))
     expect(result.current.sources).toHaveLength(1)
     expect(result.current.sources[0]!.textContent).toBe("root-1")
     expect(result.current.groups.length).toBeGreaterThan(0)
+    const titles = result.current.groups.flatMap((group) =>
+      group.items.map((item) => item.title),
+    )
+    expect(titles).toContain("Heading 1")
   })
 })

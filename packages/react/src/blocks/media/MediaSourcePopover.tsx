@@ -241,7 +241,19 @@ export function SourceBlockPopover({
             <TabsTrigger value="upload">Upload</TabsTrigger>
             <TabsTrigger value="embed">Embed link</TabsTrigger>
           </TabsList>
-          <TabsContent value="upload" className="flex flex-col gap-2">
+          {/* Both panels carry the same min-height so switching tabs cannot
+              change the popover's size. Without it "Embed link" is 40px taller
+              than "Upload" — an `Input` (h-8) plus a gap-2 above the same lg
+              Button — and near the bottom of the viewport that growth
+              re-triggers Radix's collision check, flipping the whole popover
+              above the block on a tab click. Flipping is right when the popover
+              genuinely does not fit; making the size constant is what confines
+              that decision to open time, so a tab click only swaps the input.
+
+              min-h-19 = 76px = Input h-8 (32) + gap-2 (8) + Button lg h-9 (36),
+              the taller panel's base. The optional hint and error lines grow
+              past it in both panels alike. */}
+          <TabsContent value="upload" className="flex min-h-19 flex-col gap-2">
             <input
               ref={fileInputRef}
               aria-label={labels.fileInput}
@@ -265,7 +277,7 @@ export function SourceBlockPopover({
               </p>
             )}
           </TabsContent>
-          <TabsContent value="embed">
+          <TabsContent value="embed" className="min-h-19">
             <form className="flex flex-col gap-2" onSubmit={submitUrl}>
               <Input
                 aria-label={labels.urlInput}

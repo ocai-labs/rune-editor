@@ -65,13 +65,10 @@ function countKind(stack: StackEntry[], kind: StackEntry["kind"]): number {
  * between rendering and normalization, which is exactly the class of
  * bug this layer exists to prevent.
  *
- * The per-block algorithm runs ONCE PER SURFACE with a fresh `stack` +
- * `depthCounters`, so numbering and marker cycling RESTART at each surface
- * boundary: a numbered list inside a column starts at 1, unaffected by the
- * root or a sibling column (Notion parity). The root surface still sees the
- * `columnLayout` as a plain non-list block, so it interrupts a root run
- * exactly as before. `byPos` stays keyed by ABSOLUTE pos, so both consumers
- * address in-column and root blocks the same way.
+ * The per-block algorithm runs once per body surface with fresh counters.
+ * Built-in Rune blocks live on the root surface; plugin-provided surfaces
+ * therefore restart list numbering independently. `byPos` remains keyed by
+ * absolute position.
  */
 export function computeListRuns(doc: ProseMirrorNode): ListRunInfo {
   const byPos = new Map<number, ListRunBlockInfo>()

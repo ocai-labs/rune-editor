@@ -38,14 +38,8 @@ function setCheckedAttributes(dom: HTMLElement, button: HTMLButtonElement, check
 }
 
 function splitTaskListAttributes(HTMLAttributes: Record<string, unknown>) {
-  const {
-    "data-text-color": textColor,
-    "data-background-color": bgColor,
-    ...root
-  } = HTMLAttributes
+  const root = HTMLAttributes
   const content: Record<string, string> = { class: "rune-block-content" }
-  if (textColor) content["data-text-color"] = String(textColor)
-  if (bgColor) content["data-background-color"] = String(bgColor)
   return { root, content }
 }
 
@@ -66,12 +60,6 @@ function rootAttributesFromNode(node: ProseMirrorNode): Record<string, string> {
     attrs.style = `--rune-block-depth: ${node.attrs.depth}`
   }
   if (node.attrs.checked === true) attrs["data-checked"] = "true"
-  if (typeof node.attrs.textColor === "string" && node.attrs.textColor.length > 0) {
-    attrs["data-text-color"] = node.attrs.textColor
-  }
-  if (typeof node.attrs.backgroundColor === "string" && node.attrs.backgroundColor.length > 0) {
-    attrs["data-background-color"] = node.attrs.backgroundColor
-  }
   return attrs
 }
 
@@ -122,13 +110,9 @@ function applyRootAttributes(
   for (const name of Array.from(dom.getAttributeNames())) {
     if (name !== "class" && !nextNames.has(name)) dom.removeAttribute(name)
   }
-  dom.removeAttribute("data-text-color")
-  dom.removeAttribute("data-background-color")
-
   for (const [key, value] of Object.entries(HTMLAttributes)) {
     if (value == null) continue
     if (key === "class") continue
-    if (key === "data-text-color" || key === "data-background-color") continue
     dom.setAttribute(key, String(value))
   }
 
@@ -159,7 +143,6 @@ type TaskListCommands = {
 export const TaskList = createBlockSpec({
   type: "taskList",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   indent: { mode: "structural" },
   props: {
     checked: {
@@ -231,14 +214,8 @@ export const TaskList = createBlockSpec({
     },
   ],
   renderDOM: ({ HTMLAttributes }) => {
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (textColor) contentAttrs["data-text-color"] = String(textColor)
-    if (bgColor) contentAttrs["data-background-color"] = String(bgColor)
     return [
       "div",
       { ...outer, class: "rune-block rune-task-list" },

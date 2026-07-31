@@ -125,14 +125,6 @@ describe("applyMarkdownEdits — inline edits", () => {
     expect(b2.type.name).toBe("bulletList")
   })
 
-  it("preserves block color across an inline edit", () => {
-    const editor = editorWith([para("p", [text("hello")], { backgroundColor: "blue" })])
-    expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "hello", newStr: "goodbye" }] }))
-    const block = findBlock(editor, "p")!
-    expect(block.textContent).toBe("goodbye")
-    expect(block.attrs.backgroundColor).toBe("blue")
-  })
-
   it("preserves a checked todo across an inline edit", () => {
     const editor = editorWith([
       { type: "taskList", attrs: { id: "t", depth: 0, checked: true }, content: [text("task")] },
@@ -377,19 +369,19 @@ describe("applyMarkdownEdits — structural edits", () => {
 
   it("changes a heading level by editing its `#` prefix", () => {
     const editor = editorWith([
-      { type: "heading", attrs: { id: "h", depth: 0, level: 2 }, content: [text("Title")] },
+      { type: "heading", attrs: { id: "h", depth: 0, level: 1 }, content: [text("Title")] },
     ])
     const line = exportMarkdownWithChunks(editor).chunks[0]!.text
     expect(line).toBe("# Title")
     const newStr = "## Title"
-    // Independently derive the level "## Title" parses to (axis-shift aware).
+    // Independently derive the level "## Title" parses to.
     const expectedLevel = parseAiMarkdown(newStr, editor.schema).content![0]!.attrs!.level
 
     expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: line, newStr }] }))
     const block = findBlock(editor, "h")!
     expect(block.type.name).toBe("heading")
     expect(block.attrs.level).toBe(expectedLevel)
-    expect(block.attrs.level).not.toBe(2)
+    expect(block.attrs.level).toBe(2)
     expect(block.textContent).toBe("Title")
   })
 
@@ -505,15 +497,14 @@ describe("applyMarkdownEdits — batch semantics", () => {
 // ── clear (empty newStr covering the whole chunk) ──────────────────────────
 
 describe("applyMarkdownEdits — clear (empty newStr)", () => {
-  it("clears a paragraph's text but KEEPS the block (id / depth / color preserved)", () => {
-    const editor = editorWith([para("p", [text("hello")], { backgroundColor: "blue" })])
+  it("clears a paragraph's text but keeps its id and depth", () => {
+    const editor = editorWith([para("p", [text("hello")])])
     expectOk(applyMarkdownEdits(editor, { edits: [{ oldStr: "hello", newStr: "" }] }))
     const block = findBlock(editor, "p")!
     expect(block.type.name).toBe("paragraph")
     expect(block.textContent).toBe("")
     expect(block.attrs.id).toBe("p")
     expect(block.attrs.depth).toBe(0)
-    expect(block.attrs.backgroundColor).toBe("blue")
   })
 
   it("clears a checked todo's text but keeps it checked", () => {

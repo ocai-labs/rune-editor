@@ -31,7 +31,6 @@
 @import "./styles/editor-chrome.css";
 @import "./styles/typography.css";
 @import "./styles/wikilink.css";
-@import "./styles/blocks/title.css";
 @import "./styles/blocks/paragraph.css";
 @import "./styles/blocks/heading.css";
 @import "./styles/blocks/divider.css";
@@ -42,9 +41,9 @@
 @import "./styles/blocks/table.css";
 @import "./styles/blocks/toggle.css";
 @import "./styles/blocks/toc.css";
-@import "./styles/blocks/columns.css";
 @import "./styles/blocks/image.css";
 @import "./styles/blocks/media.css";
+@import "./styles/blocks/raw.css";
 @import "./styles/block-resize.css";
 @import "./styles/source-import.css";
 @import "./styles/side-menu.css";

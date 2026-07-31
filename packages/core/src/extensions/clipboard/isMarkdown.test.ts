@@ -50,7 +50,7 @@ describe("isMarkdown", () => {
   })
 
   it("may flag intra-word underscores — harmless because markdown-it leaves them literal", () => {
-    // The heuristic is intentionally loose; the markdownToHtml safety net
+    // The heuristic is intentionally loose; the parser downstream of it
     // (CommonMark: no intra-word emphasis) keeps the false positive benign.
     expect(isMarkdown("see foo_bar_baz_qux for details")).toBe(true)
   })

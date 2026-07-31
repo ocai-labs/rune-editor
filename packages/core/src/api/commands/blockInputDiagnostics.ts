@@ -15,7 +15,7 @@ import type { RuneBlockInput } from "../types"
  * against the opaque "Command rejected the given input." (G1, plan 2026-06-16).
  *
  * The constraint lives in ONE place: a block's `schemaContext.input.description`
- * — the same text `get_editor_context` advertises (e.g. heading's "level 2–5").
+ * — the same text `get_editor_context` advertises (e.g. heading's "level 1–6").
  * We don't add a parallel per-block rejection hook; instead, when `fromInput`
  * refuses an input we surface that block's advertised description.
  *

@@ -25,6 +25,12 @@ export type NamedColorEntry = {
   bg: string
 }
 
+/** The palette name markdown's native `==highlight==` anchors to, both
+ *  directions (D4). "default" is never stored (choosing it removes the
+ *  attr), and Obsidian renders `==` as yellow — so yellow is the token
+ *  that writes as `==` and the one a bare `<mark>` reads back as. */
+export const HIGHLIGHT_COLOR_NAME: ColorName = "yellow"
+
 export const COLORS: Record<ColorName, NamedColorEntry> = {
   default: { label: "Default", fg: "inherit",            bg: "transparent" },
   gray:    { label: "Gray",    fg: "rgb(125, 122, 117)", bg: "rgb(56, 56, 54)" },

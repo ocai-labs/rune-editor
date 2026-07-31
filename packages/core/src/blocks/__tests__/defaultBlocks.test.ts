@@ -34,7 +34,7 @@ describe("RUNE_BODY_BLOCKS", () => {
       "toggle",
       "table",
       "tableOfContents",
-      "columnLayout",
+      "rawBlock",
     ])
     expect(names).not.toContain("mediaImport")
     expect(names).not.toContain("mediaPopover")
@@ -60,8 +60,7 @@ describe("RUNE_BODY_BLOCKS", () => {
     expect(types).toHaveLength(17)
     expect(types).toContain("paragraph")
     expect(types).toContain("table")
-    expect(types).toContain("columnLayout")
-    // The structural `column` node has no factory marker → never derived.
+    expect(types).not.toContain("columnLayout")
     expect(types).not.toContain("column")
   })
 
@@ -89,7 +88,7 @@ describe("RUNE_BODY_BLOCKS", () => {
       "toggle",
       "table",
       "tableOfContents",
-      "columnLayout",
+      "rawBlock",
     ])
   })
 })

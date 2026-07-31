@@ -12,7 +12,7 @@
   --rune-toggle-title-pad-y: 2px;
 }
 
-.rune-editor :is(.ProseMirror, .rune-column) > .rune-block.rune-toggle {
+.rune-editor .ProseMirror > .rune-block.rune-toggle {
   /* Symmetric 6px top/bottom (matches Notion, and rune's own paragraph
      rhythm) so the caret + title row is VERTICALLY CENTERED in the block.
      The caret box and the title line are each 28px tall (24 + 2+2), so the
@@ -40,9 +40,9 @@
 }
 
 .rune-editor .rune-toggle:is(
-  [data-rune-toggle-level="2"],
+  [data-rune-toggle-level="1"],
   [data-rune-toggle-level="3"],
-  [data-rune-toggle-level="4"]
+  [data-rune-toggle-level="2"]
 ) > .rune-block-content {
   align-items: center;
 }
@@ -90,9 +90,9 @@
 }
 
 .rune-editor .rune-toggle > .rune-block-content > p,
+.rune-editor .rune-toggle > .rune-block-content > h1,
 .rune-editor .rune-toggle > .rune-block-content > h2,
-.rune-editor .rune-toggle > .rune-block-content > h3,
-.rune-editor .rune-toggle > .rune-block-content > h4 {
+.rune-editor .rune-toggle > .rune-block-content > h3 {
   margin: 0;
   flex: 1 1 0px;
   min-width: 1px;

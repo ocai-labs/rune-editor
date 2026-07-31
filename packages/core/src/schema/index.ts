@@ -36,7 +36,6 @@ export {
   nearestBodyBlock,
   bodyBlocksInRange,
   surfaceChildrenAt,
-  resolveColumnById,
 } from "./bodySurface"
 export type {
   ResolvedBodyBlock,
@@ -63,12 +62,14 @@ export type {
   RuneBlockExtensionInput,
   RuneBlockProjectionContext,
   RuneBlockSchemaContextSpec,
+  RuneMarkdownBlockContract,
   RuneMarkdownBlockInfo,
   RuneMarkdownBlockSerializer,
   RuneMarkdownBlockSerializerContext,
   RuneMarkdownSpacing,
   RuneSchemaContextInputExample,
   RuneSchemaContextPropMetadata,
+  RuneMdastContext,
   RuneSchemaContextPropType,
   ShortcutHandler,
 } from "./blocks/types"

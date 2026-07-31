@@ -32,7 +32,6 @@ import {
   isStructuralBlockContainer,
 } from "../../schema/bodySurface"
 import { getBlockSpecs } from "../../schema/blocks/registry"
-import { COLOR_NAMES } from "../../shared/color-tokens"
 import type { TurnIntoBlockInput } from "../types"
 import { addInlineMarkMerged } from "../inlineMark"
 import { isEditorAlive } from "../editorLifecycle"
@@ -70,7 +69,7 @@ export interface RuneMatchWhere {
 
 /**
  * The transform half. The KIND of transform decides what is targeted: `mark` /
- * `unset` are INLINE-kind (act on ranges); `blockColor` / `turnInto` are
+ * `unset` are INLINE-kind (act on ranges); `turnInto` is
  * BLOCK-kind (act on whole blocks). Mixing kinds in one call is rejected — the
  * model issues two calls. An empty `set` is rejected.
  */
@@ -80,9 +79,6 @@ export interface RuneMatchSet {
   mark?: { type: string; attrs?: Record<string, unknown> }
   /** Remove each named mark (whole mark, not attr-surgery) over each range. */
   unset?: string[]
-  /** Set a matched block's text/background colour. Only blocks whose spec
-   * DECLARES the axis are counted as matches (see the JSDoc on `applyMatching`). */
-  blockColor?: { kind: "text" | "background"; name: string }
   /** Convert each matched block to another type (pure type flip — no content).
    * Reuses the core `turnInto` command; only blocks that can convert count. */
   turnInto?: { type: string; props?: Record<string, unknown> }
@@ -120,18 +116,13 @@ interface Range {
  *   predicates (`mark` present; `hasTextColor` = named colour or `"any"`),
  *   within blocks satisfying `blockType`, restricted to `textMatches`
  *   substrings when given. Contiguous ranges merge; `count` = applied ranges.
- * - BLOCK-kind (`blockColor` / `turnInto`): every block satisfying `blockType`
+ * - BLOCK-kind (`turnInto`): every block satisfying `blockType`
  *   and (when an inline predicate is given) containing ≥1 matching range.
  *   `count` = matched blocks.
  *
- * BLOCK-kind eligibility gate (plan decision): a block-kind op only counts a
- * block it can actually apply to — `blockColor` requires the block spec to
- * DECLARE that colour axis (writing a raw attr onto a block that doesn't
- * support it would silently no-op — the established `setBlockColor` stance);
- * `turnInto` requires the source to be convertible (`canTurnInto`). A block that
- * matches `where` but fails the gate is simply NOT a match, so `count` never
- * overstates what changed. (If both block-kind keys are set, a block must pass
- * BOTH gates; `blockColor` is applied before `turnInto`.)
+ * BLOCK-kind eligibility gate: `turnInto` requires the source to be
+ * convertible (`canTurnInto`). A block that matches `where` but fails the gate
+ * is simply not a match, so `count` never overstates what changed.
  *
  * KNOWN pre-existing issue: `turnInto` reuses the same core conversion
  * machinery as the `turn_into` tool, which has a documented level/text
@@ -184,11 +175,11 @@ export function applyMatching(
   const inlineKind =
     set?.mark !== undefined ||
     (Array.isArray(set?.unset) && set!.unset.length > 0)
-  const blockKind = set?.blockColor !== undefined || set?.turnInto !== undefined
+  const blockKind = set?.turnInto !== undefined
   if (inlineKind && blockKind) {
     return runeCommandError(
       "invalid-input",
-      "`set` mixes inline (mark/unset) and block (blockColor/turnInto) transforms; issue two calls.",
+      "`set` mixes inline (mark/unset) and block (turnInto) transforms; issue two calls.",
     )
   }
   if (!inlineKind && !blockKind) {
@@ -314,19 +305,6 @@ function applyBlock(
 ): RuneCommandResult<ApplyMatchingData> {
   const schema = editor.schema
 
-  // Validate the block-kind set up front.
-  if (set.blockColor) {
-    const { kind, name } = set.blockColor
-    if (kind !== "text" && kind !== "background") {
-      return runeCommandError("invalid-input", `Unknown colour kind "${kind}".`)
-    }
-    if (!(COLOR_NAMES as readonly string[]).includes(name)) {
-      return runeCommandError(
-        "invalid-input",
-        `Unknown colour "${name}". Valid names: ${COLOR_NAMES.join(", ")}.`,
-      )
-    }
-  }
   let turnTarget: TurnIntoBlockInput | null = null
   if (set.turnInto) {
     if (!isRegisteredBodyBlockType(specs, set.turnInto.type)) {
@@ -352,14 +330,6 @@ function applyBlock(
       // here, so no allowsMarkType gate.
       if (computeBodyBlockRanges(node, pos, where, matcher, null).length === 0) return
     }
-    // Set-specific eligibility gate (see applyMatching JSDoc). A block that
-    // fails the gate is not a match, so `count` never overstates.
-    if (set.blockColor) {
-      const supports = specs[node.type.name]?.supports
-      const ok =
-        set.blockColor.kind === "text" ? supports?.textColor : supports?.backgroundColor
-      if (!ok) return
-    }
     if (turnTarget && !canTurnInto(node, turnTarget, schema)) return
     const id = node.attrs.id as string | undefined
     if (id) matched.push({ pos, node, id })
@@ -368,28 +338,18 @@ function applyBlock(
   if (matched.length === 0) return runeCommandOk({ changedBlockIds: [], count: 0 })
 
   const tr = editor.state.tr
-  if (set.blockColor) {
-    // Mirrors the color extension's `setBlockColor` command: set the axis attr;
-    // `"default"` clears (stored as null). setNodeAttribute never shifts
-    // positions, so the original positions stay valid.
-    const attr = set.blockColor.kind === "text" ? TEXT_COLOR_ATTR : "backgroundColor"
-    const stored = set.blockColor.name === "default" ? null : set.blockColor.name
-    for (const { pos } of matched) tr.setNodeAttribute(pos, attr, stored)
-  }
   // `canTurnInto` above is only the CHEAP pre-filter (rejects container
   // sources / unknown targets); `applyTurnIntoTr` can still no-op a matched
-  // block at apply time — a `columnLayout` target tripping the no-nesting
-  // guard, or `props` an adapter's validation refuses (e.g. heading level
+  // block at apply time — for example `props` an adapter's validation refuses
+  // (such as heading level
   // 99) — without signaling which source failed. Snapshot each matched
-  // node right before the call (post-blockColor, so a combined blockColor +
-  // turnInto call isn't skewed by the color step) and doc-compare after: a
+  // node right before the call and doc-compare after: a
   // block whose turnInto no-op'd is not a match, so `count` never overstates.
   let turnIntoApplied: Set<string> | null = null
   if (turnTarget) {
     const preNodes = matched.map(({ pos }) => tr.doc.nodeAt(tr.mapping.map(pos)))
     // applyTurnIntoTr maps every source.pos through tr.mapping, so it is safe
-    // after the position-stable blockColor step above and across its own
-    // multi-source size changes. keepDepth defaults true (a bulk type flip
+    // across its own multi-source size changes. keepDepth defaults true (a bulk type flip
     // preserves nesting).
     applyTurnIntoTr(
       editor,
@@ -406,12 +366,7 @@ function applyBlock(
     })
   }
   editor.view.dispatch(tr)
-  // set.blockColor always applies unconditionally to every matched block
-  // (no apply-time refusal), so those blocks count regardless of turnInto's
-  // outcome; a turnInto-only call counts only the blocks it actually changed.
-  const changed = matched.filter(
-    ({ id }) => set.blockColor !== undefined || turnIntoApplied!.has(id),
-  )
+  const changed = matched.filter(({ id }) => turnIntoApplied!.has(id))
   return runeCommandOk({
     changedBlockIds: changed.map((m) => m.id),
     count: changed.length,
@@ -427,11 +382,10 @@ function applyBlock(
  * container body block (a `table`) contributes each textblock in its subtree
  * (the cells' `tableParagraph`s).
  *
- * The descent STOPS at any nested body block or structural container (a
- * `column`): a `columnLayout`'s column children are enumerated as their OWN body
- * blocks by `forEachBodyBlock`, so re-collecting their textblocks here would
- * apply the transform twice (a double `addMark` hides as an idempotent no-op —
- * see the column regression test).
+ * The descent STOPS at any nested body block or structural container. If a
+ * plugin supplies nested body blocks, `forEachBodyBlock` enumerates them on
+ * their own, so re-collecting their textblocks here would apply the transform
+ * twice.
  *
  * `requireMarkType` (the mark a `mark`-set would add): a textblock whose type
  * disallows it is skipped whole — its ranges are neither counted nor written, so

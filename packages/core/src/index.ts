@@ -11,7 +11,7 @@ export {
   type NamedColorEntry,
 } from "./shared/color-tokens"
 
-export { createRuneKit, BLOCK_COLOR_TYPES, deriveBlockColorTypes } from "./kit"
+export { createRuneKit } from "./kit"
 export type { CreateRuneKitOptions, RunePlugin } from "./kit"
 
 // Remappable-shortcut registry + override channel. RUNE_SHORTCUT_ACTIONS is
@@ -51,7 +51,6 @@ export {
   replaceSelectionText,
   setInlineMark,
   posAtBlockOffset,
-  setBlockColor,
   applyMarkdownEdits,
   applyMatching,
   explainBlockInputRejection,
@@ -63,7 +62,6 @@ export type {
   BlockIdInsertTarget,
   BlockInsertTarget,
   BlockUpdate,
-  ColumnInsertTarget,
   DeleteBlocksTarget,
   InsertBlocksByIdOptions,
   InsertBlocksOptions,
@@ -71,7 +69,6 @@ export type {
   RuneBlockInput,
   TurnIntoBlockInput,
   TurnIntoTarget,
-  WrapIntoColumnsTarget,
   RuneCommandError,
   RuneCommandErrorCode,
   RuneCommandResult,
@@ -86,9 +83,6 @@ export type {
   RuneSelectionSnapshot,
   SetInlineMarkInput,
   SetInlineMarkData,
-  SetBlockColorInput,
-  SetBlockColorData,
-  BlockColorKind,
   RuneMarkdownEdit,
   ApplyMarkdownEditsOptions,
   ApplyMarkdownEditsData,
@@ -118,13 +112,20 @@ export type {
   RuneSchemaContextPropType,
 } from "./schema"
 
-// Block-level color extensions. createRuneKit registers these by default;
-// re-exported so consumers composing extensions manually can reach them
-// without depending on the kit.
-export { BlockTextColor, BlockBackgroundColor } from "./extensions/color"
+// Inline text-color extensions stay public. Besides supporting custom kits,
+// this export carries their Tiptap command augmentation into the package's
+// declarations (`setRuneTextColor` / `setRuneBackgroundColor`). Block-level
+// color extensions deliberately no longer exist.
+export {
+  TextStyleWithColorAttrs,
+  TextColor,
+  BackgroundColor,
+  createColorExtension,
+} from "./extensions/color"
 export type {
-  BlockTextColorOptions,
-  BlockBackgroundColorOptions,
+  ColorExtensionOptions,
+  TextColorOptions,
+  BackgroundColorOptions,
 } from "./extensions/color"
 
 // Block factory + shared attribute names. Consumers building custom
@@ -169,8 +170,7 @@ export {
 } from "./schema"
 export type { BlockSpecMetadata, BlockSideMenuSpec } from "./schema"
 
-// Body-surface resolver layer. The single seam Phase 1 (nested columns)
-// re-implements recursively; in Phase 0 it resolves against the doc root.
+// Root body-block resolver layer.
 export {
   resolveBodyBlockById,
   forEachBodyBlock,
@@ -204,8 +204,6 @@ export {
   Toggle,
   Equation,
   EquationBlockCommands,
-  ColumnLayout,
-  Column,
   Image,
   Video,
   Audio,
@@ -246,8 +244,6 @@ export type {
   RuneToggleBlock,
   ToggleLevel,
   RuneEquationBlock,
-  RuneColumnsBlock,
-  RuneColumn,
   RuneImageBlock,
   RuneVideoBlock,
   RuneAudioBlock,
@@ -281,11 +277,6 @@ export type {
   RuneMediaImportResult,
   RuneMediaImportSource,
 } from "./blocks"
-
-// Opt-in in-document page title (NOT a default body block). Enable via
-// createRuneKit({ plugins: [TitleKit] }). See blocks/Title.
-export { TitleKit, TitleBlock, TITLE_TYPE, setTitleText } from "./blocks/Title"
-export type { RuneTitleBlock } from "./blocks/Title"
 
 export {
   InlineMath,
@@ -429,7 +420,7 @@ export type {
 export { MultiBlockSelection } from "./extensions/block-selection/MultiBlockSelection"
 export { setMarqueeZone } from "./extensions/block-selection/marquee"
 
-export { Clipboard, collectKnownBlockTags, markdownToDoc, markdownToHtml, parseAiMarkdown } from "./extensions/clipboard"
+export { Clipboard, collectKnownBlockTags, parseAiMarkdown } from "./extensions/clipboard"
 export type { ClipboardOptions, ParseHTML } from "./extensions/clipboard"
 export { clipboardPluginKey } from "./extensions/clipboard/plugin"
 export { serializeBlocksForClipboard } from "./extensions/clipboard/serializeBlocks"

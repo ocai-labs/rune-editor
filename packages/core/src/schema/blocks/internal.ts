@@ -31,9 +31,8 @@ import type { DeclarativeInputRule } from "./types"
  * Range semantics: `from`/`to` cover the matched trigger text inside the
  * containing block. For block-atom replacement, we resolve the containing
  * TEXTBLOCK via `$pos.before/after($pos.depth)` — depth-relative, NOT a
- * hard-coded depth 1: the trigger may fire inside a column (the sanctioned
- * nested body surface), where depth 1 is the whole `columnLayout` and a
- * depth-1 replace would swallow the entire layout.
+ * hard-coded depth 1: plugin blocks may add structural ancestors, and a
+ * replacement at the wrong depth would destroy their container.
  */
 export function replaceWithNode(
   state: EditorState,

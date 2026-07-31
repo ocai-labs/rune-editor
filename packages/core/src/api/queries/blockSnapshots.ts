@@ -24,16 +24,9 @@ export interface RuneBlockOutline {
   id: string
   type: string
   depth: number
-  /** Index within the block's surface (surface-local, 0-based). */
+  /** Root-document index, 0-based. */
   index: number
   preview: string
-  /**
-   * The surface the block lives on. Omitted for blocks on the root surface
-   * (the doc). For a block nested inside a `column`, this is that column's
-   * id — letting an outline consumer distinguish root from in-column blocks
-   * without resolving positions. Public-API addition (Columns Phase 1).
-   */
-  surface?: string
 }
 
 export type RunePublicBlock = {
@@ -94,11 +87,7 @@ function blockLocalMarkdown(editor: Editor, node: PMNode): string {
 export function getBlockOutline(editor: Editor): RuneBlockOutline[] {
   const doc = editor.state.doc
   const outline: RuneBlockOutline[] = []
-  // Recurse into nested surfaces (column children) via the shared body-
-  // surface walker. `index` is surface-local; `surface` is the containing
-  // column's id (omitted for the root surface so root blocks keep their
-  // existing shape).
-  forEachBodyBlock(doc, ({ node, index, surfacePos }) => {
+  forEachBodyBlock(doc, ({ node, index }) => {
     const id = typeof node.attrs.id === "string" ? node.attrs.id : ""
     const entry: RuneBlockOutline = {
       id,
@@ -106,13 +95,6 @@ export function getBlockOutline(editor: Editor): RuneBlockOutline[] {
       depth: typeof node.attrs.depth === "number" ? node.attrs.depth : 0,
       index,
       preview: blockPreview(blockPlainText(node)),
-    }
-    // Surface id straight from the walker's `surfacePos` — resolving around
-    // the block's own pos is wrong for leaf/atom blocks (nodeSize 1), where
-    // `pos + 1` lands AFTER the node and reports the layout instead.
-    if (surfacePos !== -1) {
-      const surfaceId = doc.nodeAt(surfacePos)?.attrs.id
-      if (typeof surfaceId === "string") entry.surface = surfaceId
     }
     outline.push(entry)
   })
@@ -123,8 +105,6 @@ export function getBlockSnapshot(
   editor: Editor,
   id: string,
 ): RuneCommandResult<RuneBlockSnapshot> {
-  // Recursive lookup — a column child is snapshot-addressable by id exactly
-  // like a root block (parity with getBlockById / getBlockOutline).
   const resolved = resolveBodyBlockById(editor.state.doc, id)
   if (!resolved) {
     return runeCommandError("not-found", `Block "${id}" was not found.`)

@@ -29,15 +29,6 @@ function TableOfContentsNodeView({
   HTMLAttributes,
 }: ReactNodeViewProps<HTMLDivElement>) {
   const { className, style, rest } = mergeNodeViewHTMLAttributes(HTMLAttributes)
-  // Mirror core renderDOM: color attrs ride the inner .rune-block-content
-  // (see block.ts § "Color attrs ride on the inner wrapper") so the
-  // colored pill hugs the content rectangle while the outer .rune-block
-  // keeps data-id / data-depth only.
-  const {
-    "data-text-color": textColor,
-    "data-background-color": bgColor,
-    ...outerRest
-  } = rest
 
   const hostRef = useRef<HTMLDivElement>(null)
 
@@ -60,24 +51,18 @@ function TableOfContentsNodeView({
   // 24px — the TOC stays flush-left instead of starting at depth-2's
   // offset.
   const minLevel =
-    headings.length === 0 ? 2 : Math.min(...headings.map((h) => h.level))
+    headings.length === 0 ? 1 : Math.min(...headings.map((h) => h.level))
 
   return (
     <NodeViewWrapper
       as="div"
       className={className}
       style={style}
-      {...outerRest}
+      {...rest}
     >
       <div
         className="rune-block-content"
         data-rune-toc=""
-        {...(typeof textColor === "string"
-          ? { "data-text-color": textColor }
-          : {})}
-        {...(typeof bgColor === "string"
-          ? { "data-background-color": bgColor }
-          : {})}
       >
         {headings.length === 0 ? (
           <div className="rune-toc-empty">

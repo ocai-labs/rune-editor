@@ -11,7 +11,7 @@ import Text from "@tiptap/extension-text"
 import { Plugin, type PluginKey } from "@tiptap/pm/state"
 import { columnResizingPluginKey } from "@tiptap/pm/tables"
 import { createBlockSpec } from "../../schema"
-import { Divider } from "../../blocks"
+import { Divider, Toggle } from "../../blocks"
 import { BlockDrag, blockDragKey, GHOST_CLASS } from "./BlockDrag"
 import { getPaddingThresholdCursor } from "./gesture"
 import { createTestEditor } from "../../test-utils/createTestEditor"
@@ -138,6 +138,82 @@ describe("BlockDrag gesture lifecycle", () => {
     editor.destroy()
   })
 
+  it("dragging after an ordinary paragraph cannot create a free depth", async () => {
+    container.className = "rune-editor"
+    container.style.setProperty("--rune-block-indent-step", "30px")
+    const editor = new Editor({
+      element: container,
+      extensions: [Document, Text, Para, GestureStatePlugin, SideMenu, BlockDrag],
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Move" }] },
+          { type: "paragraph", content: [{ type: "text", text: "Plain" }] },
+        ],
+      },
+    })
+
+    editor.view.dispatch(editor.state.tr.setMeta(sideMenuKey, { hoveredPos: 0 }))
+    const grip = container.querySelector(".rune-side-menu-grip") as HTMLButtonElement
+    const blocks = container.querySelectorAll(".rune-block")
+    blocks.forEach((block, index) => {
+      ;(block as HTMLElement).getBoundingClientRect = () =>
+        ({ top: index * 40, bottom: index * 40 + 20, left: 0, right: 100, width: 100, height: 20, x: 0, y: index * 40, toJSON: () => ({}) }) as DOMRect
+    })
+
+    grip.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 10, bubbles: true }))
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 120, clientY: 50, bubbles: true, buttons: 1 }))
+    document.dispatchEvent(new MouseEvent("mouseup", { clientX: 120, clientY: 50, bubbles: true }))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(Array.from({ length: editor.state.doc.childCount }, (_, index) => ({
+      text: editor.state.doc.child(index).textContent,
+      depth: editor.state.doc.child(index).attrs.depth,
+    }))).toEqual([
+      { text: "Plain", depth: 0 },
+      { text: "Move", depth: 0 },
+    ])
+    editor.destroy()
+  })
+
+  it("dragging into a Toggle body produces a Markdown-roundtrippable child", async () => {
+    container.className = "rune-editor"
+    container.style.setProperty("--rune-block-indent-step", "30px")
+    const editor = new Editor({
+      element: container,
+      extensions: [Document, Text, Para, Toggle, GestureStatePlugin, SideMenu, BlockDrag],
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Move" }] },
+          { type: "toggle", content: [{ type: "text", text: "Owner" }] },
+        ],
+      },
+    })
+
+    editor.view.dispatch(editor.state.tr.setMeta(sideMenuKey, { hoveredPos: 0 }))
+    const grip = container.querySelector(".rune-side-menu-grip") as HTMLButtonElement
+    const blocks = container.querySelectorAll(".rune-block")
+    blocks.forEach((block, index) => {
+      ;(block as HTMLElement).getBoundingClientRect = () =>
+        ({ top: index * 40, bottom: index * 40 + 20, left: 0, right: 100, width: 100, height: 20, x: 0, y: index * 40, toJSON: () => ({}) }) as DOMRect
+    })
+
+    grip.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 10, bubbles: true }))
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 120, clientY: 50, bubbles: true, buttons: 1 }))
+    document.dispatchEvent(new MouseEvent("mouseup", { clientX: 120, clientY: 50, bubbles: true }))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(Array.from({ length: editor.state.doc.childCount }, (_, index) => ({
+      text: editor.state.doc.child(index).textContent,
+      depth: editor.state.doc.child(index).attrs.depth,
+    }))).toEqual([
+      { text: "Owner", depth: 0 },
+      { text: "Move", depth: 1 },
+    ])
+    editor.destroy()
+  })
+
   it("mousedown→mouseup with no movement → applyGripClick fires (MBS set)", () => {
     container.className = "rune-editor"
     const editor = new Editor({
@@ -261,48 +337,6 @@ describe("BlockDrag gesture lifecycle", () => {
     await new Promise((r) => requestAnimationFrame(r))
 
     expect(editor.state.selection).not.toBeInstanceOf(MultiBlockSelection)
-    editor.destroy()
-  })
-
-  it("wrap zone arms via the block-rect fallback when no direct .rune-block-content exists", () => {
-    // F6 fallback contract (mirrors `indicatorLeftFor`): the Para fixture
-    // renders a bare <p> — no `.rune-block-content` child, like React
-    // NodeView blocks whose wrapper nests one renderer level deeper (Audio)
-    // or that render no content box at all (Equation, TableOfContents). The
-    // zone must key on the block's own rect instead of staying unreachable.
-    container.className = "rune-editor"
-    const editor = new Editor({
-      element: container,
-      extensions: [Document, Text, Para, GestureStatePlugin, SideMenu, BlockDrag],
-      content: "<p>A</p><p>B</p>",
-    })
-    editor.view.dispatch(editor.state.tr.setMeta(sideMenuKey, { hoveredPos: 0 }))
-    const grip = container.querySelector(".rune-side-menu-grip") as HTMLButtonElement
-
-    const ps = container.querySelectorAll("p")
-    ;(ps[0] as HTMLElement).getBoundingClientRect = () =>
-      ({ top: 0, bottom: 20, left: 100, right: 300, width: 200, height: 20, x: 100, y: 0, toJSON: () => ({}) }) as DOMRect
-    ;(ps[1] as HTMLElement).getBoundingClientRect = () =>
-      ({ top: 40, bottom: 60, left: 100, right: 300, width: 200, height: 20, x: 100, y: 40, toJSON: () => ({}) }) as DOMRect
-    expect(container.querySelector(".rune-block-content")).toBeNull()
-
-    grip.dispatchEvent(new MouseEvent("mousedown", { clientX: 100, clientY: 10, bubbles: true }))
-    // Cross threshold landing 10px past B's RIGHT block edge (zone is 40px),
-    // at B's vertical middle (inside the arm band). B is not in the dragged run.
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 310, clientY: 50, bubbles: true, buttons: 1 }))
-
-    // The indicator renders the F6 VERTICAL bar at B's right edge, sized to
-    // B's block rect — the fallback geometry.
-    const indicator = document.querySelector(".rune-drag-indicator") as HTMLElement
-    expect(indicator).not.toBeNull()
-    expect(indicator.style.display).toBe("block")
-    expect(indicator.style.width).toBe("2px")
-    expect(indicator.style.left).toBe("299px") // rect.right (300) - 1
-    expect(indicator.style.top).toBe("40px")
-    expect(indicator.style.height).toBe("20px")
-
-    // Abort (wrapIntoColumns isn't registered in this minimal editor).
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
     editor.destroy()
   })
 
@@ -519,61 +553,6 @@ describe("BlockDrag trigger — MBS interactions", () => {
     expect(editor.state.doc.child(3).textContent).toBe("B")
     expect(editor.state.selection).toBeInstanceOf(MultiBlockSelection)
     expect((editor.state.selection as MultiBlockSelection).blockIndices).toEqual([2, 3])
-
-    editor.destroy()
-  })
-
-  it("padding mousedown is suppressed while column-resize handle is active", () => {
-    // Repro for the fit-width-table block-drag false-positive: when MBS
-    // covers a table and the cursor sits on the rightmost column's
-    // `.column-resize-handle` (which has `pointer-events: none` and
-    // overhangs the rightmost cell by 2px in fit-width mode), the click
-    // target is the `.rune-block` padding chrome — NOT `.rune-block-content`.
-    // Without the gate, onPaddingMouseDown's preconditions (not grip, not
-    // in block-content, MBS active) would all be satisfied and arm a
-    // block-drag pending. The columnResizing plugin's `activeHandle`
-    // (set by its own mousemove while the cursor is in a handle hot zone)
-    // is the canonical "user is resizing, defer" signal — same gate the
-    // table pin plugin uses.
-    container.className = "rune-editor"
-    const editor = new Editor({
-      element: container,
-      extensions: [Document, Text, Para, BlockId, GestureStatePlugin, SideMenu, BlockDrag, BlockSelection],
-      content: "<p>A</p><p>B</p><p>C</p><p>D</p>",
-    })
-
-    // Install a sentinel plugin under columnResizingPluginKey so the gate
-    // reads a non-default state, without pulling the whole Table extension
-    // graph into this unit test. Mirrors what prosemirror-tables would
-    // expose at runtime when the cursor is hovering a handle hot zone.
-    type ColumnResizeShape = { activeHandle: number; dragging: unknown }
-    const fake = new Plugin<ColumnResizeShape>({
-      key: columnResizingPluginKey as unknown as PluginKey<ColumnResizeShape>,
-      state: {
-        init: () => ({ activeHandle: 1, dragging: null }),
-        apply: (_tr, s) => s,
-      },
-    })
-    editor.view.updateState(editor.state.reconfigure({ plugins: [...editor.state.plugins, fake] }))
-
-    editor.commands.setBlockSelection({ from: 0, to: 1 })
-
-    ;(editor.view.posAtCoords as unknown as (coords: { left: number; top: number }) => { pos: number; inside: number } | null) =
-      () => null
-    const ps = container.querySelectorAll("p")
-    ps.forEach((p, i) => {
-      ;(p as HTMLElement).getBoundingClientRect = () =>
-        ({ top: i * 30, bottom: i * 30 + 20, left: 0, right: 100, width: 100, height: 20, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
-    })
-
-    container.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: -10, clientY: 10 }))
-    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: -10, clientY: 105, buttons: 1 }))
-    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: -10, clientY: 105 }))
-
-    // Gate held: no reorder, no preview chrome.
-    expect(editor.state.doc.child(0).textContent).toBe("A")
-    expect(editor.state.doc.child(1).textContent).toBe("B")
-    expect(document.querySelector(".rune-block-drag-preview")).toBeNull()
 
     editor.destroy()
   })
@@ -1022,77 +1001,6 @@ describe("BlockDrag gesture hardening — mid-drag doc change aborts (#307)", ()
     expect(gestureKey.getState(editor.state)?.activeGesture).toBeNull()
     expect(document.querySelector(".rune-block-drag-preview")).toBeNull()
     editor.destroy()
-  })
-})
-
-describe("BlockDrag — layout runs never drop into a column (COL-1)", () => {
-  it("dragging a columnLayout over another layout's column does NOT commit a nested move", async () => {
-    // COL-1 regression: `maybeReSnapshotSurface` swapped to a COLUMN surface
-    // with no layout-run gate, so dragging a layout's grip over another
-    // layout's column offered a drop slot there and executeReorder committed
-    // a nested move (which ColumnsNormalization then flattened — destroying
-    // the dragged layout). The command-level contract is pinned in
-    // `api/commands/columnTargets.test.ts` ("moveBlocks — no-nesting guard");
-    // this exercises the DRAG seam: the gesture must keep treating the cursor
-    // as root-surface for a layout run, never offering a column drop slot.
-    container.className = "rune-editor"
-    const editor = createTestEditor({
-      kit: { suggestionMenus: false },
-      element: container,
-    })
-    const s = editor.schema
-    const para = (id: string, t: string) =>
-      s.nodes.paragraph!.create({ id, depth: 0 }, s.text(t))
-    const col = (id: string, ...children: import("@tiptap/pm/model").Node[]) =>
-      s.nodes.column!.create({ id, width: 1 }, children)
-    const doc = s.nodes.doc!.create(null, [
-      para("r1", "root-1"),
-      s.nodes.columnLayout!.create({ id: "lay1", depth: 0 }, [
-        col("col_a", para("a1", "A1")),
-        col("col_b", para("b1", "B1")),
-      ]),
-      s.nodes.columnLayout!.create({ id: "lay2", depth: 0 }, [
-        col("col_c", para("c1", "C1")),
-        col("col_d", para("d1", "D1")),
-      ]),
-      para("r2", "root-2"),
-    ])
-    editor.view.dispatch(
-      editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-    )
-
-    // lay2's top-level pos: r1 + lay1.
-    const lay2Pos =
-      editor.state.doc.child(0).nodeSize + editor.state.doc.child(1).nodeSize
-
-    // Give lay1's FIRST column (col_a) a real rect so surfaceFromPoint sees
-    // the cursor inside it; every other rect stays jsdom-zero.
-    const colAEl = container.querySelector<HTMLElement>("[data-rune-column]")!
-    colAEl.getBoundingClientRect = () =>
-      ({ top: 100, bottom: 200, left: 0, right: 100, width: 100, height: 100, x: 0, y: 100, toJSON: () => ({}) }) as DOMRect
-
-    editor.view.dispatch(editor.state.tr.setMeta(sideMenuKey, { hoveredPos: lay2Pos }))
-    const grip = container.querySelector(".rune-side-menu-grip") as HTMLButtonElement
-    expect(grip).not.toBeNull()
-
-    // Grip lay2, cross the threshold landing INSIDE col_a's rect, release.
-    grip.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 10, bubbles: true }))
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 150, bubbles: true, buttons: 1 }))
-    document.dispatchEvent(new MouseEvent("mouseup", { clientX: 50, clientY: 150, bubbles: true }))
-
-    await new Promise((r) => requestAnimationFrame(r))
-
-    // Both layouts survive AT ROOT (a root-level reorder of lay2 is fine; a
-    // drop INTO col_a is not — normalization would flatten lay2 away).
-    const rootTypes: string[] = []
-    editor.state.doc.forEach((node) => rootTypes.push(node.type.name))
-    expect(rootTypes.filter((t) => t === "columnLayout")).toHaveLength(2)
-    // col_a kept exactly its own child — nothing nested/flattened into it.
-    const lay1 = editor.state.doc.child(1)
-    expect(lay1.attrs.id).toBe("lay1")
-    expect(lay1.child(0).childCount).toBe(1)
-    expect(lay1.child(0).child(0).attrs.id).toBe("a1")
-    expect(gestureKey.getState(editor.state)?.activeGesture).toBeNull()
   })
 })
 

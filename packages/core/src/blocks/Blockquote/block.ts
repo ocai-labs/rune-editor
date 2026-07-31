@@ -17,7 +17,6 @@ export interface RuneBlockquoteBlock extends RuneBlockBase {
 export const Blockquote = createBlockSpec({
   type: "blockquote",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   schemaContext: {
     input: {
       examples: [{ type: "blockquote", text: "Example quote" }],
@@ -46,14 +45,8 @@ export const Blockquote = createBlockSpec({
   },
   parseDOM: [{ tag: "blockquote" }],
   renderDOM: ({ HTMLAttributes }) => {
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (textColor) contentAttrs["data-text-color"] = textColor
-    if (bgColor) contentAttrs["data-background-color"] = bgColor
     return [
       "div",
       { ...outer, class: "rune-block" },

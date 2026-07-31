@@ -20,16 +20,6 @@ describe("classifyKind", () => {
     expect(classifyKind(types.divider!)).toBe("atom")
     expect(classifyKind(types.table!)).toBe("container")
   })
-
-  it("classifies structured-content blocks as containers without name special-cases (COL-2)", () => {
-    const editor = createTestEditor()
-    const types = editor.schema.nodes
-    expect(classifyKind(types.columnLayout!)).toBe("container")
-    // Structural internals classify as containers too, so a (nonsensical)
-    // `column` target routes through the rejecting container path instead
-    // of the unchecked textblock builder.
-    expect(classifyKind(types.column!)).toBe("container")
-  })
 })
 
 describe("same-type adapter", () => {
@@ -322,7 +312,7 @@ describe("toggle source adapter", () => {
 })
 
 describe("props validation + content override (turn_into contract, plan 2026-06-16)", () => {
-  it("rejects an illegal heading level (cross-type) instead of building an invalid <h1>", () => {
+  it("rejects an illegal heading level (cross-type)", () => {
     const editor = createTestEditor()
     editor.commands.setContent([
       { type: "paragraph", attrs: { id: "p1" }, content: [{ type: "text", text: "x" }] },
@@ -331,7 +321,7 @@ describe("props validation + content override (turn_into contract, plan 2026-06-
     const result = adapter(
       editor,
       editor.state.doc.firstChild!,
-      { type: "heading", props: { level: 1 } },
+      { type: "heading", props: { level: 7 } },
       editor.schema,
     )
     expect(result).toBeNull()
@@ -346,7 +336,7 @@ describe("props validation + content override (turn_into contract, plan 2026-06-
     const result = adapter(
       editor,
       editor.state.doc.firstChild!,
-      { type: "heading", props: { level: 1 } },
+      { type: "heading", props: { level: 7 } },
       editor.schema,
     )
     expect(result).toBeNull()

@@ -26,9 +26,17 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: path.resolve(__dirname, "src/index.ts"),
+      // Two entries: the editor root, and the markdown storage codec at
+      // `@ocai/rune-core/markdown` — a subpath ON PURPOSE so consumers who
+      // never touch markdown don't pull the unified/remark family into
+      // their bundle. Shared code (blocks, color tokens) becomes common
+      // chunks imported by both entries — still a single copy at runtime.
+      entry: {
+        index: path.resolve(__dirname, "src/index.ts"),
+        "markdown/index": path.resolve(__dirname, "src/markdown/index.ts"),
+      },
       formats: ["es"],
-      fileName: () => "index.js",
+      fileName: (_format, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
       external: [
@@ -38,6 +46,10 @@ export default defineConfig({
         "rope-sequence",
         "w3c-keyname",
         "nanoid",
+        // The markdown codec's parser/serializer stack — declared package
+        // dependencies, resolved by the consumer's package manager.
+        "unified",
+        /^remark-/,
         // Lazily `require`d by `api/headlessDom.ts` — only reached in a bare
         // Node process missing a global `DOMParser` (a browser/jsdom host
         // never touches this). Kept external + dynamically required so it

@@ -54,18 +54,8 @@ export const Placeholder = Extension.create<PlaceholderOptions>({
           const placeholders = extension.options.placeholders
           if (placeholders) {
             const unknown: string[] = []
-            const entries = placeholders as Record<
-              string,
-              PlaceholderResolver | undefined
-            >
             for (const key of Object.keys(placeholders)) {
               if (key === "default") continue
-              // An explicit per-type `undefined` is a deliberate opt-out, not
-              // a typo — harmless even when the type isn't registered (e.g.
-              // rune-react ships `title: undefined` in its defaults but
-              // TitleKit, the only thing that registers `title`, is opt-in).
-              // Don't flag it.
-              if (entries[key] === undefined) continue
               if (!view.state.schema.nodes[key]) unknown.push(key)
             }
             if (unknown.length > 0) {
@@ -126,7 +116,7 @@ export const Placeholder = Extension.create<PlaceholderOptions>({
 
               if (hit.node.type.name === "heading") {
                 const level = hit.node.attrs.level as number
-                attrs["data-placeholder-level"] = String(level - 1)
+                attrs["data-placeholder-level"] = String(level)
               }
 
               // Outer node decoration: surfaces is-empty / data-placeholder

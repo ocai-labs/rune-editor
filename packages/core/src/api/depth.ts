@@ -4,39 +4,91 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import type { Editor } from "@tiptap/core"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import type { IndentConfig } from "../schema/blocks/createSpec"
+import { getBlockSpecs } from "../schema/blocks/registry"
 import { surfaceChildrenAt } from "../schema/bodySurface"
 import { isBlockSelectable } from "../extensions/block-selection/selectable"
 
+export interface MarkdownDepthBlock {
+  type: string
+  depth: number
+}
+
+/** Built-in/plugin block kinds whose deeper sibling run has real Markdown
+ * structure: structural list items and storage contracts such as Toggle. */
+export function markdownDepthOwnerTypes(editor: Editor): ReadonlySet<string> {
+  const owners = new Set<string>()
+  for (const [type, spec] of Object.entries(getBlockSpecs(editor))) {
+    if (spec.indent?.mode === "structural" || spec.markdown?.absorbsDeeperRun === true) {
+      owners.add(type)
+    }
+  }
+  return owners
+}
+
 /**
- * The depth at which `pos` sits, as the depth of the immediately preceding
- * sibling ON THE SAME SURFACE, or `-1` when there is no preceding sibling.
- * Extracted from `indentBlock.ts`'s `immediatelyPrevDepth` (the follow-prev
- * cap basis): the last sibling on `pos`'s surface whose start offset is
- * strictly before `pos`.
+ * Block kinds that cannot carry a depth at all, because a container would
+ * destroy their bytes rather than merely indent them (`markdown.flattensDepth`).
  *
- * Phase 1: the surface is resolved from `pos` — the doc root for a root
- * boundary, the containing `column` for a position inside a column — so the
- * predecessor scan is surface-local, never crossing a structural boundary.
+ * Distinct from `indent.maxDepth: 0`, which several blocks declare for the
+ * weaker reason that indenting them is meaningless — a fenced code block under
+ * a list item still round-trips perfectly. The codec enforces this set when
+ * serializing; the drag path uses it to stop offering a slot the save would
+ * silently undo.
  */
-function immediatelyPrevDepth(doc: ProseMirrorNode, pos: number): number {
+export function depthFlatteningTypes(editor: Editor): ReadonlySet<string> {
+  const flattening = new Set<string>()
+  for (const [type, spec] of Object.entries(getBlockSpecs(editor))) {
+    if (spec.markdown?.flattensDepth === true) flattening.add(type)
+  }
+  return flattening
+}
+
+/** Maximum Markdown-persistable depth at the end of a flat block sequence.
+ * A direct owner may open one child level. A non-owner already inside an
+ * owner's body may be followed only at that same child level; it can never
+ * become a new indentation parent. */
+export function maxPersistableDepthAfter(
+  blocks: readonly MarkdownDepthBlock[],
+  ownerTypes: ReadonlySet<string>,
+): number {
+  const previous = blocks.at(-1)
+  if (!previous) return 0
+  if (ownerTypes.has(previous.type)) return Math.max(0, previous.depth + 1)
+  if (previous.depth <= 0) return 0
+
+  for (let index = blocks.length - 2; index >= 0; index -= 1) {
+    const candidate = blocks[index]!
+    if (candidate.depth >= previous.depth) continue
+    if (candidate.depth !== previous.depth - 1) return 0
+    return ownerTypes.has(candidate.type) ? previous.depth : 0
+  }
+  return 0
+}
+
+/** Maximum Markdown-persistable depth for a block at a surface boundary. */
+export function maxPersistableDepthAt(
+  doc: ProseMirrorNode,
+  pos: number,
+  ownerTypes: ReadonlySet<string>,
+): number {
   const surface = surfaceChildrenAt(doc, pos)
-  if (!surface) return -1
-  let prevDepth = -1
+  if (!surface) return 0
+  const previous: MarkdownDepthBlock[] = []
   let offset = surface.start
   surface.node.forEach((child) => {
     const childStart = offset
     offset += child.nodeSize
     if (childStart >= pos) return
-    // A non-selectable block (the in-document title) is never an indent anchor:
-    // body blocks must not nest under it. Skipping it leaves the first body
-    // block with no preceding sibling, so its follow-prev cap stays 0 (Tab is a
-    // no-op there) — the same as a title-less doc's lone first block.
     if (!isBlockSelectable(child)) return
-    prevDepth = (child.attrs.depth as number | undefined) ?? 0
+    previous.push({
+      type: child.type.name,
+      depth: (child.attrs.depth as number | undefined) ?? 0,
+    })
   })
-  return prevDepth
+  return maxPersistableDepthAfter(previous, ownerTypes)
 }
 
 /**
@@ -48,14 +100,13 @@ function immediatelyPrevDepth(doc: ProseMirrorNode, pos: number): number {
  * The rules it encodes (all extracted, not invented):
  * - Floor at 0. Negative depths are illegal everywhere (matches the `Math.max(0, …)`
  *   clamps in `reorder.ts`'s drag re-base and `markdown.ts`'s depth offset).
- * - `mode: "numeric"` — cap at the configured `maxDepth` (same as `planIndent`:
- *   Tab succeeds only while `depth < maxDepth`). `maxDepth: 0` forces depth 0
- *   (non-indentable blocks: CodeBlock, Divider, Table).
- * - `mode: "follow-prev"` / `mode: "structural"` / absent — cap at
- *   `immediatelyPrevDepth + 1` (the follow-prev cap from `indentBlock.ts:53-63`;
- *   no preceding sibling ⇒ cap 0). Structural's same-kind-predecessor gate is a
- *   Tab-time guard, not a destination clamp, so for placement it caps the same
- *   way; absent spec defaults to follow-prev per `BlockSpecConfig.indent` JSDoc.
+ * - Every positive depth must be owned by Markdown structure. A list item or a
+ *   contract with `absorbsDeeperRun` may own direct children; ordinary blocks
+ *   may continue at that child level but may not open another level.
+ * - `mode: "numeric"` additionally caps at `maxDepth`. `maxDepth: 0` forces
+ *   depth 0 (non-indentable blocks: CodeBlock, Divider, Table).
+ * - Structural's same-kind-predecessor gate remains a Tab-time rule; placement
+ *   still uses the shared Markdown-owner cap.
  *
  * `pos` is the destination boundary position (where the block will live);
  * `spec` is the block's `IndentConfig` (or `undefined` to default to follow-prev).
@@ -65,14 +116,14 @@ export function normalizeDepthAt(
   pos: number,
   requestedDepth: number,
   spec: IndentConfig | undefined,
+  ownerTypes: ReadonlySet<string>,
 ): number {
   const floored = Math.max(0, requestedDepth)
+  const markdownCap = maxPersistableDepthAt(doc, pos, ownerTypes)
 
   if (spec?.mode === "numeric") {
-    return Math.min(floored, Math.max(0, spec.maxDepth))
+    return Math.min(floored, Math.max(0, spec.maxDepth), markdownCap)
   }
 
-  // follow-prev | structural | absent: cap at the preceding sibling's depth + 1.
-  const cap = immediatelyPrevDepth(doc, pos) + 1
-  return Math.min(floored, Math.max(0, cap))
+  return Math.min(floored, markdownCap)
 }

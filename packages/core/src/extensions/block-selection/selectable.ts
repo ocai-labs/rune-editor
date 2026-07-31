@@ -13,13 +13,12 @@ import type { Node } from "@tiptap/pm/model"
 //
 // A block opts OUT by declaring `meta: { selectable: false }` in its spec —
 // the factory (createSpec.ts) flows that to the PM node spec's `selectable`
-// flag. Today only the in-document page title does this: Notion never sweeps
-// the title into a block selection, and excluding it makes "select-all +
-// Delete" preserve the title.
+// flag. This lets host/plugin-defined structural blocks opt out without
+// coupling the selection extension to their node names.
 //
 // `selectable: false` is a ProseMirror NodeSpec flag that only blocks
 // NodeSelection (whole-node selection); it does NOT affect TextSelection /
-// caret editing, so title text editing is unaffected.
+// caret editing, so normal text editing is unaffected.
 
 /** Whether a node participates in block selection. `false` ⇒ excluded. */
 export function isBlockSelectable(node: Node): boolean {
@@ -28,10 +27,8 @@ export function isBlockSelectable(node: Node): boolean {
 
 /**
  * Index of the first ROOT child that participates in block selection,
- * skipping a leading run of non-selectable blocks (the title, always at
- * index 0). Returns `doc.childCount` when nothing on the root surface is
- * selectable. Written as a general leading-skip even though the title is
- * the only such block today.
+ * skipping a leading run of non-selectable blocks. Returns `doc.childCount`
+ * when nothing on the root surface is selectable.
  */
 export function firstSelectableIndex(doc: Node): number {
   let i = 0

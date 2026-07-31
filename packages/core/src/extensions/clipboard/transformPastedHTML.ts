@@ -22,9 +22,9 @@ type ListKind = "bullet" | "numbered" | "task"
  * `<p>` to its inline children and drop whitespace-only text nodes directly
  * under the container, so the block receives the clean inline run it
  * expects — the round-trip inverse of the block serializers' single-line
- * output. Shared by the paste pipeline and the headless
- * `markdownToDoc`/`parseAiMarkdown` imports (all route through
- * `transformPastedHTMLDoc`, below).
+ * output. Shared by the HTML paste pipeline and the headless
+ * `parseAiMarkdown` import (both route through `transformPastedHTMLDoc`,
+ * below).
  *
  * Gated on the container actually having a `<p>` child: a real paste source
  * can hand us a genuinely whitespace-only `<li>` (no `<p>` involved at all —
@@ -62,7 +62,7 @@ function flattenLists(doc: Document) {
 function walkList(list: Element, depth: number, out: HTMLLIElement[]) {
   // Tag/nodeType checks instead of `instanceof HTML*Element` so the
   // transform stays DOM-implementation-agnostic — the headless
-  // `markdownToDoc` path may run against an injected Document (linkedom,
+  // `parseAiMarkdown` path may run against an injected Document (linkedom,
   // jsdom) whose element classes are NOT the page's global constructors.
   const isOL = list.tagName === "OL"
   const startAttr = isOL ? list.getAttribute("start") : null
@@ -137,7 +137,7 @@ export function transformPastedHTML(html: string, view: EditorView, editor: Edit
  * every preprocessing step that depends solely on the schema (inline-
  * container normalize, toggle flatten, inline-code rewrite, list flatten,
  * unknown-block degrade), so it stays usable WITHOUT a live EditorView —
- * this is what the headless `markdownToDoc` import path calls.
+ * this is what the headless `parseAiMarkdown` import path calls.
  *
  * `transformImages` is the one step that needs a live view + editor
  * (image upload routing + Notion image-wrapper rewrite). The paste path

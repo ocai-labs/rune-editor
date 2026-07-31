@@ -28,8 +28,6 @@ export interface RuneEditorSchemaSummary {
 export type RunePropSchemaContext = RuneSchemaContextPropMetadata
 
 export interface RuneBlockSupportsContext {
-  textColor?: boolean
-  backgroundColor?: boolean
   resize?: boolean
   mediaSource?: boolean
   fitToWidth?: boolean
@@ -78,12 +76,8 @@ export interface RuneSchemaContext {
   blocks: RuneBlockSchemaContext[]
   marks: RuneMarkSchemaContext[]
   /**
-   * The one shared colour palette (`COLOR_NAMES`) every colour surface draws
-   * from — block `set_block_color`, the `textStyle` colour mark, table cells.
-   * `blocks[].supports.textColor` / `.backgroundColor` say WHICH blocks can be
-   * coloured; this says with WHICH names (`"default"` clears). Exposed here so an
-   * agent learns the vocabulary once from `get_editor_context` rather than
-   * guessing names.
+   * The shared inline text/highlight palette (`COLOR_NAMES`). `"default"`
+   * clears the corresponding `textStyle` mark attribute.
    */
   palette: ColorName[]
 }

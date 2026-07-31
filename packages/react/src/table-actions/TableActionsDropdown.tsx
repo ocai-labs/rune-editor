@@ -33,22 +33,18 @@ import {
   isTableHeaderRow,
   isTableHeaderColumn,
   type PillDropdownState,
-  type ColorName,
 } from "@ocai/rune-core"
-import { TableMap } from "@tiptap/pm/tables"
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
-  ChevronRightIcon,
   CircleXIcon,
   CopyIcon,
   PaintRollerIcon,
   TableHeaderIcon,
   TrashIcon,
 } from "../icons"
-import { ColorMenu } from "../color"
 import { cn } from "../lib/utils"
 import {
   Popover,
@@ -61,8 +57,6 @@ import {
   nativeMenuContentClass,
   NativeMenuItem,
   NativeMenuSwitchItem,
-  nativeMenuItemClass,
-  useNativeMenuSubmenu,
 } from "../native-menu"
 import { useRuneEditorState } from "../useRuneEditorState"
 
@@ -71,8 +65,6 @@ export interface TableActionsDropdownProps {
 }
 
 const CONTENT_ATTR = "data-rune-table-actions-content"
-const SUBTRIGGER_ATTR = "data-rune-table-actions-subtrigger"
-const SUBMENU_ATTR = "data-rune-table-actions-submenu"
 const PILL_SELECTOR = ".rune-col-pill, .rune-row-pill"
 
 export function TableActionsDropdown({ editor }: TableActionsDropdownProps) {
@@ -91,12 +83,6 @@ export function TableActionsDropdown({ editor }: TableActionsDropdownProps) {
       const target = e.target as HTMLElement | null
       if (!target) return
       if (target.closest(`[${CONTENT_ATTR}]`)) return
-      // The Color submenu is a portaled Radix PopoverContent — a DOM
-      // sibling of the menu content, not a descendant — so it needs its
-      // own allowance or swatch pointerdown closes the dropdown before
-      // the click can commit (regression introduced with the Popover
-      // migration in #272).
-      if (target.closest(`[${SUBMENU_ATTR}]`)) return
       if (target.closest(PILL_SELECTOR)) return
       editor.view.dispatch(
         editor.state.tr.setMeta(PILL_DROPDOWN_META, { close: true }),
@@ -208,137 +194,13 @@ interface ItemsProps {
   index: number
 }
 
-interface ColorRowProps {
-  editor: Editor
-  onPick: (action: () => boolean) => void
-  axis: "col" | "row"
-  tableStart: number
-  index: number
-}
-
-function ColorRow({ editor, onPick, axis, tableStart, index }: ColorRowProps) {
-  const submenu = useNativeMenuSubmenu()
-
-  // Read active swatches from the first cell at the pill's (axis, index).
-  // Spec §"Intentional limitation": no mixed-state UI when cells in the
-  // axis carry different colors.
-  const { activeText, activeBg } = readFirstCellColor(
-    editor,
-    axis,
-    tableStart,
-    index,
-  )
-
-  const apply = (kind: "textColor" | "backgroundColor", name: ColorName) => {
-    const cmd =
-      axis === "col"
-        ? kind === "textColor"
-          ? () =>
-              editor.commands.setTableColumnTextColor({
-                tableStart,
-                colIndex: index,
-                name,
-              })
-          : () =>
-              editor.commands.setTableColumnBackgroundColor({
-                tableStart,
-                colIndex: index,
-                name,
-              })
-        : kind === "textColor"
-        ? () =>
-            editor.commands.setTableRowTextColor({
-              tableStart,
-              rowIndex: index,
-              name,
-            })
-        : () =>
-            editor.commands.setTableRowBackgroundColor({
-              tableStart,
-              rowIndex: index,
-              name,
-            })
-    onPick(cmd)
-  }
-
+function InlineColorOnlyRow() {
   return (
-    <Popover open={submenu.isOpen} onOpenChange={() => {}}>
-      <PopoverAnchor asChild>
-        <div
-          {...{ [SUBTRIGGER_ATTR]: "" }}
-          className={cn(
-            nativeMenuItemClass("default"),
-            submenu.isOpen && "bg-accent text-accent-foreground",
-          )}
-          {...submenu.triggerProps}
-          role="menuitem"
-          aria-haspopup="menu"
-          aria-expanded={submenu.isOpen}
-        >
-          <PaintRollerIcon />
-          <span>Color</span>
-          <ChevronRightIcon className="ml-auto" />
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={4}
-        collisionPadding={8}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onCloseAutoFocus={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onFocusOutside={(e) => e.preventDefault()}
-        className={cn(nativeMenuContentClass("popover"), "w-max p-0")}
-        {...{ [SUBMENU_ATTR]: "" }}
-        {...submenu.contentProps}
-      >
-        <ColorMenu
-          activeText={activeText}
-          activeBg={activeBg}
-          onApplyText={(name) => apply("textColor", name)}
-          onApplyBackground={(name) => apply("backgroundColor", name)}
-        />
-      </PopoverContent>
-    </Popover>
+    <NativeMenuItem icon={PaintRollerIcon} disabled data-rune-inline-color-only="">
+      <span>Color</span>
+      <span className="ml-auto text-xs text-muted-foreground">Inline text only</span>
+    </NativeMenuItem>
   )
-}
-
-function readFirstCellColor(
-  editor: Editor,
-  axis: "col" | "row",
-  tableStart: number,
-  index: number,
-): { activeText: ColorName | null; activeBg: ColorName | null } {
-  // Use TableMap — same primitive the command-side walker
-  // (setCellAxisAttr) uses. Hand-rolling row.maybeChild(index) works for
-  // today's no-merged-cells schema but diverges from the canonical table
-  // walking path; once they diverge, future merge-cell or sub-row
-  // changes can break this surface silently.
-  const table = editor.state.doc.nodeAt(tableStart - 1)
-  if (!table || table.type.name !== "table")
-    return { activeText: null, activeBg: null }
-  const map = TableMap.get(table)
-  if (axis === "col" && (index < 0 || index >= map.width)) {
-    return { activeText: null, activeBg: null }
-  }
-  if (axis === "row" && (index < 0 || index >= map.height)) {
-    return { activeText: null, activeBg: null }
-  }
-  // First cell in the axis: row 0, col=index for "col"; row=index, col 0 for "row".
-  const cellOffset =
-    axis === "col"
-      ? map.map[0 * map.width + index]
-      : map.map[index * map.width + 0]
-  if (cellOffset === undefined) return { activeText: null, activeBg: null }
-  const cell = table.nodeAt(cellOffset)
-  if (!cell) return { activeText: null, activeBg: null }
-  return {
-    activeText: (cell.attrs.textColor ?? null) as ColorName | null,
-    activeBg: (cell.attrs.backgroundColor ?? null) as ColorName | null,
-  }
 }
 
 function ColMenuItems({ editor, onPick, tableStart, index }: ItemsProps) {
@@ -404,18 +266,7 @@ function ColMenuItems({ editor, onPick, tableStart, index }: ItemsProps) {
       >
         Clear contents
       </NativeMenuItem>
-      {/* key on (tableStart, index) so a pill→pill re-anchor within the
-        same axis (the pill plugin's `apply` overwrites `dropdown` directly,
-        skipping `null`) remounts ColorRow and resets useNativeMenuSubmenu —
-        otherwise the swatch panel appears stale-open on the new pill. */}
-      <ColorRow
-        key={`${tableStart}-${index}`}
-        editor={editor}
-        onPick={onPick}
-        axis="col"
-        tableStart={tableStart}
-        index={index}
-      />
+      <InlineColorOnlyRow />
       <NativeMenuItem
         icon={TrashIcon}
         onClick={() => onPick(() => editor.commands.deleteTableColumn())}
@@ -480,15 +331,7 @@ function RowMenuItems({ editor, onPick, tableStart, index }: ItemsProps) {
       >
         Clear contents
       </NativeMenuItem>
-      {/* See ColMenuItems for the key rationale. */}
-      <ColorRow
-        key={`${tableStart}-${index}`}
-        editor={editor}
-        onPick={onPick}
-        axis="row"
-        tableStart={tableStart}
-        index={index}
-      />
+      <InlineColorOnlyRow />
       <NativeMenuItem
         icon={TrashIcon}
         onClick={() => onPick(() => editor.commands.deleteTableRow())}

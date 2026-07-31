@@ -16,56 +16,35 @@ import { sideMenuKey } from "../side-menu/SideMenu"
 import { claimGesture, isPrimaryRelease, primaryLost } from "../shared/gesture-state"
 import type { GestureClaim } from "../shared/gesture-state"
 import { isDraggable } from "../side-menu/block-registry"
-import { surfaceBlockSnapshot, slotAtY, refreshSnapshotRects, effectivePrevIndex } from "./block-drag-geometry"
+import { surfaceBlockSnapshot, slotAtY, refreshSnapshotRects } from "./block-drag-geometry"
 import { executeReorder, executeDepthOnlyChange } from "./reorder"
-import type { ReorderDestOpts, EmptiedSourceColumn } from "./reorder"
-import { rescaleMovedContentWidths } from "./contentWidthRescale"
-import { availableContentWidth } from "../resize/geometry"
-import {
-  resolveEmptiedSourceColumnForMove,
-  runContainsColumnLayout,
-} from "../../api/commands/moveBlocks"
 import { createPreview, updatePreviewPosition, destroyPreview } from "./preview"
 import {
   createIndicator,
   positionIndicator,
-  positionIndicatorVertical,
   hideIndicator,
 } from "./indicator"
 import { chooseDropDepth, dropIndicatorLeftForDepth } from "./drop-depth"
-import {
-  hitBlockIndexAtY,
-  inVerticalArmBand,
-  resolveLayoutZone,
-  resolveWrapZone,
-} from "./edge-zone"
 import {
   getEditorVar,
   resolveCssLengthToPx,
   registerDragCancelHandlers,
   headIndexAtY,
   onEditorWrapperMouseDown,
-  surfaceFromPoint,
 } from "../shared"
-import { surfaceChildrenAt, surfaceChildrenInRange } from "../../schema/bodySurface"
+import { surfaceChildrenAt } from "../../schema/bodySurface"
 import type { BlocksSnapshot, DropTarget } from "./types"
-import { getBlockSpecs, structuralIndentTypes } from "../../schema"
+import { getBlockSpecs } from "../../schema"
+import {
+  depthFlatteningTypes,
+  markdownDepthOwnerTypes,
+  type MarkdownDepthBlock,
+} from "../../api/depth"
 
 const DRAG_THRESHOLD = 5
 const SIDE_MENU_GRIP_OFFSET_VAR = "--rune-side-menu-grip-offset"
 const INDENT_STEP_VAR = "--rune-block-indent-step"
 const FALLBACK_INDENT_STEP = "1.875rem"
-// F6 — width of the drag-to-create-columns edge zone (content edge OUTWARD).
-const COL_DROPZONE_VAR = "--rune-col-dropzone"
-const FALLBACK_COL_DROPZONE = "40px"
-
-/**
- * F6 — an ARMED edge zone. Mouseup routes to `editor.commands.wrapIntoColumns`
- * instead of the move core; the indicator renders as a vertical bar meanwhile.
- */
-type ZoneTarget =
-  | { kind: "wrap"; targetPos: number; side: "left" | "right" }
-  | { kind: "addColumn"; layoutPos: number; index: number }
 
 export function getPaddingThresholdCursor(
   editorRoot: HTMLElement,
@@ -109,116 +88,18 @@ function computeFromIdx(
   return { fromIdxLo, fromIdxHi }
 }
 
-/**
- * Stable block ids of every source-surface child in `[from, to)` — what the
- * F6 drop hands to `wrapIntoColumns` (block commands address by id). Returns
- * `[]` when any block in the run is still id-less (BlockId backfills within a
- * tick; a same-tick drop just no-ops rather than move a partial run).
- */
-function collectRunIds(
-  doc: import("@tiptap/pm/model").Node,
-  range: { from: number; to: number },
-): string[] {
-  const ids: string[] = []
-  for (const child of surfaceChildrenInRange(doc, range)) {
-    if (typeof child.attrs.id === "string" && child.attrs.id) ids.push(child.attrs.id)
-    else return []
+function previousBlocksForTarget(
+  snapshot: BlocksSnapshot,
+  targetIdx: number,
+  sourceBand: { lo: number; hi: number },
+): MarkdownDepthBlock[] {
+  const previous: MarkdownDepthBlock[] = []
+  for (let index = 0; index < targetIdx; index += 1) {
+    if (index >= sourceBand.lo && index <= sourceBand.hi) continue
+    const block = snapshot.blocks[index]
+    if (block) previous.push({ type: block.type, depth: block.depth })
   }
-  return ids
-}
-
-/**
- * The px content-width a body block has on its surface: `availableContentWidth`
- * of the `.rune-block` element at `pos`. Used by the cross-surface contentWidth
- * rescale (Task G) as the SOURCE measurement — the dragged block's own element,
- * so its stored % basis (its content box, own depth indent included) is read
- * exactly. Returns `null` when the element is missing OR the measurement is
- * degenerate (`<= 1`, i.e. an unlaid-out surface — jsdom reports
- * `clientWidth === 0`), so the caller no-ops rather than rescale against a
- * bogus width.
- */
-export function surfaceContainerPx(view: EditorView, pos: number): number | null {
-  const dom = view.nodeDOM(pos) as HTMLElement | null
-  if (!dom) return null
-  const px = availableContentWidth(dom)
-  return Number.isFinite(px) && px > 1 ? px : null
-}
-
-/**
- * The px content-width a surface offers a depth-0 block: `availableContentWidth`
- * of the surface's OWN element — the column NodeView root (which doubles as its
- * contentDOM) or, for the root surface (`surfacePos === -1`), the editor's
- * content element (`view.dom`, the block rows' direct parent). The Task G
- * DESTINATION measurement: taken on the surface rather than a resident block so
- * an EMPTY column still measures, and a resident's own depth indent
- * (`padding-inline-start` on `.rune-block`, which `availableContentWidth`
- * subtracts) can't skew the basis. A landing depth > 0 still reads slightly
- * wide — accepted slack for this view-layer, best-effort rescale. Same `null`
- * contract as `surfaceContainerPx`. Exported for tests.
- */
-export function surfaceElementPx(
-  view: EditorView,
-  surfacePos: number,
-): number | null {
-  const dom =
-    surfacePos === -1
-      ? view.dom
-      : (view.nodeDOM(surfacePos) as HTMLElement | null)
-  if (!dom) return null
-  const px = availableContentWidth(dom)
-  return Number.isFinite(px) && px > 1 ? px : null
-}
-
-/**
- * The body surface the moved run ACTUALLY lands on, used as the cross-surface
- * contentWidth rescale's destination measurement. Normally that is the surface
- * the cursor dropped onto (`currentSurfacePos`). But when the move empties its
- * source column AND fewer than two columns survive, the enclosing `columnLayout`
- * unwraps (see `executeMoveSlice` / `removeMoveSource`) and the run — along with
- * the surviving column's own blocks — splices to the ROOT surface. Measuring
- * destPx against the (now-dissolved) destination column would size media for a
- * half-width column while it renders at full root width, so this returns the
- * ROOT sentinel (`-1`) in that case. Exported for tests.
- */
-export function landingSurfaceForRescale(
-  currentSurfacePos: number,
-  emptiedSourceColumn: EmptiedSourceColumn | null,
-): number {
-  if (emptiedSourceColumn && emptiedSourceColumn.remainingColumnCount < 2) {
-    return -1
-  }
-  return currentSurfacePos
-}
-
-/**
- * Build the drag gesture's cross-surface contentWidth-rescale `onMoved` hook, or
- * `undefined` when nothing needs rescaling. A media block's `contentWidth` is a
- * % of ITS surface's container; a same-pixel move to a surface of a DIFFERENT
- * width must rescale that % to preserve the user's chosen pixel width. Measured
- * off the still-in-place pre-dispatch DOM: SOURCE = the dragged block's own
- * element (`range.from`); DEST = the surface the run actually lands on
- * (`landingSurfaceForRescale` — ROOT when an F2 unwrap dissolves the dest
- * column). Returns `undefined` for a same-surface drop, an unmeasurable width,
- * or an equal-width move — so a pure root→root move stays byte-identical to the
- * frozen drag contract. Exported for tests.
- */
-export function buildCrossSurfaceRescale(
-  view: EditorView,
-  range: { from: number; to: number },
-  sourceSurfacePos: number,
-  currentSurfacePos: number,
-  emptiedSourceColumn: EmptiedSourceColumn | null,
-): ReorderDestOpts["onMoved"] {
-  if (currentSurfacePos === sourceSurfacePos) return undefined
-  const srcPx = surfaceContainerPx(view, range.from)
-  const destPx = surfaceElementPx(
-    view,
-    landingSurfaceForRescale(currentSurfacePos, emptiedSourceColumn),
-  )
-  if (srcPx == null || destPx == null || srcPx === destPx) return undefined
-  const movedRangeSize = range.to - range.from
-  return (tr, result) =>
-    rescaleMovedContentWidths(tr, result.insertPos, movedRangeSize, srcPx, destPx)
+  return previous
 }
 
 /** Handle returned by `setupBlockDrag` — lets the owning plugin view abort a
@@ -233,7 +114,8 @@ export interface BlockDragGestureHandle {
 }
 
 export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestureHandle {
-  const structuralIndentTypeSet = structuralIndentTypes(editor)
+  const depthOwnerTypes = markdownDepthOwnerTypes(editor)
+  const depthFlattening = depthFlatteningTypes(editor)
 
   let pending: {
     range: { from: number; to: number }
@@ -267,23 +149,7 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     indicator: HTMLElement
     fromIdxLo: number
     fromIdxHi: number
-    // Cross-surface drag (Task 3). The SOURCE surface (where the moved blocks
-    // live, captured at threshold) and the surface the cursor is CURRENTLY over.
-    // `surfacePos === -1` ≡ the doc root. When they match, the snapshot is the
-    // source surface and `fromIdxLo/Hi` mark the live source band; when they
-    // differ the snapshot is re-taken against the foreign surface and the band
-    // is set to -1/-1 (no source band there — see onMouseMove).
-    sourceSurfacePos: number
-    currentSurfacePos: number
     lastTarget: DropTarget | null
-    // F6 — drag-to-create columns. `zonePx` is the `--rune-col-dropzone`
-    // token resolved at threshold; `draggedContainsLayout` gates nesting
-    // (computed once — the dragged range is immutable for the gesture);
-    // `zoneTarget` is the currently ARMED zone (vertical indicator shown,
-    // mouseup routes to wrapIntoColumns) or null.
-    zonePx: number
-    draggedContainsLayout: boolean
-    zoneTarget: ZoneTarget | null
     grab: { dx: number; dy: number }
     lastCursor: { clientX: number; clientY: number }
     // For padding-drag: offset between real threshold cursor and synthetic
@@ -317,18 +183,22 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     edgeY: number,
     cursorX: number,
   ): DropTarget => {
-    const prevIdx = effectivePrevIndex(targetIdx, {
+    const sourceBand = {
       lo: active!.fromIdxLo,
       hi: active!.fromIdxHi,
-    })
-    const prev = prevIdx >= 0 ? active!.snapshot.blocks[prevIdx] : null
-    const prevIsStructural = prev != null && structuralIndentTypeSet.has(prev.type)
+    }
     const dropDepth = chooseDropDepth({
       cursorX,
       minLeft: active!.snapshot.minLeft,
       indentStepPx: active!.snapshot.indentStepPx,
-      previousDepth: prev ? prev.depth : null,
-      previousIsStructural: prevIsStructural,
+      previousBlocks: previousBlocksForTarget(active!.snapshot, targetIdx, sourceBand),
+      ownerTypes: depthOwnerTypes,
+      // A block whose bytes the codec must flatten never gets a deeper slot —
+      // otherwise the drop lands, the indicator shows it indented, and the
+      // save quietly puts it back at the margin.
+      sourceFlattensDepth: depthFlattening.has(
+        active!.snapshot.blocks[active!.fromIdxLo]?.type ?? "",
+      ),
     })
     const left = dropIndicatorLeftForDepth({
       minLeft: active!.snapshot.minLeft,
@@ -347,17 +217,9 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     cursorX: number,
   ) => {
     if (!active) return
-    // Source-band logic is only meaningful on the SOURCE surface, where the
-    // moved blocks actually live (fromIdxLo/Hi >= 0). On a FOREIGN surface the
-    // band is set to -1/-1 (computeFromIdx) and these branches must be inert —
-    // otherwise `targetIdx === fromIdxHi + 1` (= 0 when fromIdxHi is -1) would
-    // spuriously treat slot 0 as the source boundary and hide the indicator.
-    const hasSourceBand = active.fromIdxLo >= 0
     const onBoundary =
-      hasSourceBand &&
       (targetIdx === active.fromIdxLo || targetIdx === active.fromIdxHi + 1)
     const strictlyInsideBand =
-      hasSourceBand &&
       !onBoundary &&
       targetIdx >= active.fromIdxLo &&
       targetIdx <= active.fromIdxHi
@@ -377,124 +239,6 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     }
 
     active.lastTarget = candidate
-  }
-
-  // F6 — drag-to-create columns. Runs AFTER slot computation on every frame
-  // (mousemove and capture-scroll alike): hit-test the root block the cursor
-  // is vertically over, then resolve its edge zone from the LIVE DOM rects.
-  // An armed zone overrides the horizontal slot indicator with a vertical bar
-  // (full block height for a wrap, full layout height for an add-column) and
-  // is consumed by mouseup BEFORE the move-core path. Zones exist only on the
-  // ROOT surface: a pointer inside a column rect resolves to that column
-  // surface (cross-surface drop), so an in-column block's edges can never arm
-  // — wrapping inside a column would nest layouts.
-  const updateZoneForCursor = (clientX: number, clientY: number) => {
-    if (!active) return
-    active.zoneTarget = null
-    // Immutable per-gesture gate: a run containing a columnLayout can never
-    // arm any zone (no nesting) — bail before the per-frame nodeDOM /
-    // querySelector / rect reads. The resolvers keep their own check as
-    // defense in depth.
-    if (active.draggedContainsLayout) return
-    if (active.currentSurfacePos !== -1) return
-    const idx = hitBlockIndexAtY(active.snapshot.blocks, clientY)
-    if (idx === -1) return
-    const b = active.snapshot.blocks[idx]!
-    // Vertical arm band: only the row's middle half arms (see the helper's
-    // JSDoc — row edges are slot-boundary / reorder territory).
-    if (!inVerticalArmBand(b.top, b.bottom, clientY)) return
-    // Self guard: the hovered block belongs to the dragged run.
-    const isSource =
-      active.sourceSurfacePos === -1 &&
-      b.pos >= active.range.from &&
-      b.pos < active.range.to
-    const dom = view.nodeDOM(b.pos) as HTMLElement | null
-    if (!dom) return
-
-    if (b.type === "columnLayout") {
-      const columnRects = Array.from(
-        dom.querySelectorAll<HTMLElement>(":scope > [data-rune-column]"),
-      ).map((el) => {
-        const rect = el.getBoundingClientRect()
-        return { left: rect.left, right: rect.right }
-      })
-      const zone = resolveLayoutZone({
-        cursorX: clientX,
-        zonePx: active.zonePx,
-        columnRects,
-        isSource,
-        draggedContainsLayout: active.draggedContainsLayout,
-      })
-      if (!zone) return
-      positionIndicatorVertical(active.indicator, zone.x, b.top, b.bottom - b.top)
-      active.zoneTarget = { kind: "addColumn", layoutPos: b.pos, index: zone.index }
-      active.lastTarget = null
-      return
-    }
-
-    // Wrap zone — keyed on the block's CONTENT edge (the `.rune-block-content`
-    // box), extending OUTWARD. Same fallback semantics as `indicatorLeftFor`:
-    // when no DIRECT content box exists, key on the block's own rect — React
-    // NodeViews nest the wrapper one renderer level deeper (Audio), and some
-    // render no content box at all (Equation, TableOfContents); without the
-    // fallback those blocks could never arm a wrap zone. Minimal jsdom
-    // fixtures (bare nodes without rune wrappers) stay inert regardless: their
-    // all-zero rects hit the degenerate-rect guard in `edgeZoneAt`.
-    const content = dom.querySelector<HTMLElement>(":scope > .rune-block-content")
-    const rect = (content ?? dom).getBoundingClientRect()
-    const side = resolveWrapZone({
-      cursorX: clientX,
-      zonePx: active.zonePx,
-      contentRect: { left: rect.left, right: rect.right },
-      isSource,
-      draggedContainsLayout: active.draggedContainsLayout,
-    })
-    if (!side) return
-    positionIndicatorVertical(
-      active.indicator,
-      side === "left" ? rect.left : rect.right,
-      b.top,
-      b.bottom - b.top,
-    )
-    active.zoneTarget = { kind: "wrap", targetPos: b.pos, side }
-    active.lastTarget = null
-  }
-
-  // Cross-surface drag (Task 3): on every move/scroll, hit-test which surface
-  // the cursor is geometrically OVER (rect-based, gap-ambiguity-free — see
-  // surfaceFromPoint). If it changed since the last frame, RE-SNAPSHOT that
-  // surface and re-derive the source band:
-  //
-  //   - Back over the SOURCE surface → the moved blocks live there, so
-  //     `computeFromIdx` re-marks the live source band (slot math skips it,
-  //     updateTargetForSlot hides the indicator inside it).
-  //   - Over a FOREIGN surface (root↔column or column↔column) → there is no
-  //     source band; computeFromIdx returns {-1,-1}, which makes slotAtY's
-  //     band-skip and updateTargetForSlot's band-hide branches inert. The drop
-  //     can land at ANY slot of the foreign surface.
-  //
-  // Returns true when a re-snapshot occurred (the caller then re-runs slot
-  // computation against the fresh, rect-current snapshot).
-  const maybeReSnapshotSurface = (clientX: number, clientY: number): boolean => {
-    if (!active) return false
-    const surf = surfaceFromPoint(view, clientX, clientY)
-    if (surf.surfacePos === active.currentSurfacePos) return false
-    // COL-1 no-nesting gate: a run containing a `columnLayout` may never be
-    // offered a COLUMN drop slot — without this, dragging a layout's grip
-    // over another layout's column swapped to that column surface and
-    // executeReorder committed a nested move (then flattened by
-    // ColumnsNormalization, destroying the dragged layout). Keep treating the
-    // cursor as root-surface instead; resolveMove enforces the same invariant
-    // command-side (pinned in api/commands/columnTargets.test.ts,
-    // "moveBlocks — no-nesting guard (COL-1)").
-    if (surf.surfacePos !== -1 && active.draggedContainsLayout) return false
-    const snapshot = surfaceBlockSnapshot(view, surf.surfacePos, editor)
-    active.snapshot = snapshot
-    active.currentSurfacePos = surf.surfacePos
-    const { fromIdxLo, fromIdxHi } = computeFromIdx(snapshot, active.range)
-    active.fromIdxLo = fromIdxLo
-    active.fromIdxHi = fromIdxHi
-    return true
   }
 
   const cleanup = () => {
@@ -549,13 +293,7 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
         return
       }
 
-      // Walk the SOURCE surface's children (root OR a column — Task 3),
-      // collecting DOMs of every block whose pos falls in [range.from,
-      // range.to); MBS drags yield multiple, single-block drags yield one.
-      // `view.nodeDOM(pos)` resolves a column child's DOM just as it does a root
-      // block's; only the iteration must scope to the source surface so a column
-      // drag finds its blocks (a bare `doc.forEach` is root-level and would miss
-      // them, aborting the drag).
+      // Collect every root block DOM in the dragged range.
       const sourceSurface = surfaceChildrenAt(view.state.doc, range.from)
       const sourceDoms: HTMLElement[] = []
       if (sourceSurface) {
@@ -584,14 +322,7 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
       view.dispatch(view.state.tr.setMeta(sideMenuKey, { hoveredPos: null }))
       view.dispatch(view.state.tr.setMeta(blockDragKey, { draggingRange: range }))
 
-      // Cross-surface drag (Task 3): the moved blocks live on the SOURCE
-      // surface (root, or a `column`). Captured once at threshold from the
-      // gripped range's start; the snapshot, ghost decorations, and source DOMs
-      // are all scoped to it. `surfaceChildrenAt(...).pos` is `-1` for root or
-      // the containing `column`'s pos.
-      const sourceSurfacePos =
-        surfaceChildrenAt(view.state.doc, range.from)?.pos ?? -1
-      const snapshot = surfaceBlockSnapshot(view, sourceSurfacePos, editor)
+      const snapshot = surfaceBlockSnapshot(view, -1, editor)
       // Compute fromIdxLo / fromIdxHi from the snapshot: lo = first index
       // whose pos >= range.from, hi = last index whose pos < range.to.
       const { fromIdxLo, fromIdxHi } = computeFromIdx(snapshot, range)
@@ -627,37 +358,18 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
 
       const indicator = createIndicator(view.dom)
 
-      // F6 — resolve the edge-zone width token once per gesture (the shared
-      // parameterized editor-var reader; the indicator lives on document.body
-      // so cascade lookup can't apply), and pin the no-nesting gate: a run
-      // containing a columnLayout can never arm a zone.
-      const zonePx = resolveCssLengthToPx(
-        getEditorVar(editorRoot, COL_DROPZONE_VAR, FALLBACK_COL_DROPZONE),
-        editorRoot,
-      )
-      const draggedContainsLayout = runContainsColumnLayout(view.state.doc, range)
-
       const onScroll = () => {
         if (!active) return
-        // 0. Content shifted under a stationary cursor may now sit over a
-        //    different surface (e.g. an inner column scrolled past the cursor).
-        //    Re-snapshot if so; a fresh snapshot is already rect-current.
-        if (!maybeReSnapshotSurface(active.lastCursor.clientX, active.lastCursor.clientY)) {
-          // 1. Pull every block's rect into the current viewport frame so
-          //    cursor (clientX/Y) and snapshot share coordinates again.
-          refreshSnapshotRects(view, active.snapshot)
-        }
+        // Pull every block's rect into the current viewport frame so cursor
+        // and snapshot share coordinates again.
+        refreshSnapshotRects(view, active.snapshot)
 
         // 2. Re-evaluate slot at the LAST cursor position. On a wheel-only
         //    scroll the cursor itself didn't move, but the content under it
-        //    did — the indicator must follow the new edge. Skip the slot math
-        //    when the current surface has no draggable blocks (e.g. cursor over
-        //    a column whose sole child is non-draggable) — slotAtY([]) would
-        //    drive the trailing branch into blocks[-1].
+        //    did — the indicator must follow the new edge.
         if (active.snapshot.blocks.length === 0) {
           hideIndicator(active.indicator)
           active.lastTarget = null
-          active.zoneTarget = null
         } else {
           const targetIdx = slotAtY(active.snapshot.blocks, active.lastCursor.clientY, {
             lo: active.fromIdxLo,
@@ -677,8 +389,6 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
           }
 
           updateTargetForSlot(targetIdx, insertPos, edgeY, active.lastCursor.clientX)
-          // F6: re-arm/disarm the edge zone against the scrolled content.
-          updateZoneForCursor(active.lastCursor.clientX, active.lastCursor.clientY)
         }
 
         // 3. Preview position math is CB-local (already scroll-source-agnostic
@@ -700,12 +410,7 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
         indicator,
         fromIdxLo,
         fromIdxHi,
-        sourceSurfacePos,
-        currentSurfacePos: sourceSurfacePos,
         lastTarget: null,
-        zonePx,
-        draggedContainsLayout,
-        zoneTarget: null,
         grab,
         lastCursor: { clientX: e.clientX, clientY: e.clientY },
         cursorAdjust,
@@ -724,19 +429,10 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     }
     updatePreviewPosition(active.preview, active.editorRoot, adjusted, active.grab)
 
-    // Cross-surface drag: if the cursor crossed into a different surface, swap
-    // the active snapshot (+ source band) before computing the drop slot. A
-    // fresh snapshot is already in current viewport coords; on a non-cross
-    // frame the snapshot is kept current by the capture-scroll listener
-    // (refreshSnapshotRects), so cursor and snapshot share a frame either way.
-    maybeReSnapshotSurface(e.clientX, e.clientY)
-
-    // Empty current surface (e.g. cursor over a column with no draggable child):
-    // no drop slot — hide the indicator rather than index blocks[-1].
+    // Empty document: no drop slot.
     if (active.snapshot.blocks.length === 0) {
       hideIndicator(active.indicator)
       active.lastTarget = null
-      active.zoneTarget = null
       return
     }
 
@@ -758,9 +454,6 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     }
 
     updateTargetForSlot(targetIdx, insertPos, edgeY, e.clientX)
-    // F6: zone detection runs AFTER slot computation — an armed zone overrides
-    // the horizontal indicator with the vertical bar.
-    updateZoneForCursor(e.clientX, e.clientY)
   }
 
   const onMouseUp = (e: MouseEvent) => {
@@ -788,44 +481,8 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     // branch (!act && pend) is intentionally left past this guard.
     if (act && !canCommit) return
 
-    if (act && act.zoneTarget) {
-      // F6: an armed edge zone routes to the wrapIntoColumns command instead
-      // of the move core. Commands address by stable id; the command re-runs
-      // every guard (contiguity, no-nesting, self, 5-col cap) and composes the
-      // F2 emptied-source-column removal in its single transaction.
-      const zt = act.zoneTarget
-      const doc = view.state.doc
-      const draggedIds = collectRunIds(doc, act.range)
-      if (draggedIds.length > 0) {
-        if (zt.kind === "wrap") {
-          const targetId = doc.nodeAt(zt.targetPos)?.attrs.id
-          if (typeof targetId === "string" && targetId) {
-            editor.commands.wrapIntoColumns(draggedIds, {
-              id: targetId,
-              side: zt.side,
-            })
-          }
-        } else {
-          const layoutId = doc.nodeAt(zt.layoutPos)?.attrs.id
-          if (typeof layoutId === "string" && layoutId) {
-            editor.commands.wrapIntoColumns(draggedIds, {
-              layoutId,
-              index: zt.index,
-            })
-          }
-        }
-      }
-      return
-    }
     if (act && act.lastTarget) {
-      // The in-place depth-only nudge path fires ONLY when the drop lands on the
-      // source's own boundary AND on the SAME surface (the moved blocks never
-      // left their surface). A cross-surface drop — even one whose mapped
-      // insertPos numerically equals range.from/to — is a real relocation, not a
-      // depth nudge, so it must route through the move core.
-      const onSourceSurface = act.currentSurfacePos === act.sourceSurfacePos
       const onSourceBoundary =
-        onSourceSurface &&
         (act.lastTarget.insertPos === act.range.from ||
           act.lastTarget.insertPos === act.range.to)
       const source = {
@@ -841,51 +498,7 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
         )
         if (tr) view.dispatch(tr)
       } else {
-        // F2: compute the emptied-source-column payload via the SHARED helper
-        // (identical to the moveBlocks command). `movedBlockCount` always counts
-        // ALL source-surface children in [range.from, range.to) via
-        // surfaceChildrenInRange — NOT the snapshot band width, which omits
-        // non-draggable blocks and would diverge from resolveMove's
-        // `column.childCount` compare (a fully-emptying move that includes a
-        // non-draggable child would then fail to trigger F2).
-        const movedBlockCount = surfaceChildrenInRange(view.state.doc, act.range)
-          .length
-        const emptiedSourceColumn = resolveEmptiedSourceColumnForMove(
-          view.state.doc,
-          act.sourceSurfacePos,
-          act.currentSurfacePos,
-          movedBlockCount,
-        )
-        // Selection rule (mirrors the moveBlocks command): a pure root→root
-        // move keeps the MBS; ANY move touching a column interior (source OR
-        // dest non-root) lands a text caret — column MBS paint/keyboard is
-        // Task 5, out of scope here.
-        const forceTextCaret =
-          act.sourceSurfacePos !== -1 || act.currentSurfacePos !== -1
-        // Cross-surface contentWidth rescale (Task G, VIEW-LAYER only). Preserve
-        // the dragged media's chosen pixel width across a surface change by
-        // rescaling its stored % into the surface the run ACTUALLY lands on, in
-        // the SAME tr as the move (one undo step, no flicker). See
-        // `buildCrossSurfaceRescale`: measured before dispatch off the
-        // still-in-place DOM, and `undefined` for a same-surface / unmeasurable
-        // / equal-width move so a pure root→root move stays byte-identical to
-        // the frozen drag contract. Crucially the DEST width is measured against
-        // the LANDING surface — ROOT when an F2 unwrap dissolves the destination
-        // column, not the (now-gone) column. Storage stays %; the headless
-        // moveBlocks command never rescales.
-        const onMoved = buildCrossSurfaceRescale(
-          view,
-          act.range,
-          act.sourceSurfacePos,
-          act.currentSurfacePos,
-          emptiedSourceColumn,
-        )
-        const tr = executeReorder(view.state, source, act.lastTarget, {
-          destSurfacePos: act.currentSurfacePos,
-          emptiedSourceColumn,
-          forceTextCaret,
-          onMoved,
-        })
+        const tr = executeReorder(view.state, source, act.lastTarget)
         if (tr) view.dispatch(tr)
       }
     } else if (!act && pend && pend.snapshot) {
@@ -996,12 +609,6 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     if (!(target instanceof Element)) return
     if (target.closest(".rune-side-menu-grip")) return
     if (target.closest(".rune-resize-handle")) return
-    // Column-resize boundary handles: same situation as `.rune-resize-handle`
-    // above — with an MBS covering the layout, a handle press satisfies every
-    // padding-drag precondition (not grip, not in block-content, MBS covers
-    // the block) and would arm a competing padding-drag for the same
-    // mousedown. The handle owns its gesture (Columns/resize.ts).
-    if (target.closest(".rune-col-resize-handle")) return
     if (target.closest(".rune-block-content")) return
 
     // Column-resize handles render with `pointer-events: none` so the cell
@@ -1022,18 +629,10 @@ export function setupBlockDrag(view: EditorView, editor: Editor): BlockDragGestu
     const sel = view.state.selection
     if (!(sel instanceof MultiBlockSelection)) return
 
-    // Surface-aware MBS-cover gate, shared with the drag-extend / marquee
-    // mousedown yields (`coversSurfaceBlock`, lockstep): the active MBS's
-    // blockIndices may be COLUMN-local (Task 5), so resolve the press on ITS
-    // OWN surface before comparing — a bare root-index compare falsely
-    // claimed a padding press beside unrelated root blocks for a column MBS.
-    const pointSurface = surfaceFromPoint(view, e.clientX, e.clientY)
-    const headIdx = headIndexAtY(view, e.clientX, e.clientY, {
-      strict: true,
-      surface: pointSurface.surfacePos === -1 ? undefined : pointSurface,
-    })
+    const headIdx = headIndexAtY(view, e.clientX, e.clientY, { strict: true })
     if (headIdx == null) return
-    if (!sel.coversSurfaceBlock(pointSurface.surfacePos, headIdx)) return
+    const [lo, hi] = sel.blockIndices
+    if (headIdx < lo || headIdx > hi) return
 
     // Same DOMObserver-cascade defense as the grip handler above: a padding
     // click on an MBS-covered block bubbles to view.dom's mousedown, where

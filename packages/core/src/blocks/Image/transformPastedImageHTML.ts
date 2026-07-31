@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { Editor } from "@tiptap/core"
+import type { Editor, JSONContent } from "@tiptap/core"
 import type { EditorView } from "@tiptap/pm/view"
 import type { RuneImportImageUrl, RuneImportMediaUrl } from "../media/import-plugin"
 
@@ -34,4 +34,35 @@ export function transformPastedImageHTML(
     img.setAttribute("data-rune-paste-image", src)
     img.removeAttribute("src")
   }
+}
+
+/**
+ * The DOM-free counterpart of {@link transformPastedImageHTML}, for the Markdown
+ * paste path — which builds ProseMirror JSON through the storage codec and never
+ * produces a `Document` to walk.
+ *
+ * Both routes have to end at the SAME node shape, because `image`'s `parseDOM`
+ * is what defines it: an `img` carrying `data-rune-paste-image` parses to
+ * `{ src: "", pendingFromPaste: <original src> }`, and the upload plugin keys off
+ * `pendingFromPaste`. Writing those two attrs directly is that rule expressed
+ * against the node instead of against an element.
+ *
+ * Returns a new tree; the input is not mutated.
+ */
+export function markPastedImagesInDoc(
+  doc: JSONContent,
+  view: EditorView,
+  editor: Editor,
+): JSONContent {
+  if (!view.editable || !hasImageUrlImporter(editor)) return doc
+
+  const walk = (node: JSONContent): JSONContent => {
+    const next: JSONContent =
+      node.type === "image" && typeof node.attrs?.src === "string" && node.attrs.src !== ""
+        ? { ...node, attrs: { ...node.attrs, src: "", pendingFromPaste: node.attrs.src } }
+        : node
+    return next.content ? { ...next, content: next.content.map(walk) } : next
+  }
+
+  return walk(doc)
 }

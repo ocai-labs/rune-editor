@@ -140,10 +140,10 @@ function handleEscape(editor: Editor): boolean {
   // this is the column child → a column-local single-block MBS (not the layout).
   const block = surfaceBlockTextBoundsAtPos(doc, selection.from)
   if (block) {
-    // A non-selectable block (the in-document title) can't be promoted to a
+    // A non-selectable host/plugin block can't be promoted to a
     // block selection — Escape inside it is a no-op, caret stays. Without this
     // the caret would be promoted to an MBS that create() then clamps onto the
-    // first body block (a surprising jump); a clean no-op matches Notion. The
+    // first selectable block (a surprising jump); a clean no-op matches Notion. The
     // create() clamp remains the safety net for the non-keyboard paths.
     if (!isBlockSelectable(block.node)) return false
     const id = block.node.attrs.id as string | null
@@ -236,9 +236,9 @@ function handleEnter(editor: Editor): boolean {
   const sel = editor.state.selection
   if (!(sel instanceof MultiBlockSelection)) return false
   // Collapse to a caret at the end of the first selected block's text, on the
-  // MBS's own surface (column-local or root). `firstBlockTextEnd` assumes a
+  // MBS's own surface. `firstBlockTextEnd` assumes a
   // TEXTBLOCK first block; when it isn't (a divider — leaf, no interior text
-  // position — or a columnLayout — structural, its content-end boundary isn't
+  // position — or a plugin-provided container — structural, its content-end boundary isn't
   // inside a textblock either), a raw `TextSelection.create` there doesn't
   // throw, it just warns and builds a dead caret with no inline-content
   // parent, silently swallowing subsequent typing. `Selection.near` finds the

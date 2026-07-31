@@ -62,51 +62,6 @@ describe("headIndexAtY", () => {
   })
 })
 
-describe("headIndexAtY — columns (layout is ONE root block)", () => {
-  it("a hit deep inside a column resolves to the LAYOUT's root index ($pos.index(0))", () => {
-    // Marquee and drag-extend both derive their MBS anchor/head from
-    // headIndexAtY → root-child indices, so this pins Columns Phase 1
-    // Step 4: sweeping over / into a layout treats it as one root block
-    // (in-column blocks are never individually selectable by Y). Real
-    // rect-based sweeps need geometry — Task 9 Playwright e2e.
-    const editor = createTestEditor({ element: container })
-    editor.commands.setContent([
-      { type: "paragraph", content: [{ type: "text", text: "before" }] },
-      {
-        type: "columnLayout",
-        attrs: { depth: 0 },
-        content: [
-          {
-            type: "column",
-            attrs: { width: 1 },
-            content: [{ type: "paragraph", attrs: { id: "L0" }, content: [{ type: "text", text: "left" }] }],
-          },
-          {
-            type: "column",
-            attrs: { width: 1 },
-            content: [{ type: "paragraph", attrs: { id: "R0" }, content: [{ type: "text", text: "right" }] }],
-          },
-        ],
-      },
-      { type: "paragraph", content: [{ type: "text", text: "after" }] },
-    ])
-    // Deep position inside the SECOND column's paragraph text.
-    let deepPos = -1
-    editor.state.doc.descendants((node, pos) => {
-      if (node.attrs?.id === "R0") {
-        deepPos = pos + 2 // inside the text
-        return false
-      }
-      return true
-    })
-    expect(deepPos).toBeGreaterThan(0)
-    ;(editor.view.posAtCoords as unknown as (coords: { left: number; top: number }) => { pos: number; inside: number } | null) =
-      () => ({ pos: deepPos, inside: deepPos - 1 })
-    expect(headIndexAtY(editor.view, 50, 50)).toBe(1) // the layout's root index
-    expect(headIndexAtY(editor.view, 50, 50, { strict: true })).toBe(1)
-  })
-})
-
 describe("headIndexAtY — atom inside-preference", () => {
   // `posAtCoords` on an atom leaf block (image/video/divider) returns a CARET
   // position: pointing at the atom's right half resolves `pos` to the boundary

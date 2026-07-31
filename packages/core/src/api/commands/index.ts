@@ -4,12 +4,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { Extension } from "@tiptap/core"
-import { EditorState, Selection, TextSelection } from "@tiptap/pm/state"
+import { Extension, type Editor } from "@tiptap/core"
+import { EditorState, Selection, TextSelection, type Transaction } from "@tiptap/pm/state"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
 import {
   executeMoveSlice,
-  removeMoveSource,
   restoreMbs,
 } from "../../extensions/block-drag/reorder"
 import type {
@@ -20,19 +19,16 @@ import type {
   RuneBlockInput,
   TurnIntoBlockInput,
   TurnIntoTarget,
-  WrapIntoColumnsTarget,
 } from "../types"
 import {
   createNodeFromBlockInput,
-  insertWouldNestColumnLayout,
   resolveInsertPos,
 } from "./insertBlocks"
 import { resolveUpdate } from "./updateBlock"
 import { getBlockSpecs } from "../../schema/blocks/registry"
-import { normalizeDepthAt } from "../depth"
+import { markdownDepthOwnerTypes, normalizeDepthAt } from "../depth"
 import { resolveDeleteRanges, setSelectionAfterDelete } from "./deleteBlocks"
 import { resolveMove } from "./moveBlocks"
-import { resolveWrapIntoColumns, wrapIntoColumnsImpl } from "./wrapIntoColumns"
 import { indentBlockImpl } from "./indentBlock"
 import { outdentBlockImpl } from "./outdentBlock"
 import { splitListBlockImpl } from "./splitListBlock"
@@ -44,6 +40,41 @@ import {
 
 function isNode(node: ProseMirrorNode | null): node is ProseMirrorNode {
   return node !== null
+}
+
+/**
+ * Re-check the Markdown depth forest after a mutation. `minimumThrough` keeps
+ * every newly inserted/replaced/moved block in the pass; after that, only the
+ * positive-depth suffix can depend on the changed predecessor. The next root
+ * block starts an independent forest, so unrelated later content is untouched.
+ */
+function normalizeMarkdownDepthSuffix(
+  editor: Editor,
+  tr: Transaction,
+  startPos: number,
+  minimumThrough: number,
+): void {
+  const specs = getBlockSpecs(editor)
+  const ownerTypes = markdownDepthOwnerTypes(editor)
+  let stopped = false
+  tr.doc.forEach((node, offset) => {
+    if (stopped || offset < startPos || node.attrs.depth === undefined) return
+    const current = typeof node.attrs.depth === "number" ? node.attrs.depth : 0
+    if (offset >= minimumThrough && current === 0) {
+      stopped = true
+      return
+    }
+    const next = normalizeDepthAt(
+      tr.doc,
+      offset,
+      current,
+      specs[node.type.name]?.indent,
+      ownerTypes,
+    )
+    if (next !== current) {
+      tr.setNodeMarkup(offset, null, { ...node.attrs, depth: next })
+    }
+  })
 }
 
 declare module "@tiptap/core" {
@@ -63,16 +94,6 @@ declare module "@tiptap/core" {
       updateBlock: (id: string, partial: BlockUpdate) => ReturnType
       deleteBlocks: (idsOrRange: DeleteBlocksTarget) => ReturnType
       moveBlocks: (ids: string[], target: MoveBlocksTarget) => ReturnType
-      /**
-       * Drag-to-create columns (F6): wrap a root block + the moved run into a
-       * new 2-column layout, or add a new column to an existing layout at a
-       * boundary index. One transaction (one undo step); the F2
-       * emptied-source-column removal composes.
-       */
-      wrapIntoColumns: (
-        ids: string[],
-        target: WrapIntoColumnsTarget,
-      ) => ReturnType
       turnInto: (
         target: TurnIntoTarget,
         block: TurnIntoBlockInput,
@@ -95,10 +116,6 @@ export const BlockCommands = Extension.create({
         ({ editor, state, dispatch }) => {
           const pos = resolveInsertPos(state.doc, options.at)
           if (pos === -1 || blocks.length === 0) return false
-          // No-nesting: refuse a columnLayout input whose destination sits
-          // inside a column ({columnId} targets resolve into column content).
-          if (insertWouldNestColumnLayout(state.doc, pos, blocks)) return false
-
           const nodes = blocks.map((block) =>
             createNodeFromBlockInput(editor, state.schema, block, {
               depth: options.depth ?? 0,
@@ -109,32 +126,8 @@ export const BlockCommands = Extension.create({
 
           const tr = state.tr.insert(pos, nodes)
           const insertedSize = nodes.reduce((size, node) => size + (node?.nodeSize ?? 0), 0)
-          // Depth hygiene: clamp each inserted block's depth to what is legal
-          // at its destination (preceding sibling's depth + 1, or its block's
-          // numeric maxDepth). Walk the freshly inserted range in tr.doc so
-          // each block's "previous sibling" includes earlier inserted blocks.
-          const specs = getBlockSpecs(editor)
           const insertedEnd = pos + insertedSize
-          tr.doc.nodesBetween(pos, insertedEnd, (node, nodePos) => {
-            // Ancestors that span the inserted range (the enclosing column /
-            // columnLayout of a {columnId} target) start before `pos` —
-            // descend through them; pruning here would skip every inserted
-            // block inside the column and leave its depth unclamped.
-            if (nodePos < pos) return true
-            if (nodePos >= insertedEnd) return false
-            if (node.attrs.depth === undefined) return false
-            const current = typeof node.attrs.depth === "number" ? node.attrs.depth : 0
-            const next = normalizeDepthAt(
-              tr.doc,
-              nodePos,
-              current,
-              specs[node.type.name]?.indent,
-            )
-            if (next !== current) {
-              tr.setNodeMarkup(nodePos, null, { ...node.attrs, depth: next })
-            }
-            return false
-          })
+          normalizeMarkdownDepthSuffix(editor, tr, pos, insertedEnd)
           const selectionPos = Math.min(pos + insertedSize, tr.doc.content.size)
           tr.setSelection(Selection.near(tr.doc.resolve(selectionPos), -1))
           dispatch(tr)
@@ -157,11 +150,13 @@ export const BlockCommands = Extension.create({
           const setsDepth = Object.prototype.hasOwnProperty.call(partial, "depth")
           if (setsDepth && typeof node.attrs.depth === "number") {
             const spec = getBlockSpecs(editor)[node.type.name]?.indent
+            const ownerTypes = markdownDepthOwnerTypes(editor)
             const clamped = normalizeDepthAt(
               state.doc,
               resolved.pos,
               node.attrs.depth,
               spec,
+              ownerTypes,
             )
             if (clamped !== node.attrs.depth) {
               node = node.type.create(
@@ -176,6 +171,15 @@ export const BlockCommands = Extension.create({
             resolved.pos + current.nodeSize,
             node,
           )
+          const changesDepthOwner = current.type !== node.type
+          if (setsDepth || changesDepthOwner) {
+            normalizeMarkdownDepthSuffix(
+              editor,
+              tr,
+              resolved.pos,
+              resolved.pos + node.nodeSize,
+            )
+          }
           dispatch(tr)
           return true
         },
@@ -214,45 +218,32 @@ export const BlockCommands = Extension.create({
               ? firstMoved.attrs.depth
               : 0
           // Compute the destination's preceding-sibling depth on a THROWAWAY
-          // EditorState whose tr replays the SAME source removal the move core
-          // will perform — for an F2 emptied-source-column move that is a whole
-          // column/layout removal, not a [from,to) delete, so the probe must
-          // mirror it or the mapped insert pos (and thus the depth neighbor)
-          // drifts. NOTE: do NOT mutate `state.tr` here — under Tiptap's
+          // EditorState. Do not mutate `state.tr` here — under Tiptap's
           // chained CommandManager `state.tr` is the SHARED chain transaction,
           // and replaying these steps in the core would corrupt positions.
           const probe = EditorState.create({
             doc: state.doc,
             schema: state.schema,
           }).tr
-          removeMoveSource(
-            probe,
-            { from: resolved.from, to: resolved.to },
-            resolved.emptiedSourceColumn,
-          )
+          probe.delete(resolved.from, resolved.to)
           const mappedInsertPos = probe.mapping.map(resolved.insertPos, -1)
           const spec = getBlockSpecs(editor)[firstMoved?.type.name ?? ""]?.indent
+          const ownerTypes = markdownDepthOwnerTypes(editor)
           const newDepthAttr = normalizeDepthAt(
             probe.doc,
             mappedInsertPos,
             firstDepth,
             spec,
+            ownerTypes,
           )
 
-          // Run the shared move core on the chain tr. Selection: only a pure
-          // root→root move keeps the MBS restoration (Phase-0 behavior); any
-          // move touching a column interior lands a text caret — MBS inside a
-          // column is Task 5 (paint/keyboard), so a column move still uses a
-          // caret here even though the core's restore is now surface-aware.
+          // Run the shared move core on the chain transaction.
           const tr = state.tr
           const result = executeMoveSlice(
             tr,
             { from: resolved.from, to: resolved.to },
-            { insertPos: resolved.insertPos, surfacePos: resolved.destSurfacePos },
-            {
-              newDepthAttr,
-              emptiedSourceColumn: resolved.emptiedSourceColumn,
-            },
+            { insertPos: resolved.insertPos },
+            { newDepthAttr },
           )
           // executeMoveSlice returns null for two cases:
           //   1. Drop-on-self: insert boundary lands inside [source.from,
@@ -273,15 +264,13 @@ export const BlockCommands = Extension.create({
           // — those are genuine refusals.
           if (!result) return true
 
-          if (resolved.nonRootSurface) {
-            const restorePos = Math.min(result.insertPos + 1, tr.doc.content.size)
-            tr.setSelection(TextSelection.create(tr.doc, restorePos))
-          } else {
-            // Pure root→root move: restore the MBS over the moved blocks. Shares
-            // the surface-aware `restoreMbs` with the drag path (reduces to the
-            // old root `.index(0)` here) so the two move callers can't drift.
-            restoreMbs(tr, result.insertPos, result.blockCount)
-          }
+          normalizeMarkdownDepthSuffix(
+            editor,
+            tr,
+            result.insertPos,
+            result.insertPos + (resolved.to - resolved.from),
+          )
+          restoreMbs(tr, result.insertPos, result.blockCount)
           dispatch(tr)
           return true
         },
@@ -306,7 +295,6 @@ export const BlockCommands = Extension.create({
           dispatch(tr.scrollIntoView())
           return true
         },
-      wrapIntoColumns: (ids, target) => (args) => wrapIntoColumnsImpl(ids, target)(args),
       indentBlock: (id) => (args) => indentBlockImpl(id)(args),
       outdentBlock: (id) => (args) => outdentBlockImpl(id)(args),
       splitListBlock: () => (args) => splitListBlockImpl()(args),
@@ -320,7 +308,6 @@ export {
   resolveUpdate,
   resolveDeleteRanges,
   resolveMove,
-  resolveWrapIntoColumns,
   resolveTurnIntoSources,
   applyTurnIntoTr,
 }

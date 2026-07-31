@@ -166,6 +166,17 @@
   --rune-code-block-bg: color-mix(in oklab, var(--foreground) 5%, var(--background));
   --rune-font-mono: SFMono-Regular, Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace;
 
+  /* Raw block — verbatim source with no rune representation. Deliberately does
+     NOT reuse --rune-code-block-bg: the two are both monospace verbatim blocks,
+     so if they shared a surface a reader would take this for a code block, expect
+     ``` in the file, and try to type in it. Lighter fill + a rule instead of a
+     filled card, and a muted foreground, because it is preserved material rather
+     than authored content. */
+  --rune-raw-block-bg: color-mix(in oklab, var(--foreground) 2.5%, var(--background));
+  --rune-raw-block-rule: color-mix(in oklab, var(--foreground) 20%, var(--background));
+  --rune-raw-block-fg: color-mix(in oklab, var(--foreground) 75%, var(--background));
+  --rune-raw-block-label-fg: var(--muted-foreground);
+
   /* Inline `code` mark (the mark, NOT the codeBlock block). Notion-style
      pill: a faint neutral fill + a code-specific red. Both are theme-
      invariant — the bg is a low-alpha gray that reads on light and dark,

@@ -32,8 +32,8 @@ describe("Toggle schema", () => {
     expect(editor.state.doc.firstChild!.attrs.expanded).toBe(false)
   })
 
-  it("supports level 2..4 (toggle-heading 1..3)", () => {
-    for (const level of [2, 3, 4] as const) {
+  it("supports identity levels 1..3 (toggle-heading 1..3)", () => {
+    for (const level of [1, 2, 3] as const) {
       const editor = fresh()
       editor.commands.setContent([
         { type: "toggle", attrs: { level, expanded: true }, content: [{ type: "text", text: "h" }] },
@@ -102,11 +102,11 @@ describe("Toggle input rules", () => {
     expect(editor.state.doc.firstChild!.attrs.expanded).toBe(false)
   })
 
-  it("`># ` produces toggle level 2", async () => {
+  it("`># ` produces toggle level 1", async () => {
     const editor = fresh()
     editor.commands.setContent([{ type: "paragraph", attrs: { depth: 0 } }])
     editor.commands.focus(1)
     await typeAtCaret(editor, "># ")
-    expect(editor.state.doc.firstChild!.attrs.level).toBe(2)
+    expect(editor.state.doc.firstChild!.attrs.level).toBe(1)
   })
 })

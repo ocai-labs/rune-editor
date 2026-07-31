@@ -34,13 +34,9 @@ import type {
 
 const ARIA_OWNER_ATTR = "data-rune-suggestion-aria-owner";
 
-// Resolve the caret's SURFACE-LOCAL body block via core's registry-aware
-// resolver. For a root caret that is the top-level block; for an in-column
-// caret it is the COLUMN CHILD, not the whole columnLayout (`$pos.node(1)`
-// reported the layout there, so Turn-into rows targeted the layout's id and
-// committing them clobbered the layout — SM-3). Returns null when the
-// position can't be resolved or no registered body block contains it —
-// callers fall back to "no enrichment".
+// Resolve the caret's nearest body block via core's registry-aware resolver.
+// This remains correct if a plugin adds structural ancestors; callers fall
+// back to "no enrichment" when no registered body block contains the caret.
 export function sourceBlockAtPos(editor: Editor, pos: number): ProseMirrorNode | null {
   const doc = editor.state.doc;
   if (pos < 0 || pos > doc.content.size) return null;
@@ -67,8 +63,8 @@ function isExactBlockMatch(
 // helper would pull the rest of `turnIntoAdapters` into the bundle for
 // what amounts to two lines of logic that hasn't churned since v1).
 // Mirrors core's STRUCTURAL container-source refusal: any non-atom,
-// non-textblock source (table, columnLayout, …) holds rows/columns rather
-// than inline text and cannot convert.
+// non-textblock source (a table or plugin-provided structured block) holds
+// nested nodes rather than inline text and cannot convert.
 function canSourceTurnInto(
   source: ProseMirrorNode,
   block: TurnIntoBlockInput,

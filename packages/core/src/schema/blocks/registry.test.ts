@@ -14,7 +14,6 @@ import { forEachBlockSpec, getBlockSpecs } from "./registry"
 const Para = createBlockSpec({
   type: "paragraph",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   parseDOM: [{ tag: "p" }],
   renderDOM: ({ HTMLAttributes }) => ["p", HTMLAttributes, 0],
   sideMenu: { draggable: true },
@@ -55,10 +54,7 @@ describe("forEachBlockSpec", () => {
   it("exposes block support metadata", () => {
     const editor = mkEditor()
     const specs = getBlockSpecs(editor)
-    expect(specs.paragraph?.supports).toEqual({
-      textColor: true,
-      backgroundColor: true,
-    })
+    expect(specs.paragraph?.supports).toBeUndefined()
     expect(specs.heading?.supports).toBeUndefined()
     editor.destroy()
   })

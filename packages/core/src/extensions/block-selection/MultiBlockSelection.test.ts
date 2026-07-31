@@ -305,94 +305,15 @@ describe("MultiBlockSelection — getBookmark (history round-trip)", () => {
 })
 
 describe("MultiBlockSelection — coversSurfaceBlock (shared gesture-yield cover test)", () => {
-  // The single MBS-cover comparison behind the three pairwise gesture yields
-  // (drag-extend mousedown · marquee mousedown · block-drag padding mousedown).
-  // Since Task 5 an MBS's blockIndices can be COLUMN-local; comparing them
-  // against a ROOT point index falsely matched (column MBS [0,1] active +
-  // padding press beside root block 0/1 → wrong gesture claim). These pin the
-  // surface-aware semantics for every surface combination.
-  //
-  // Fixture: r1 · columnLayout[ col_a[a1] · col_b[b1, b2] ] · r2.
-  function columnsFixture() {
-    const editor = createTestEditor({ kit: { suggestionMenus: false } })
-    const s = editor.schema
-    const para = (id: string, t: string) =>
-      s.nodes.paragraph!.create({ id, depth: 0 }, s.text(t))
-    const col = (id: string, ...children: import("@tiptap/pm/model").Node[]) =>
-      s.nodes.column!.create({ id, width: 1 }, children)
-    const doc = s.nodes.doc!.create(null, [
-      para("r1", "root-1"),
-      s.nodes.columnLayout!.create({ id: "lay", depth: 0 }, [
-        col("col_a", para("a1", "A1")),
-        col("col_b", para("b1", "B1"), para("b2", "B2")),
-      ]),
-      para("r2", "root-2"),
-    ])
-    editor.view.dispatch(
-      editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-    )
-    const posOf = (id: string) => {
-      let p = -1
-      editor.state.doc.descendants((node, pos) => {
-        if (node.attrs?.id === id) p = pos
-        return p === -1
-      })
-      return p
-    }
-    return { editor, posOf }
-  }
-
-  function columnMbs(
-    editor: ReturnType<typeof createTestEditor>,
-    colPos: number,
-    lo: number,
-    hi: number,
-  ): MultiBlockSelection {
-    const $surface = editor.state.doc.resolve(colPos + 1)
-    return MultiBlockSelection.create(editor.state.doc, lo, hi, $surface)
-  }
-
-  it("column MBS covers hits on ITS OWN surface by index", () => {
-    const { editor, posOf } = columnsFixture()
-    const colB = posOf("col_b")
-    const sel = columnMbs(editor, colB, 0, 1)
-    expect(sel.coversSurfaceBlock(colB, 0)).toBe(true)
-    expect(sel.coversSurfaceBlock(colB, 1)).toBe(true)
-  })
-
-  it("column MBS does NOT cover a ROOT hit whose index happens to overlap (the false-match bug)", () => {
-    const { editor, posOf } = columnsFixture()
-    const sel = columnMbs(editor, posOf("col_b"), 0, 1)
-    // Root blocks 0 and 1 numerically overlap [0,1] but live on a different
-    // surface — must NOT be covered.
-    expect(sel.coversSurfaceBlock(-1, 0)).toBe(false)
-    expect(sel.coversSurfaceBlock(-1, 1)).toBe(false)
-  })
-
-  it("column MBS does NOT cover a hit in a DIFFERENT column", () => {
-    const { editor, posOf } = columnsFixture()
-    const sel = columnMbs(editor, posOf("col_b"), 0, 1)
-    expect(sel.coversSurfaceBlock(posOf("col_a"), 0)).toBe(false)
-  })
-
   it("root MBS covers root hits by index (historical behavior)", () => {
-    const { editor } = columnsFixture()
+    const editor = createTestEditor({ kit: { suggestionMenus: false } })
+    editor.commands.setContent([
+      { type: "paragraph", content: [{ type: "text", text: "root-1" }] },
+      { type: "paragraph", content: [{ type: "text", text: "root-2" }] },
+    ])
     const sel = MultiBlockSelection.create(editor.state.doc, 0, 0) // r1
     expect(sel.coversSurfaceBlock(-1, 0)).toBe(true)
     expect(sel.coversSurfaceBlock(-1, 1)).toBe(false)
-  })
-
-  it("root MBS covering the layout covers an in-column hit (the layout is the covered candidate)", () => {
-    const { editor, posOf } = columnsFixture()
-    const sel = MultiBlockSelection.create(editor.state.doc, 1, 1) // the layout
-    expect(sel.coversSurfaceBlock(posOf("col_b"), 0)).toBe(true)
-    expect(sel.coversSurfaceBlock(posOf("col_a"), 0)).toBe(true)
-  })
-
-  it("root MBS NOT covering the layout does not cover in-column hits", () => {
-    const { editor, posOf } = columnsFixture()
-    const sel = MultiBlockSelection.create(editor.state.doc, 0, 0) // r1 only
-    expect(sel.coversSurfaceBlock(posOf("col_b"), 1)).toBe(false)
   })
 })
 

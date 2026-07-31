@@ -4,17 +4,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { Editor } from "@tiptap/core"
+import type { Editor, JSONContent } from "@tiptap/core"
 import type { EditorView } from "@tiptap/pm/view"
-import { Slice, Fragment, DOMParser as PMDOMParser, type Schema } from "@tiptap/pm/model"
+import { Slice, Fragment, type Node as PMNode, type Schema } from "@tiptap/pm/model"
 import { isInTable } from "@tiptap/pm/tables"
 import { isMarkdown } from "./isMarkdown"
-import { markdownToHtml } from "./markdownToHtml"
-import { collectKnownBlockTags } from "./knownBlockTags"
-import { transformPastedHTMLDoc } from "./transformPastedHTML"
 import { clipboardTextParser } from "./clipboardTextParser"
-import { transformPastedImageHTML } from "../../blocks/Image/transformPastedImageHTML"
-import { unwrapLoneImageParagraphs } from "./markdownToDoc"
+import { markPastedImagesInDoc } from "../../blocks/Image/transformPastedImageHTML"
+import { collectMarkdownContracts, parseMarkdown } from "../../markdown"
 
 /**
  * Tiptap/PM `handlePaste` prop. Inspects clipboardData MIMEs and
@@ -155,55 +152,73 @@ function readVSCodeLanguage(data: DataTransfer): string | null {
 }
 
 /**
- * markdown-it's HTML output pretty-prints one top-level block per line, so
- * `dom.body`'s direct children are interleaved with bare `"\n"` TEXT nodes
- * (`<p>a</p>\n<p>b</p>\n…`) — formatting artifacts, not content. `parseSlice`
- * (unlike full-doc `parse`) builds its ROOT context with `type: null` (PM's
- * "open left" root, since the slice's edges aren't validated against the
- * schema) instead of `doc`. That null-typed root's whitespace classification
- * falls through to a DOM-parent check instead of `doc`'s always-block
- * `inlineContent`, and — because this schema registers `hardBreak` as
- * `linebreakReplacement` (Tiptap's StarterKit default) — PM converts that
- * bare newline into a real `hardBreak`, then wraps it in a fresh paragraph
- * to keep it schema-valid. Net effect: a `<paragraph><hardBreak/></paragraph>`
- * ghost block appears between the first two top-level nodes of ANY
- * multi-block Markdown paste (reproduced with plain paragraphs, no images
- * involved). `parse()` never hits this (its root context is always typed
- * `doc`), so `markdownToDoc` doesn't need this step. Stripping the
- * whitespace-only text nodes that sit directly under `dom.body` (never
- * touching whitespace nested inside a block's own content) removes the
- * artifact at the source.
+ * Markdown → PM slice through the STORAGE codec — the same `parseMarkdown` that
+ * reads a `.md` file off disk. Shared by the plain-text Markdown branch and VS
+ * Code's `markdown` mode so the two never drift.
+ *
+ * This used to render Markdown → HTML with markdown-it and hand the result to
+ * PM's `parseSlice`, which made pasting a second, divergent implementation of
+ * "Markdown → document". Measured over 1,118 real files, the two agreed on only
+ * 14.8% of them: the HTML detour turned soft wraps into `hardBreak`s, tore a
+ * paragraph apart around an inline image, degraded raw HTML instead of keeping
+ * its bytes, and left a stray `code` mark plus a trailing newline inside every
+ * fenced block. One implementation makes those disagreements unrepresentable
+ * rather than merely fixed.
  */
-function stripBodyWhitespaceTextNodes(dom: Document): void {
-  for (const node of Array.from(dom.body.childNodes)) {
-    if (node.nodeType === 3 && node.textContent?.replace(/\s/g, "") === "") {
-      node.remove()
-    }
-  }
+function markdownToSlice(view: EditorView, editor: Editor, text: string): Slice {
+  const schema = view.state.schema
+  const contracts = collectMarkdownContracts(editor.extensionManager.extensions)
+  const { doc, frontmatter } = parseMarkdown(text, { contracts })
+  const json = markPastedImagesInDoc(withFrontmatter(doc, frontmatter, schema), view, editor)
+  return openBoundarySlice(schema.nodeFromJSON(json))
 }
 
 /**
- * Markdown → PM slice via the SAME schema-only transform core the headless
- * `markdownToDoc` import path uses, plus the live-view image step (paste can
- * upload). Shared by the plain-text Markdown branch and VS Code's `markdown`
- * mode so the two never drift.
+ * Frontmatter comes back carved off, because on the FILE path the caller owns
+ * it (rune converts, zyler owns the file). A paste has no file to hand it to,
+ * so carving it here would silently swallow the top of whatever was copied —
+ * put it back as body content instead, keeping its bytes, visible and
+ * deletable.
  *
- * Also runs `unwrapLoneImageParagraphs`, same as `markdownToDoc` — parity,
- * not a paste-only concern. `parseSlice`'s open boundaries only cover the
- * first/last top-level node, so any image NOT at the very start/end of the
- * pasted slice hits the exact same stray-empty-`<p>` artifact full-doc parse
- * does (see markdownToDoc.ts's docstring on the helper).
+ * Byte-faithful modulo the two normalizations `parseMarkdown` declares at its
+ * entry (BOM dropped, CRLF → LF; PRD D14): the fences it strips are exactly the
+ * `---` lines this re-adds.
  */
-function markdownToSlice(view: EditorView, editor: Editor, text: string): Slice {
-  const dom = new DOMParser().parseFromString(markdownToHtml(text), "text/html")
-  transformPastedHTMLDoc(dom, collectKnownBlockTags(view.state.schema), (d) =>
-    transformPastedImageHTML(d, view, editor),
-  )
-  unwrapLoneImageParagraphs(dom)
-  stripBodyWhitespaceTextNodes(dom)
-  return PMDOMParser.fromSchema(view.state.schema).parseSlice(dom.body, {
-    preserveWhitespace: true,
-  })
+function withFrontmatter(
+  doc: JSONContent,
+  frontmatter: string | null,
+  schema: Schema,
+): JSONContent {
+  if (frontmatter === null) return doc
+  const source = `---\n${frontmatter}\n---`
+  // A kit built without RawBlock still must not lose the text — and must not
+  // throw out of `nodeFromJSON` mid-paste either. Degrade to a paragraph, which
+  // every kit has.
+  const carrier: JSONContent = schema.nodes["rawBlock"]
+    ? { type: "rawBlock", attrs: { source, origin: "markdown" } }
+    : { type: "paragraph", content: [{ type: "text", text: source }] }
+  return { ...doc, content: [carrier, ...(doc.content ?? [])] }
+}
+
+/**
+ * Blocks are top-level siblings here, so slice openness is a one-level
+ * question — but the test is block IDENTITY, not `isTextblock`.
+ *
+ * In this schema a container is still a textblock: `callout` and `toggle` hold
+ * `inline*` and express containment through `depth`, exactly like `paragraph`
+ * and `heading`. So `isTextblock` matches nearly every block, and opening on it
+ * dissolves a leading callout — `replaceSelection` merges its inline content
+ * into the target paragraph and the callout node disappears. `Slice.maxOpen` is
+ * wrong here for the same reason, and more aggressively.
+ *
+ * `paragraph` is the one block with no identity to lose, which makes it the
+ * right and only thing to open: pasting a sentence into the middle of a
+ * paragraph merges inline, while a heading, callout, code block or divider at
+ * the boundary arrives as itself.
+ */
+function openBoundarySlice(doc: PMNode): Slice {
+  const opens = (node: PMNode | null | undefined) => (node?.type.name === "paragraph" ? 1 : 0)
+  return new Slice(doc.content, opens(doc.firstChild), opens(doc.lastChild))
 }
 
 /** A single closed code block node carrying `language`, wrapped as a slice. */

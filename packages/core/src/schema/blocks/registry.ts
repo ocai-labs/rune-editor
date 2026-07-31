@@ -18,6 +18,7 @@ import type {
   RuneBlockActionFactory,
   RuneBlockProjectionContext,
   RuneBlockSchemaContextSpec,
+  RuneMarkdownBlockContract,
   RuneMarkdownBlockSerializer,
   RuneSchemaContextPropMetadata,
 } from "./types"
@@ -88,6 +89,8 @@ export interface BlockSpecMetadata {
   }) => { from: number; to: number }
   /** Optional per-block Markdown serializer. See BlockSpecConfig.toMarkdown. */
   toMarkdown?: RuneMarkdownBlockSerializer
+  /** Bidirectional storage-markdown contract. See `BlockSpecConfig.markdown`. */
+  markdown?: RuneMarkdownBlockContract
   /** Optional block action factory. See BlockSpecConfig.blockActions. */
   blockActions?: RuneBlockActionFactory
 }

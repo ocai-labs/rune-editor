@@ -21,8 +21,9 @@ const Para = createBlockSpec({
 const Heading = createBlockSpec({
   type: "heading",
   content: "inline*",
-  props: { level: { default: 2, renderHTML: () => ({}) } },
+  props: { level: { default: 1, renderHTML: () => ({}) } },
   parseDOM: [
+    { tag: "h1", attrs: { level: 1 } },
     { tag: "h2", attrs: { level: 2 } },
     { tag: "h3", attrs: { level: 3 } },
     { tag: "h4", attrs: { level: 4 } },
@@ -52,7 +53,7 @@ function makeEditor(html: string) {
       Placeholder.configure({
         placeholders: {
           default: '"/" for commands',
-          heading: (node) => `Heading ${(node.attrs.level as number) - 1}`,
+          heading: (node) => `Heading ${node.attrs.level as number}`,
         },
       }),
     ],
@@ -101,7 +102,7 @@ describe("Placeholder plugin", () => {
   })
 
   it("uses heading per-type copy and level metadata", () => {
-    const editor = makeEditor("<h2></h2>")
+    const editor = makeEditor("<h1></h1>")
     simulateFocus(editor, true)
 
     const block = decoratedBlock()
@@ -188,7 +189,7 @@ describe("Placeholder plugin", () => {
 
   describe("headings always show their placeholder", () => {
     it("paints every empty heading regardless of focus or caret pos", () => {
-      const editor = makeEditor("<h2></h2><p>body</p><h3></h3>")
+      const editor = makeEditor("<h1></h1><p>body</p><h2></h2>")
       // No simulateFocus — heading placeholders must NOT require focus.
       const headingBlocks = decoratedBlocks().filter(
         (el) => el.getAttribute("data-placeholder-type") === "heading",
@@ -202,7 +203,7 @@ describe("Placeholder plugin", () => {
     })
 
     it("keeps painting empty headings after editor blur", () => {
-      const editor = makeEditor("<h2></h2>")
+      const editor = makeEditor("<h1></h1>")
       simulateFocus(editor, true)
       expect(decoratedBlock()).not.toBeNull()
       simulateFocus(editor, false)
@@ -212,14 +213,14 @@ describe("Placeholder plugin", () => {
     })
 
     it("hides the heading hint in readonly mode", () => {
-      const editor = makeEditor("<h2></h2>")
+      const editor = makeEditor("<h1></h1>")
       editor.setEditable(false)
       expect(decoratedBlock()).toBeNull()
       editor.destroy()
     })
 
     it("removes the heading widget once the heading has content", () => {
-      const editor = makeEditor("<h2></h2><h3></h3>")
+      const editor = makeEditor("<h1></h1><h2></h2>")
       expect(decoratedBlocks()).toHaveLength(2)
       editor.commands.setTextSelection(1)
       editor.commands.insertContent("Title")
@@ -279,47 +280,6 @@ describe("Placeholder plugin", () => {
       expect(ours.some((m) => m.includes("notARealBlock"))).toBe(true)
       // `default` is not a node name — must not be reported.
       expect(ours.some((m) => m.includes("default"))).toBe(false)
-
-      editor.destroy()
-      localContainer.remove()
-    } finally {
-      warn.mockRestore()
-    }
-  })
-
-  it("does not warn for an explicit `undefined` opt-out of an unregistered type", () => {
-    // rune-react ships `title: undefined` in its default placeholders, but
-    // TitleKit (the only thing that registers the `title` node) is opt-in.
-    // An explicit `undefined` is a deliberate opt-out, not a typo, so it must
-    // NOT trip the unknown-key warning for consumers without TitleKit.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    try {
-      const localContainer = document.createElement("div")
-      document.body.appendChild(localContainer)
-      const editor = new Editor({
-        element: localContainer,
-        extensions: [
-          Document,
-          Text,
-          Para,
-          Heading,
-          Placeholder.configure({
-            placeholders: {
-              default: '"/" for commands',
-              // `title` is not registered here; the explicit `undefined`
-              // opt-out must stay silent. A real string for an unknown key
-              // (covered by the test above) still warns.
-              ...({ title: undefined } as unknown as Record<string, string>),
-            },
-          }),
-        ],
-        content: "<p></p>",
-      })
-
-      const ours = warn.mock.calls
-        .map((args) => String(args[0] ?? ""))
-        .filter((m) => m.includes("rune-placeholder"))
-      expect(ours.some((m) => m.includes("title"))).toBe(false)
 
       editor.destroy()
       localContainer.remove()

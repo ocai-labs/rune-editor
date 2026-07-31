@@ -183,34 +183,4 @@ describe("ListNormalization", () => {
     ])
     expect(startsOf(editor)).toEqual([null, null, null, null])
   })
-
-  it("clears a stale mid-run start INSIDE a column (surface-aware walk)", () => {
-    // Root-only normalization never reached a numberedList inside a column,
-    // so a stale `start` survived there. The engine now numbers the column on
-    // its own surface (leader keeps its start, mid-run start is stale) and the
-    // walk visits every body block, so the column's rogue start is cleared.
-    const editor = createTestEditor({ kit: { suggestionMenus: false } })
-    const s = editor.schema
-    const nl = (attrs: Record<string, unknown>): ProseMirrorNode =>
-      s.nodes.numberedList!.create({ depth: 0, ...attrs }, s.text("x"))
-    const col = (...children: ProseMirrorNode[]): ProseMirrorNode =>
-      s.nodes.column!.create({ width: 1 }, children)
-    const doc = s.nodes.doc!.create(null, [
-      s.nodes.columnLayout!.create({ depth: 0 }, [
-        col(nl({}), nl({ start: 5 })), // start=5 is a stale non-leader item
-        col(s.nodes.paragraph!.create({ depth: 0 }, s.text("x"))),
-      ]),
-    ])
-    editor.view.dispatch(
-      editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content),
-    )
-
-    const starts: (number | null)[] = []
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === "numberedList") {
-        starts.push((node.attrs.start as number | null) ?? null)
-      }
-    })
-    expect(starts).toEqual([null, null])
-  })
 })

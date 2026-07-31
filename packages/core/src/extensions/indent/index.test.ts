@@ -11,6 +11,7 @@ import Text from "@tiptap/extension-text"
 import { TextSelection } from "@tiptap/pm/state"
 import { createBlockSpec } from "../../schema/blocks/createSpec"
 import { BlockCommands } from "../../api/commands"
+import { Toggle } from "../../blocks/Toggle/block"
 import { Indent } from "./index"
 
 const Paragraph = createBlockSpec({
@@ -28,9 +29,17 @@ const Bullet = createBlockSpec({
   indent: { mode: "structural" },
 })
 
+const Heading = createBlockSpec({
+  type: "heading",
+  content: "inline*",
+  props: { level: { default: 1 } },
+  parseDOM: [{ tag: "h1" }],
+  renderDOM: ({ HTMLAttributes }) => ["h1", HTMLAttributes, 0],
+})
+
 function makeEditor(content: Record<string, unknown>) {
   const editor = new Editor({
-    extensions: [Document, Text, Paragraph, Bullet, BlockCommands, Indent],
+    extensions: [Document, Text, Paragraph, Heading, Bullet, Toggle, BlockCommands, Indent],
     content: content as never,
   })
   return { editor, destroy: () => editor.destroy() }
@@ -141,6 +150,40 @@ describe("Indent extension — Tab", () => {
     expect(depthOf(editor, 2)).toBe(2)
     destroy()
   })
+
+  it("does not indent a paragraph or heading under an ordinary paragraph", () => {
+    const { editor, destroy } = makeEditor(doc([
+      { type: "paragraph", text: "plain" },
+      { type: "paragraph", text: "paragraph" },
+      { type: "heading", text: "heading" },
+    ]))
+
+    setCaret(editor, textPosInBlock(editor, 1))
+    expect(getHandler(editor, "Tab")()).toBe(true)
+    expect(depthOf(editor, 1)).toBe(0)
+
+    setCaret(editor, textPosInBlock(editor, 2))
+    expect(getHandler(editor, "Tab")()).toBe(true)
+    expect(depthOf(editor, 2)).toBe(0)
+    destroy()
+  })
+
+  it("indents a paragraph directly under Toggle but not under that paragraph", () => {
+    const { editor, destroy } = makeEditor(doc([
+      { type: "toggle", text: "details" },
+      { type: "paragraph", text: "first child" },
+      { type: "paragraph", depth: 1, text: "second child" },
+    ]))
+
+    setCaret(editor, textPosInBlock(editor, 1))
+    expect(getHandler(editor, "Tab")()).toBe(true)
+    expect(depthOf(editor, 1)).toBe(1)
+
+    setCaret(editor, textPosInBlock(editor, 2))
+    expect(getHandler(editor, "Tab")()).toBe(true)
+    expect(depthOf(editor, 2)).toBe(1)
+    destroy()
+  })
 })
 
 describe("Indent extension — Shift-Tab", () => {
@@ -161,6 +204,20 @@ describe("Indent extension — Shift-Tab", () => {
     setCaret(editor, 2)
     expect(getHandler(editor, "Shift-Tab")()).toBe(false)
     expect(depthOf(editor, 0)).toBe(0)
+    destroy()
+  })
+
+  it("outdents the remaining owner-body suffix so no orphan depth remains", () => {
+    const { editor, destroy } = makeEditor(doc([
+      { type: "toggle", text: "details" },
+      { type: "paragraph", depth: 1, text: "first" },
+      { type: "paragraph", depth: 1, text: "second" },
+      { type: "paragraph", text: "outside" },
+    ]))
+    setCaret(editor, textPosInBlock(editor, 1))
+
+    expect(getHandler(editor, "Shift-Tab")()).toBe(true)
+    expect([0, 1, 2, 3].map((index) => depthOf(editor, index))).toEqual([0, 0, 0, 0])
     destroy()
   })
 })

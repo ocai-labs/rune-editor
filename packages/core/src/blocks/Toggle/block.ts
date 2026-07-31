@@ -4,18 +4,29 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import type { JSONContent } from "@tiptap/core"
+import type { PhrasingContent, RootContent } from "mdast"
 import { createBlockSpec, createBlockExtension, readBlockInputText, inlineContentFromText } from "../../schema"
 import type { RuneBlockBase } from "../../types"
 import { insertOrUpdateBlockForSlashMenu } from "../../extensions/suggestion-menus"
 import type { SuggestionCommitContext } from "../../extensions/suggestion-menus"
 import { toggleBodyRange } from "./range"
 
-// Toggle Heading caps at UI H3 (internal level 4 → <h4>). Notion's
-// Toggle Heading menu only goes up to 3; mirroring that here keeps the
-// slash menu, input rules, and the schema in lockstep. Plain Heading
-// still supports UI H4 (internal level 5) — that's a separate block.
-export type ToggleLevel = 0 | 2 | 3 | 4
-const LEVELS: readonly ToggleLevel[] = [0, 2, 3, 4] as const
+// Toggle Heading caps at H3. Its level is now identical across UI, markdown,
+// and HTML; 0 remains the non-heading Toggle list variant.
+export type ToggleLevel = 0 | 1 | 2 | 3
+const LEVELS: readonly ToggleLevel[] = [0, 1, 2, 3] as const
+
+/**
+ * Obsidian FOLDED callout marker — `[!TYPE]-` (collapsed) / `[!TYPE]+`
+ * (expanded). The fold suffix is REQUIRED here: suffix-less markers are
+ * Callout's (its promoter registers earlier and claims them first; this
+ * regex would decline them anyway). Toggle-heading level rides the title
+ * slot as leading hashes (`[!NOTE]- ## head` → UI toggle-H2), on the same
+ * identity axis as the heading block (level = hashes).
+ */
+const TOGGLE_MARKER = /^\[!([A-Za-z]+)\]([+-])[^\S\n]*([^\n]*)(?:\n([\s\S]*))?$/
+
 const isLevel = (n: unknown): n is ToggleLevel =>
   (LEVELS as readonly number[]).includes(n as number)
 
@@ -29,7 +40,6 @@ export interface RuneToggleBlock extends RuneBlockBase {
 export const Toggle = createBlockSpec({
   type: "toggle",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   schemaContext: {
     input: {
       examples: [{ type: "toggle", level: 0, text: "Toggle title" }],
@@ -53,6 +63,70 @@ export const Toggle = createBlockSpec({
       renderHTML: (a) => ({
         "data-rune-toggle-expanded": String(a.expanded === true),
       }),
+    },
+  },
+  markdown: {
+    // Toggle children are the run of deeper siblings in the flat schema —
+    // the walker absorbs that run and hands it over as `children`.
+    absorbsDeeperRun: true,
+    // `> [!NOTE]- head` + body — Obsidian's folded callout (PRD §6.1).
+    // The marker rides an INLINE mdast html node inside the head paragraph
+    // (a text node would get bracket-escaped to `\[!NOTE]`), so the head's
+    // own marks serialize normally right after it on the same line.
+    toMdast(blockJson, ctx, children) {
+      const level = isLevel(blockJson.attrs?.level) ? blockJson.attrs.level : 0
+      const suffix = blockJson.attrs?.expanded === true ? "+" : "-"
+      const hashes = level > 0 ? ` ${"#".repeat(level)}` : ""
+      const title = ctx.inlineToMdast(blockJson.content ?? [])
+      const head: PhrasingContent[] = [
+        { type: "html", value: `[!NOTE]${suffix}${hashes}` },
+        ...(title.length > 0 ? [{ type: "text", value: " " } as const, ...title] : []),
+      ]
+      return {
+        type: "blockquote",
+        children: [{ type: "paragraph", children: head }, ...((children ?? []) as never[])],
+      }
+    },
+    // Promoter: claim fold-suffixed `[!TYPE]±` blockquotes. Head text (the
+    // marker paragraph's remainder) becomes the toggle's inline content;
+    // every remaining blockquote child converts through the full walker
+    // (ctx.blocksToPM) and lands one depth level under the toggle.
+    fromMdast(node, ctx) {
+      if (node.type !== "blockquote") return null
+      const [head, ...rest] = node.children
+      if (head?.type !== "paragraph") return null
+      const [first, ...headRest] = head.children
+      if (first?.type !== "text") return null
+      const match = TOGGLE_MARKER.exec(first.value)
+      if (!match) return null
+      let title = match[3] ?? ""
+      let level: ToggleLevel = 0
+      const h = /^(#{1,3})(?:[^\S\n]+|$)/.exec(title)
+      if (h) {
+        const parsed = h[1]!.length
+        if (isLevel(parsed)) {
+          level = parsed
+          title = title.slice(h[0].length)
+        }
+      }
+      const titlePhrasing: PhrasingContent[] = []
+      if (title) titlePhrasing.push({ type: "text", value: title })
+      titlePhrasing.push(...headRest)
+      const bodyNodes: RootContent[] = []
+      if (match[4]) bodyNodes.push({ type: "paragraph", children: [{ type: "text", value: match[4] }] })
+      bodyNodes.push(...rest)
+      const attrs: Record<string, unknown> = {}
+      if (level !== 0) attrs.level = level
+      if (match[2] === "+") attrs.expanded = true
+      const toggle: JSONContent = { type: "toggle" }
+      if (Object.keys(attrs).length > 0) toggle.attrs = attrs
+      const inline = ctx.inlineToPM(titlePhrasing)
+      if (inline.length > 0) toggle.content = inline
+      const body = ctx.blocksToPM(bodyNodes).map((b) => ({
+        ...b,
+        attrs: { ...b.attrs, depth: (typeof b.attrs?.depth === "number" ? b.attrs.depth : 0) + 1 },
+      }))
+      return [toggle, ...body]
     },
   },
   toRuneBlock: (node) => ({
@@ -106,7 +180,7 @@ export const Toggle = createBlockSpec({
         const el = node as HTMLElement
         return (
           el.querySelector(
-            ":scope > .rune-block-content > :is(p, h2, h3, h4)",
+            ":scope > .rune-block-content > :is(p, h1, h2, h3)",
           ) ?? el
         )
       },
@@ -125,14 +199,8 @@ export const Toggle = createBlockSpec({
   renderDOM: ({ node, HTMLAttributes }) => {
     const level = (node.attrs.level as ToggleLevel) ?? 0
     const expanded = node.attrs.expanded === true
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (textColor) contentAttrs["data-text-color"] = textColor
-    if (bgColor) contentAttrs["data-background-color"] = bgColor
 
     const titleTag = level === 0 ? "p" : `h${level}`
     return [
@@ -176,7 +244,7 @@ export const Toggle = createBlockSpec({
   toMarkdown({ prefix, serializeInline, node }) {
     const level = typeof node.attrs.level === "number" ? node.attrs.level : 0
     if (level > 0) {
-      return { line: `${prefix}${"#".repeat(level - 1)} ${serializeInline(node)}` }
+      return { line: `${prefix}${"#".repeat(level)} ${serializeInline(node)}` }
     }
     return { line: `${prefix}- ${serializeInline(node)}`, spacing: "list-item" }
   },
@@ -205,7 +273,7 @@ export const Toggle = createBlockSpec({
         block: toggleBlock,
         onItemClick: (ctx) => insertOrUpdateBlockForSlashMenu(ctx, toggleBlock),
       },
-      ...([2, 3, 4] as const).map((level, i) => {
+      ...([1, 2, 3] as const).map((level, i) => {
         const block = { type: "toggle", props: { level } }
         return {
           key: `toggle_heading_${i + 1}`,
@@ -224,9 +292,9 @@ export const Toggle = createBlockSpec({
       key: "input-rules",
       inputRules: [
         { find: /^>\s$/, replace: () => ({ type: "toggle", props: { level: 0 } }) },
-        { find: /^>#\s$/, replace: () => ({ type: "toggle", props: { level: 2 } }) },
-        { find: /^>##\s$/, replace: () => ({ type: "toggle", props: { level: 3 } }) },
-        { find: /^>###\s$/, replace: () => ({ type: "toggle", props: { level: 4 } }) },
+        { find: /^>#\s$/, replace: () => ({ type: "toggle", props: { level: 1 } }) },
+        { find: /^>##\s$/, replace: () => ({ type: "toggle", props: { level: 2 } }) },
+        { find: /^>###\s$/, replace: () => ({ type: "toggle", props: { level: 3 } }) },
       ],
       shortcutActions: {
         blockToggle: ({ editor }) =>

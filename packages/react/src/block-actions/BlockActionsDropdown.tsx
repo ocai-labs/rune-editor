@@ -20,17 +20,6 @@
 //     lifecycle).
 //   * Esc: a document keydown listener (capture phase + stopPropagation)
 //     closes the dropdown without letting M1's Esc binding clear MBS.
-//   * Pick a swatch: applyAttr dispatches attrs + collapses MBS to
-//     a TextSelection inside the first colored block + closeDropdown,
-//     all in one tr. (Spec §1.1's "MBS persists across grip re-clicks"
-//     governs grip lifecycle, not commit actions; applying a color is
-//     a commit, so caret returns to the document.)
-//
-// Submenu (Color → swatches): a hover-driven secondary panel anchored
-// to the right of the Color row. Open on mouseenter of either the row
-// or the submenu; close on mouseleave with a small grace timer so the
-// user can travel diagonally without losing it.
-//
 // We previously wrapped Radix DropdownMenu, but its menu behaviours fight
 // the grip's dual role (drives MBS + drives dropdown). This component uses
 // Radix Popover only for positioning / collision; PM plugin state and the
@@ -39,22 +28,17 @@
 import { useCallback, useEffect, useRef } from "react"
 import type { ComponentType } from "react"
 import type { Editor } from "@tiptap/core"
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
-import { TextSelection } from "@tiptap/pm/state"
 import {
   MultiBlockSelection,
   blockSelectionKey,
   getBlockSpecs,
   type BlockActionsDropdownAnchor,
-  type ColorName,
   type DropdownAnchorRect,
 } from "@ocai/rune-core"
 import { Popover, PopoverAnchor, PopoverContent } from "../components/ui/popover"
 import { useStableVirtualElement } from "../components/ui/useStableVirtualElement"
 import { editorViewDom, type RuneAnchor } from "../positioning"
-import { ColorMenu } from "../color"
 import {
-  ChevronRightIcon,
   CopyIcon,
   type IconProps,
   PaintRollerIcon,
@@ -69,8 +53,6 @@ import {
   NativeMenuLabel,
   NativeMenuSeparator,
   nativeMenuContentClass,
-  nativeMenuItemClass,
-  useNativeMenuSubmenu,
 } from "../native-menu"
 import {
   TurnIntoSubmenu,
@@ -152,12 +134,9 @@ const DEFAULT_BLOCK_ACTION_SECTION: BlockActionSection = {
 const TOOLBAR_MENU_GAP = 8
 
 const CONTENT_ATTR = "data-rune-block-actions-content"
-const SUBMENU_ATTR = "data-rune-block-actions-submenu"
-const SUBTRIGGER_ATTR = "data-rune-block-actions-subtrigger"
 const GRIP_SELECTOR = '[data-rune-side-menu-button="grip"]'
 const OUTSIDE_CLICK_SAFE_SELECTOR = [
   `[${CONTENT_ATTR}]`,
-  `[${SUBMENU_ATTR}]`,
   `[${TURN_INTO_SUBMENU_ATTR}]`,
 ].join(",")
 
@@ -174,7 +153,6 @@ export function BlockActionsDropdown({
       isEqual: sameBlockActionsSnapshot,
     },
   )
-  const submenu = useNativeMenuSubmenu()
   // Live anchor over the grip (or media-bar `•••`) — re-queries the DOM on every
   // floating-ui measurement and carries the editor DOM as contextElement, so the
   // dropdown re-positions on inner-container scroll without a manual handler.
@@ -202,24 +180,6 @@ export function BlockActionsDropdown({
   }, [editor, dropdownBlockId, anchorKind, anchorRect])
   gripAnchor.contextElement = editorViewDom(editor)
   const gripVirtualRef = useStableVirtualElement(gripAnchor)
-
-  // Reset submenu when the dropdown closes OR re-anchors to a different
-  // block, so the next open starts collapsed. The plugin reducer can
-  // transition `dropdownBlockId` A→B in one tr (gesture path dispatches
-  // `openDropdownFor: B` while the outside-click handler bails on
-  // GRIP_SELECTOR — see plugin.ts:182 and BlockActionsDropdown.tsx:157),
-  // so a `if (!dropdownBlockId)` guard would miss the re-anchor case and
-  // leak the open swatch panel onto the next block. Track prev id with a
-  // ref instead of unconditionally closing on every effect run —
-  // `submenu` is a memoized object that changes when its own `isOpen`
-  // flips, and an unconditional close would race the user's hover.
-  const prevDropdownBlockId = useRef(dropdownBlockId)
-  useEffect(() => {
-    if (prevDropdownBlockId.current !== dropdownBlockId) {
-      submenu.close()
-      prevDropdownBlockId.current = dropdownBlockId
-    }
-  }, [dropdownBlockId, submenu])
 
   // Outside-click → close. Capture phase so we run before any handler
   // that might stopPropagation. We skip when the target is inside the
@@ -261,26 +221,6 @@ export function BlockActionsDropdown({
     return () => document.removeEventListener("keydown", handler, true)
   }, [dropdownBlockId, editor])
 
-  const applyAttr = (attr: "textColor" | "backgroundColor", name: ColorName) => {
-    if (mbs.blockStartPositions.length === 0) return
-    const value = name === "default" ? null : name
-    const firstPos = mbs.blockStartPositions[0]!
-    const tr = editor.state.tr
-    for (const pos of mbs.blockStartPositions) {
-      tr.setNodeAttribute(pos, attr, value)
-    }
-    // Collapse MBS → TextSelection inside the first colored block, and
-    // close the dropdown in the same tr. Applying a color is a commit
-    // action — caret returns to the document, MBS doesn't linger.
-    // TextSelection.near picks the nearest valid text pos — works for
-    // paragraphs and atoms (resolves to next/prev textblock).
-    tr.setSelection(TextSelection.near(tr.doc.resolve(firstPos + 1)))
-    tr.setMeta(blockSelectionKey, { closeDropdown: true })
-    tr.setMeta("addToHistory", true)
-    editor.view.dispatch(tr)
-    editor.view.focus()
-  }
-
   const firstNode =
     mbs.firstPos !== null ? editor.state.doc.nodeAt(mbs.firstPos) : null
   const firstBlockId =
@@ -288,20 +228,10 @@ export function BlockActionsDropdown({
       ? readFirstMbsBlockId(editor, mbs)
       : null
   const blockSpecs = getBlockSpecs(editor)
-  const selectedNodes = readSelectedBlockNodes(editor, mbs)
-  const colorSupport = resolveColorSupport(blockSpecs, selectedNodes)
-  const activeText = colorSupport.text
-    ? ((firstNode?.attrs.textColor ?? null) as ColorName | null)
-    : undefined
-  const activeBg = colorSupport.background
-    ? ((firstNode?.attrs.backgroundColor ?? null) as ColorName | null)
-    : undefined
-
   // Close dropdown in a separate tr after the action's own tr — keeping
   // them separate lets each command emit its own history step (so
   // Cmd+Z reverses the delete/duplicate without also re-opening the
-  // dropdown). Mirrors the Color path: applyAttr's setNodeAttribute
-  // happens in one tr, closeDropdown in this util.
+  // dropdown).
   const closeDropdown = () => {
     editor.view.dispatch(
       editor.state.tr.setMeta(blockSelectionKey, { closeDropdown: true }),
@@ -376,16 +306,7 @@ export function BlockActionsDropdown({
         {blockActionSection.actions.map((action) => (
           <BlockActionRow key={action.key} action={action} />
         ))}
-        {(colorSupport.text || colorSupport.background) && (
-          <ColorRow
-            submenu={submenu}
-            activeText={activeText}
-            activeBg={activeBg}
-            canApplyText={colorSupport.text}
-            canApplyBackground={colorSupport.background}
-            onApply={applyAttr}
-          />
-        )}
+        <InlineColorOnlyRow />
         <TurnIntoSubmenu
           editor={editor}
           sourceBlockIds={mbsBlockIds(editor, dropdownBlockId, mbs)}
@@ -538,33 +459,6 @@ function mbsBlockIds(
   return ids
 }
 
-function readSelectedBlockNodes(
-  editor: Editor,
-  mbs: MbsRead,
-): ProseMirrorNode[] {
-  const nodes: ProseMirrorNode[] = []
-  for (const pos of mbs.blockStartPositions) {
-    const node = editor.state.doc.nodeAt(pos)
-    if (node) nodes.push(node)
-  }
-  return nodes
-}
-
-function resolveColorSupport(
-  blockSpecs: ReturnType<typeof getBlockSpecs>,
-  nodes: ProseMirrorNode[],
-) {
-  if (nodes.length === 0) return { text: false, background: false }
-  return {
-    text: nodes.every(
-      (node) => blockSpecs[node.type.name]?.supports?.textColor === true,
-    ),
-    background: nodes.every(
-      (node) => blockSpecs[node.type.name]?.supports?.backgroundColor === true,
-    ),
-  }
-}
-
 function buildBlockActionSection(
   context: BlockActionContext,
 ): BlockActionSection {
@@ -622,70 +516,11 @@ function BlockActionRow({ action }: { action: BlockActionRowModel }) {
   )
 }
 
-interface ColorRowProps {
-  submenu: ReturnType<typeof useNativeMenuSubmenu>
-  activeText?: ColorName | null
-  activeBg?: ColorName | null
-  canApplyText: boolean
-  canApplyBackground: boolean
-  onApply: (attr: "textColor" | "backgroundColor", name: ColorName) => void
-}
-
-function ColorRow({
-  submenu,
-  activeText,
-  activeBg,
-  canApplyText,
-  canApplyBackground,
-  onApply,
-}: ColorRowProps) {
+function InlineColorOnlyRow() {
   return (
-    <Popover open={submenu.isOpen} onOpenChange={() => {}}>
-      <PopoverAnchor asChild>
-        <div
-          {...{ [SUBTRIGGER_ATTR]: "" }}
-          className={cn(
-            nativeMenuItemClass("default"),
-            submenu.isOpen && "bg-accent text-accent-foreground",
-          )}
-          {...submenu.triggerProps}
-          role="menuitem"
-          aria-haspopup="menu"
-          aria-expanded={submenu.isOpen}
-        >
-          <PaintRollerIcon />
-          <span>Color</span>
-          <ChevronRightIcon className="ml-auto" />
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={4}
-        collisionPadding={8}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onCloseAutoFocus={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onFocusOutside={(e) => e.preventDefault()}
-        className={cn(nativeMenuContentClass("popover"), "w-max p-0")}
-        {...{ [SUBMENU_ATTR]: "" }}
-        {...submenu.contentProps}
-      >
-        <ColorMenu
-          activeText={activeText}
-          activeBg={activeBg}
-          onApplyText={
-            canApplyText ? (name) => onApply("textColor", name) : undefined
-          }
-          onApplyBackground={
-            canApplyBackground
-              ? (name) => onApply("backgroundColor", name)
-              : undefined
-          }
-        />
-      </PopoverContent>
-    </Popover>
+    <NativeMenuItem icon={PaintRollerIcon} disabled data-rune-inline-color-only="">
+      <span>Color</span>
+      <span className="ml-auto text-xs text-muted-foreground">Inline text only</span>
+    </NativeMenuItem>
   )
 }

@@ -53,17 +53,17 @@ describe("exportMarkdown", () => {
   })
 
   describe("heading", () => {
-    it("exports heading level 2 as #", () => {
-      expect(md([block("heading", "Title", { level: 2 })])).toBe("# Title\n")
+    it("exports heading level 1 as #", () => {
+      expect(md([block("heading", "Title", { level: 1 })])).toBe("# Title\n")
     })
-    it("exports heading level 3 as ##", () => {
-      expect(md([block("heading", "Sub", { level: 3 })])).toBe("## Sub\n")
+    it("exports heading level 2 as ##", () => {
+      expect(md([block("heading", "Sub", { level: 2 })])).toBe("## Sub\n")
     })
-    it("exports heading level 4 as ###", () => {
-      expect(md([block("heading", "Sub2", { level: 4 })])).toBe("### Sub2\n")
+    it("exports heading level 3 as ###", () => {
+      expect(md([block("heading", "Sub2", { level: 3 })])).toBe("### Sub2\n")
     })
-    it("exports heading level 5 as ####", () => {
-      expect(md([block("heading", "Sub3", { level: 5 })])).toBe("#### Sub3\n")
+    it("exports heading level 4 as ####", () => {
+      expect(md([block("heading", "Sub3", { level: 4 })])).toBe("#### Sub3\n")
     })
   })
 
@@ -423,12 +423,12 @@ describe("exportMarkdown", () => {
       ).toBe("- Toggle title\n\n    Child content\n")
     })
 
-    it("exports toggle heading level 2 as # with children following", () => {
+    it("exports toggle heading level 1 as # with children following", () => {
       expect(
         md([
           {
             type: "toggle",
-            attrs: { id: "tg2", depth: 0, level: 2, expanded: true },
+            attrs: { id: "tg2", depth: 0, level: 1, expanded: true },
             content: [{ type: "text", text: "Toggle H1" }],
           },
           block("paragraph", "Child text", { depth: 1 }),
@@ -436,24 +436,24 @@ describe("exportMarkdown", () => {
       ).toBe("# Toggle H1\n\nChild text\n")
     })
 
-    it("exports toggle heading level 3 as ##", () => {
+    it("exports toggle heading level 2 as ##", () => {
       expect(
         md([
           {
             type: "toggle",
-            attrs: { id: "tg3", depth: 0, level: 3, expanded: false },
+            attrs: { id: "tg3", depth: 0, level: 2, expanded: false },
             content: [{ type: "text", text: "Toggle H2" }],
           },
         ]),
       ).toBe("## Toggle H2\n")
     })
 
-    it("exports toggle heading level 4 as ###", () => {
+    it("exports toggle heading level 3 as ###", () => {
       expect(
         md([
           {
             type: "toggle",
-            attrs: { id: "tg4", depth: 0, level: 4, expanded: true },
+            attrs: { id: "tg4", depth: 0, level: 3, expanded: true },
             content: [{ type: "text", text: "Toggle H3" }],
           },
         ]),
@@ -661,7 +661,7 @@ describe("exportMarkdown", () => {
         md([
           {
             type: "toggle",
-            attrs: { id: "tg1", depth: 0, level: 2, expanded: true },
+            attrs: { id: "tg1", depth: 0, level: 1, expanded: true },
             content: [{ type: "text", text: "Section" }],
           },
           block("numberedList", "A", { depth: 1 }),
@@ -669,217 +669,6 @@ describe("exportMarkdown", () => {
           block("numberedList", "B", { depth: 1 }),
         ]),
       ).toBe("# Section\n\n1. A\n    - note\n2. B\n")
-    })
-  })
-
-  describe("columnLayout", () => {
-    // Markdown has no columns — exportMarkdown FLATTENS a layout: each
-    // column's children serialize in column order through the same
-    // per-block pipeline (mirrors the unwrap rule in
-    // blocks/Columns/normalization.ts, which splices a survivor column's
-    // children to root with depths preserved).
-    function columns(cols: unknown[][]) {
-      return {
-        type: "columnLayout",
-        attrs: { id: "cl1", depth: 0 },
-        content: cols.map((children, i) => ({
-          type: "column",
-          attrs: { id: `col-${i}`, width: 1 },
-          content: children,
-        })),
-      }
-    }
-
-    it("flattens column content in column order between siblings", () => {
-      expect(
-        md([
-          block("paragraph", "before"),
-          columns([
-            [block("paragraph", "left text")],
-            [block("paragraph", "right text")],
-          ]),
-          block("paragraph", "after"),
-        ]),
-      ).toBe("before\n\nleft text\n\nright text\n\nafter\n")
-    })
-
-    it("in-column heading and list keep their normal markdown formatting", () => {
-      expect(
-        md([
-          columns([
-            [
-              block("heading", "Left head", { level: 2 }),
-              block("bulletList", "left item"),
-            ],
-            [block("paragraph", "right")],
-          ]),
-        ]),
-      ).toBe("# Left head\n\n- left item\n\nright\n")
-    })
-
-    it("surface-local depth inside a column projects as root-level indentation", () => {
-      expect(
-        md([
-          columns([
-            [
-              block("bulletList", "parent", { depth: 0 }),
-              block("bulletList", "child", { depth: 1 }),
-            ],
-            [block("paragraph", "right")],
-          ]),
-        ]),
-      ).toBe("- parent\n    - child\n\nright\n")
-    })
-
-    it("numbered counters are surface-local: each column restarts at 1", () => {
-      // The flat markdown reading is one continuous list (renderers will
-      // renumber 1,2,3) — the source restart pins that each column is its
-      // own surface, like the unwrap precedent.
-      // AV-1: an HTML-comment separator is emitted between the columns to
-      // prevent CommonMark renderers from merging the two ordered runs.
-      expect(
-        md([
-          columns([
-            [block("numberedList", "a"), block("numberedList", "b")],
-            [block("numberedList", "c")],
-          ]),
-        ]),
-      ).toBe("1. a\n2. b\n\n<!-- -->\n\n1. c\n")
-    })
-
-    it("a layout breaks a root-level numbered run like any non-list block", () => {
-      expect(
-        md([
-          block("numberedList", "one"),
-          columns([[block("paragraph", "L")], [block("paragraph", "R")]]),
-          block("numberedList", "restart"),
-        ]),
-      ).toBe("1. one\n\nL\n\nR\n\n1. restart\n")
-    })
-
-    // AV-1: ordered|ordered across column boundaries → separator injected
-    it("ordered|ordered across column boundary emits HTML-comment separator", () => {
-      expect(
-        md([
-          columns([
-            [block("numberedList", "x")],
-            [block("numberedList", "y")],
-          ]),
-        ]),
-      ).toBe("1. x\n\n<!-- -->\n\n1. y\n")
-    })
-
-    // AV-1: ordered|paragraph or paragraph|ordered → no separator needed
-    it("ordered|paragraph across column boundary emits no separator", () => {
-      expect(
-        md([
-          columns([
-            [block("numberedList", "x")],
-            [block("paragraph", "text")],
-          ]),
-        ]),
-      ).toBe("1. x\n\ntext\n")
-    })
-
-    it("paragraph|ordered across column boundary emits no separator", () => {
-      expect(
-        md([
-          columns([
-            [block("paragraph", "text")],
-            [block("numberedList", "y")],
-          ]),
-        ]),
-      ).toBe("text\n\n1. y\n")
-    })
-
-    // AV-1: bullets across columns → no separator (bullet-run merging is invisible)
-    it("bullets across column boundary emits no separator", () => {
-      expect(
-        md([
-          columns([
-            [block("bulletList", "a")],
-            [block("bulletList", "b")],
-          ]),
-        ]),
-      ).toBe("- a\n- b\n")
-    })
-
-    // AV-1: leading edge — root numberedList immediately before a layout whose
-    // first emitted block is also numberedList must get a separator so CommonMark
-    // doesn't merge the two ordered runs.
-    it("ordered run before layout leading into numberedList gets separator", () => {
-      expect(
-        md([
-          block("numberedList", "x"),
-          columns([
-            [block("numberedList", "y")],
-            [block("paragraph", "p")],
-          ]),
-        ]),
-      ).toBe("1. x\n\n<!-- -->\n\n1. y\n\np\n")
-    })
-
-    // AV-1: trailing edge — layout whose last emitted block is numberedList,
-    // followed immediately by a root numberedList, must get a separator.
-    it("layout trailing into following ordered run gets separator", () => {
-      expect(
-        md([
-          columns([
-            [block("numberedList", "a")],
-            [block("numberedList", "b")],
-          ]),
-          block("numberedList", "c"),
-        ]),
-      ).toBe("1. a\n\n<!-- -->\n\n1. b\n\n<!-- -->\n\n1. c\n")
-    })
-
-    // AV-1 negative: paragraph-adjacent layout edges must NOT get separators
-    it("paragraph before layout leading into numberedList emits no separator", () => {
-      expect(
-        md([
-          block("paragraph", "intro"),
-          columns([
-            [block("numberedList", "y")],
-            [block("paragraph", "p")],
-          ]),
-        ]),
-      ).toBe("intro\n\n1. y\n\np\n")
-    })
-
-    // AV-1 pin: layout→layout where col-tail (last serialized block of layout 1)
-    // and next-layout-head (first serialized block of layout 2) are both
-    // numbered → exactly ONE separator at that boundary (not two).
-    it("layout→layout col-tail and next-layout-head both numbered → one separator", () => {
-      expect(
-        md([
-          columns([
-            [block("paragraph", "p")],
-            [block("numberedList", "a")],
-          ]),
-          columns([
-            [block("numberedList", "b")],
-            [block("paragraph", "q")],
-          ]),
-        ]),
-      ).toBe("p\n\n1. a\n\n<!-- -->\n\n1. b\n\nq\n")
-    })
-
-    // AV-1 pin: a middle column that produces no output (only empty/non-list
-    // content) must not cause a double separator. The column boundary sits
-    // between [1. a] and a middle paragraph; neither pair is ordered|ordered,
-    // so no separator is spliced at any boundary.
-    // PM's `block+` constraint means a truly empty column always contains at
-    // least one paragraph — we use that paragraph explicitly here.
-    it("middle column with paragraph does not splice separator at non-numbered boundaries", () => {
-      expect(
-        md([
-          columns([
-            [block("numberedList", "a")],
-            [block("paragraph", "mid")],
-            [block("numberedList", "c")],
-          ]),
-        ]),
-      ).toBe("1. a\n\nmid\n\n1. c\n")
     })
   })
 })

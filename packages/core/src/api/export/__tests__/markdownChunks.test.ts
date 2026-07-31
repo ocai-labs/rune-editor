@@ -72,18 +72,6 @@ function block(
   return node
 }
 
-function columns(id: string, cols: unknown[][]) {
-  return {
-    type: "columnLayout",
-    attrs: { id, depth: 0 },
-    content: cols.map((children, i) => ({
-      type: "column",
-      attrs: { id: `${id}-col-${i}`, width: 1 },
-      content: children,
-    })),
-  }
-}
-
 /**
  * The contract: concatenating `chunks[i].text` with the same blank-line
  * separators the join inserted reproduces `markdown` byte-for-byte.
@@ -114,7 +102,7 @@ function assertReconstructs(markdown: string, chunks: RuneMarkdownChunk[]) {
 /** Named fixtures reused by the per-case tests and the sweep at the end. */
 const fixtures: Record<string, unknown[]> = {
   simple: [
-    block("h-1", "heading", "Title", { level: 2 }),
+    block("h-1", "heading", "Title", { level: 1 }),
     block("p-1", "paragraph", "First paragraph"),
     block("p-2", "paragraph", "Second paragraph"),
   ],
@@ -137,15 +125,6 @@ const fixtures: Record<string, unknown[]> = {
     block("p-3", "paragraph", "Child text", { depth: 1 }),
     block("n-4", "numberedList", "A", { depth: 1 }),
     block("n-5", "numberedList", "B", { depth: 1 }),
-  ],
-  columnSeparator: [
-    columns("cl-1", [
-      [
-        block("cn-1", "numberedList", "a"),
-        block("cn-2", "numberedList", "b"),
-      ],
-      [block("cn-3", "numberedList", "c")],
-    ]),
   ],
   mixed: [
     block("h-2", "heading", "Doc", { level: 2 }),
@@ -210,24 +189,6 @@ describe("exportMarkdownWithChunks", () => {
     // The numbered children keep their running indices under flattening.
     const numbered = chunks.filter((c) => /^\d+\. /.test(c.text)).map((c) => c.text)
     expect(numbered).toEqual(["1. A", "2. B"])
-    assertReconstructs(markdown, chunks)
-  })
-
-  it("column boundary between numbered runs emits a blockId:null separator chunk", () => {
-    const editor = editorFor(fixtures.columnSeparator!)
-    const { markdown, chunks } = exportMarkdownWithChunks(editor)
-
-    const separators = chunks.filter((c) => c.blockId === null)
-    expect(separators).toHaveLength(1)
-    expect(separators[0]!.text).toBe("<!-- -->")
-    expect(separators[0]!.indent).toBe(0)
-
-    // The real blocks keep their ids in column order.
-    expect(chunks.filter((c) => c.blockId !== null).map((c) => c.blockId)).toEqual([
-      "cn-1",
-      "cn-2",
-      "cn-3",
-    ])
     assertReconstructs(markdown, chunks)
   })
 

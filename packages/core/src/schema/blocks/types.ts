@@ -28,8 +28,9 @@
 // config/implementation. This file describes the SET of blocks a given
 // editor knows about — a different concern and a different shape.
 
-import type { AnyExtension, Editor } from "@tiptap/core"
+import type { AnyExtension, Editor, JSONContent } from "@tiptap/core"
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model"
+import type { PhrasingContent, RootContent } from "mdast"
 import type { RuneBlock } from "../../blocks"
 import type { RuneShortcutActionId } from "../../keymap"
 
@@ -104,6 +105,80 @@ export interface RuneMarkdownBlockSerializerContext {
 export type RuneMarkdownBlockSerializer = (
   ctx: RuneMarkdownBlockSerializerContext,
 ) => RuneMarkdownBlockInfo | null
+
+// ---------------------------------------------------------------------------
+// Storage-markdown bidirectional contract (markdown-storage PRD §5.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared inline codec handed to a block's `markdown` contract so no block
+ * ever reimplements mark mapping. Both functions are pure.
+ */
+export interface RuneMdastContext {
+  /** mdast phrasing → PM inline array (marks, hardBreaks, soft `\n` splits). */
+  inlineToPM(nodes: PhrasingContent[]): JSONContent[]
+  /** PM inline array → mdast phrasing. */
+  inlineToMdast(content: JSONContent[]): PhrasingContent[]
+  /**
+   * mdast flow nodes → PM blocks, running the FULL walker (contracts,
+   * depth comments, list grouping) at surface-relative depth 0. Container
+   * contracts use this to convert their body (e.g. Toggle turning the
+   * blockquote's remaining children into its child blocks) — the returned
+   * blocks carry surface-relative depths; the contract offsets them for
+   * its own nesting (+1 for a direct child) and the walker adds the outer
+   * offset on top.
+   */
+  blocksToPM(nodes: RootContent[]): JSONContent[]
+}
+
+/**
+ * Bidirectional storage-markdown mapping for one block type, declared on
+ * `createBlockSpec` and collected statically (no editor) by
+ * `core/src/markdown`. Scope is deliberately narrow: the block maps ITS OWN
+ * attrs + inline content. Document-level concerns — depth comments,
+ * list-run assembly, expanding one mdast node into several flat blocks'
+ * ordering — belong to the walker (`markdown/convert.ts`), which stamps
+ * `depth` onto returned blocks and sequences multi-block results.
+ *
+ * `fromMdast` doubles as a promoter: it is offered mdast nodes in block
+ * registration order BEFORE the walker's builtin mapping, and returns
+ * `null` to decline (e.g. Callout claims only blockquotes whose first line
+ * is a `[!TYPE]` marker; plain blockquotes fall through to the builtin).
+ */
+export interface RuneMarkdownBlockContract {
+  /**
+   * Flat-schema container marker: when true, the walker collects the run
+   * of FOLLOWING siblings deeper than this block (its children in the
+   * flat depth model), converts them — depths rebased so a direct child
+   * is the body's surface level 0 — and hands them to `toMdast` as the
+   * `children` argument. The run is consumed (not re-serialized as
+   * siblings) unless `toMdast` returns null.
+   */
+  absorbsDeeperRun?: boolean
+  /**
+   * This block's bytes cannot survive a container, so it must never hold a
+   * depth. Declared here rather than inferred from `indent.maxDepth: 0`,
+   * because those are different claims: CodeBlock, Divider and Table also cap
+   * at 0, but a fenced block indented under a list item round-trips perfectly —
+   * their syntax travels with the indentation. A raw carrier's does not, and it
+   * is the difference between "we would rather not" and "this destroys it".
+   *
+   * Two consumers read it, which is the point of declaring it once:
+   *   - `markdown/convert.ts` flattens such a block before serializing, so the
+   *     guarantee holds however the depth arrived
+   *   - `extensions/block-drag` refuses to offer a deeper drop slot, so the
+   *     editor stops accepting a nesting that disappears on the next save
+   */
+  flattensDepth?: boolean
+  /** PM block JSON → mdast node(s), or null to fall back to the builtin. */
+  toMdast(
+    block: JSONContent,
+    ctx: RuneMdastContext,
+    children?: RootContent[],
+  ): RootContent | RootContent[] | null
+  /** Claim an mdast node → PM block JSON(s); null declines. */
+  fromMdast(node: RootContent, ctx: RuneMdastContext): JSONContent | JSONContent[] | null
+}
 
 /**
  * A handler bound to a keyboard chord. Receives the editor; return

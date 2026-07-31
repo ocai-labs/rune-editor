@@ -14,17 +14,17 @@ import {
 describe("explainBlockInputRejection", () => {
   it("surfaces the block's advertised input description for an invalid value", () => {
     const editor = createTestEditor()
-    const reason = explainBlockInputRejection(editor, { type: "heading", level: 1 })
+    const reason = explainBlockInputRejection(editor, { type: "heading", level: 7 })
     expect(reason).not.toBeNull()
     expect(reason).toMatch(/heading/i)
     expect(reason).toMatch(/level/i)
-    // the heading schemaContext.input.description states the 2–5 range
-    expect(reason).toMatch(/2/)
+    // the heading schemaContext.input.description states the 1–6 range
+    expect(reason).toMatch(/6/)
   })
 
   it("returns null when the input is constructible (rejection was elsewhere)", () => {
     const editor = createTestEditor()
-    expect(explainBlockInputRejection(editor, { type: "heading", level: 2, text: "ok" })).toBeNull()
+    expect(explainBlockInputRejection(editor, { type: "heading", level: 1, text: "ok" })).toBeNull()
     expect(explainBlockInputRejection(editor, { type: "paragraph", text: "ok" })).toBeNull()
   })
 
@@ -53,7 +53,7 @@ describe("explainBlockInputsRejection", () => {
     const editor = createTestEditor()
     const reason = explainBlockInputsRejection(editor, [
       { type: "paragraph", text: "fine" },
-      { type: "heading", level: 1 },
+      { type: "heading", level: 7 },
     ])
     expect(reason).toMatch(/heading/i)
   })

@@ -16,7 +16,6 @@ import { insertOrUpdateBlockForSlashMenu } from "../../extensions/suggestion-men
 export const Paragraph = createBlockSpec({
   type: "paragraph",
   content: "inline*",
-  supports: { textColor: true, backgroundColor: true },
   schemaContext: {
     input: {
       examples: [{ type: "paragraph", text: "Example text" }],
@@ -68,14 +67,8 @@ export const Paragraph = createBlockSpec({
     // (.rune-block-content) so the colored pill hugs the content rectangle
     // and the rhythm gutter stays untinted. Outer .rune-block keeps
     // data-id / data-depth only. See spec §4.
-    const {
-      "data-text-color": textColor,
-      "data-background-color": bgColor,
-      ...outer
-    } = HTMLAttributes
+    const outer = HTMLAttributes
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (textColor) contentAttrs["data-text-color"] = textColor
-    if (bgColor) contentAttrs["data-background-color"] = bgColor
     return [
       "div",
       { ...outer, class: "rune-block" },

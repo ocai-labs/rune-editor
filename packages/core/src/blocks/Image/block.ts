@@ -27,6 +27,7 @@ import {
   renderMediaAlignAttr,
   type MediaAlign,
 } from "../media/align"
+import { escapeHtmlAttr, unescapeHtmlAttr } from "../../markdown/htmlAttr"
 import { downloadMediaAsset } from "../media/assetActions"
 import { getMediaImportState } from "../media/import-plugin"
 
@@ -41,6 +42,7 @@ interface ImageAttrs {
   depth: number
   src: string
   alt: string
+  title: string | null
   width: number | null
   height: number | null
   contentWidth: number | null
@@ -105,6 +107,7 @@ function runeImageAttrsFromChrome(el: HTMLElement): Partial<ImageAttrs> | false 
       ...base,
       src: "",
       alt: "",
+      title: null,
       width: null,
       height: null,
       contentWidth: null,
@@ -120,6 +123,7 @@ function runeImageAttrsFromChrome(el: HTMLElement): Partial<ImageAttrs> | false 
     ...base,
     src,
     alt: img.getAttribute("alt") ?? "",
+    title: img.getAttribute("title"),
     width: numAttr(img, "width"),
     height: numAttr(img, "height"),
     contentWidth: parseContentWidthAttrs(content),
@@ -128,12 +132,17 @@ function runeImageAttrsFromChrome(el: HTMLElement): Partial<ImageAttrs> | false 
   }
 }
 
+/** One attribute out of a self-contained `<img …>`; same shape media uses. */
+const IMG_ATTR = (name: string, attrs: string): string | undefined =>
+  new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1]
+
 export const Image = createBlockSpec({
   type: "image",
   content: "",
   props: {
     src: { default: "", renderHTML: () => ({}) },
     alt: { default: "", renderHTML: () => ({}) },
+    title: { default: null as string | null, renderHTML: () => ({}) },
     width: { default: null as number | null, renderHTML: () => ({}) },
     height: { default: null as number | null, renderHTML: () => ({}) },
     contentWidth: { default: null as number | null, renderHTML: () => ({}) },
@@ -145,9 +154,64 @@ export const Image = createBlockSpec({
     sourceUrl: { default: null as string | null, renderHTML: () => ({}) },
     pendingFromPaste: { default: null as string | null, renderHTML: () => ({}) },
   },
-  supports: { backgroundColor: true, resize: true, mediaSource: true, align: true },
+  supports: { resize: true, mediaSource: true, align: true },
   resizeMediaSelector: "img[data-rune-image]",
   inPlaceAttrs: [contentWidthInPlaceAttr, mediaAlignInPlaceAttr],
+  /**
+   * D6's align half. Width rides Obsidian's native `![alt|300](src)` and is
+   * handled by the builtin mapping in `markdown/convert.ts`; alignment has no
+   * Markdown spelling at all, so a non-default alignment upgrades to the `<img>`
+   * form and this contract owns both directions of that.
+   *
+   * `center` is the default, so the overwhelmingly common image still writes as
+   * `![alt](src)` and never sees a tag. `contentWidth` is deliberately absent:
+   * it is view state (zyler PRD §4.1), and persisting it would push one
+   * client's layout decision into a file every other client must honour.
+   */
+  markdown: {
+    toMdast: (block) => {
+      const align = block.attrs?.align
+      if (align !== "left" && align !== "right") return null // builtin `![]()`
+      const src = typeof block.attrs?.src === "string" ? block.attrs.src : ""
+      const alt = typeof block.attrs?.alt === "string" ? block.attrs.alt : ""
+      const title = typeof block.attrs?.title === "string" ? block.attrs.title : null
+      const width = typeof block.attrs?.width === "number" ? block.attrs.width : null
+      return {
+        type: "html",
+        value:
+          `<img src="${escapeHtmlAttr(src)}"` +
+          (alt ? ` alt="${escapeHtmlAttr(alt)}"` : "") +
+          (title !== null ? ` title="${escapeHtmlAttr(title)}"` : "") +
+          (width ? ` width="${width}"` : "") +
+          ` align="${align}">`,
+      }
+    },
+    fromMdast: (node) => {
+      if (node.type !== "html") return null
+      const shape = /^<img\b([^>]*?)\/?>\s*$/.exec(node.value.trim())
+      if (!shape) return null
+      const attrs = shape[1] ?? ""
+      const src = IMG_ATTR("src", attrs)
+      const align = IMG_ATTR("align", attrs)
+      const title = IMG_ATTR("title", attrs)
+      // Only an `<img>` this codec could itself have written is claimed. One
+      // with no alignment is a plain image the author spelled as a tag, and
+      // reading it as `![]()` would rewrite their file on the next save; the
+      // raw carrier keeps those bytes instead.
+      if (!src || (align !== "left" && align !== "right")) return null
+      const width = Number(IMG_ATTR("width", attrs) ?? "")
+      return {
+        type: "image",
+        attrs: {
+          src: unescapeHtmlAttr(src),
+          alt: unescapeHtmlAttr(IMG_ATTR("alt", attrs) ?? ""),
+          ...(title !== undefined ? { title: unescapeHtmlAttr(title) } : {}),
+          align,
+          ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+        },
+      }
+    },
+  },
   schemaContext: {
     input: {
       examples: [
@@ -206,6 +270,7 @@ export const Image = createBlockSpec({
           return {
             src: "",
             alt: img.getAttribute("alt") ?? "",
+            title: img.getAttribute("title"),
             width: null,
             height: null,
             sourceUrl: null,
@@ -218,6 +283,7 @@ export const Image = createBlockSpec({
         return {
           src,
           alt: img.getAttribute("alt") ?? "",
+          title: img.getAttribute("title"),
           width: numAttr(img, "width"),
           height: numAttr(img, "height"),
           pendingFromPaste: null,
@@ -227,10 +293,9 @@ export const Image = createBlockSpec({
   ],
 
   renderDOM({ node, HTMLAttributes }) {
-    const { "data-background-color": bgColor, ...outer } = HTMLAttributes
-    const { src, alt, width, height, contentWidth } = node.attrs as ImageAttrs
+    const outer = HTMLAttributes
+    const { src, alt, title, width, height, contentWidth } = node.attrs as ImageAttrs
     const contentAttrs: Record<string, string> = { class: "rune-block-content" }
-    if (typeof bgColor === "string") contentAttrs["data-background-color"] = bgColor
 
     if (src === "") {
       const outerAttrs = mergeBlockHTMLAttributes(outer, {
@@ -286,6 +351,7 @@ export const Image = createBlockSpec({
           {
             src,
             alt,
+            ...(title !== null ? { title } : {}),
             ...(width != null ? { width: String(width) } : {}),
             ...(height != null ? { height: String(height) } : {}),
             // Block native HTML5 image drag: a direct mousedown+drag on the
@@ -303,13 +369,25 @@ export const Image = createBlockSpec({
   toMarkdown({ prefix, node }) {
     const src = typeof node.attrs.src === "string" ? node.attrs.src : ""
     const alt = typeof node.attrs.alt === "string" ? node.attrs.alt : ""
-    return { line: `${prefix}![${alt}](${src})` }
+    const title = typeof node.attrs.title === "string" ? node.attrs.title : null
+    const titlePart =
+      title === null
+        ? ""
+        : ` "${title.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+    return { line: `${prefix}![${alt}](${src}${titlePart})` }
   },
 
   clipboardRenderDOM({ node }) {
     const attrs = node.attrs as ImageAttrs
     if (!attrs.src) return ["span"]
-    return ["img", { src: attrs.src, alt: attrs.alt }]
+    return [
+      "img",
+      {
+        src: attrs.src,
+        alt: attrs.alt,
+        ...(attrs.title !== null ? { title: attrs.title } : {}),
+      },
+    ]
   },
 
   toRuneBlock(node) {
@@ -322,6 +400,7 @@ export const Image = createBlockSpec({
       depth: typeof attrs.depth === "number" ? attrs.depth : 0,
       src: typeof attrs.src === "string" ? attrs.src : "",
       alt: typeof attrs.alt === "string" ? attrs.alt : "",
+      ...(typeof attrs.title === "string" ? { title: attrs.title } : {}),
       width: typeof attrs.width === "number" ? attrs.width : null,
       height: typeof attrs.height === "number" ? attrs.height : null,
       ...(contentWidth !== null ? { contentWidth } : {}),
@@ -343,6 +422,7 @@ export const Image = createBlockSpec({
       depth: input.depth ?? defaults.depth ?? 0,
       src: inputStringOrDefault(input.src, defaults.attrs?.src),
       alt: inputStringOrDefault(input.alt, defaults.attrs?.alt),
+      title: inputNullableStringOrDefault(input.title, defaults.attrs?.title),
       width: inputNumberOrDefault(input.width, defaults.attrs?.width),
       height: inputNumberOrDefault(input.height, defaults.attrs?.height),
       contentWidth: inputContentWidthOrDefault(
@@ -383,6 +463,8 @@ export interface RuneImageBlock extends RuneBlockBase {
   type: "image"
   src: string
   alt: string
+  /** Optional Markdown/HTML advisory title. */
+  title?: string
   width: number | null
   height: number | null
   contentWidth?: number | null

@@ -6,7 +6,6 @@
 
 import { Extension, type CommandProps } from "@tiptap/core"
 import { bindShortcutKeys, getRuneKeymap } from "../../keymap"
-import type { ColorName } from "../../shared/color-tokens"
 import {
   CellSelection,
   TableMap,
@@ -62,24 +61,6 @@ declare module "@tiptap/core" {
       goToPreviousTableCell: () => ReturnType
       setTableCellSelection: (args: { anchorCell: number; headCell?: number }) => ReturnType
       fixTable: () => ReturnType
-      /**
-       * Cell-color commands (M8.4e-e). `tableStart` is the table's
-       * **content** start — i.e., `tablePos + 1`, where `tablePos` is the
-       * position of the `<table>` node itself. The pill-dropdown plugin
-       * stores it this way (see `PillDropdownState.tableStart` in
-       * `CellHandlePills.ts`), and these commands index cells as
-       * `tableStart + map.map[…]`. Passing the table's node position
-       * instead of `pos + 1` will silently off-by-one. `name === "default"`
-       * is stored as `null` (matches `storedColor` in
-       * `extensions/color/createColorExtension.ts`).
-       *
-       * @remarks Addressing: PM table content start + axis index, not
-       * Rune block id.
-       */
-      setTableColumnTextColor: (args: { tableStart: number; colIndex: number; name: ColorName | "default" | null }) => ReturnType
-      setTableColumnBackgroundColor: (args: { tableStart: number; colIndex: number; name: ColorName | "default" | null }) => ReturnType
-      setTableRowTextColor: (args: { tableStart: number; rowIndex: number; name: ColorName | "default" | null }) => ReturnType
-      setTableRowBackgroundColor: (args: { tableStart: number; rowIndex: number; name: ColorName | "default" | null }) => ReturnType
       /**
        * @remarks Addressing: PM table content start + row index, not Rune
        * block id.
@@ -230,22 +211,6 @@ export const TableCommands = Extension.create({
         () =>
         ({ state, dispatch }: TableCommandProps) =>
           clearAxis("row", state, dispatch),
-      setTableColumnTextColor:
-        (args: { tableStart: number; colIndex: number; name: ColorName | "default" | null }) =>
-        ({ state, dispatch }: TableCommandProps) =>
-          setCellAxisAttr("col", "textColor", { tableStart: args.tableStart, index: args.colIndex, name: args.name }, state, dispatch),
-      setTableColumnBackgroundColor:
-        (args: { tableStart: number; colIndex: number; name: ColorName | "default" | null }) =>
-        ({ state, dispatch }: TableCommandProps) =>
-          setCellAxisAttr("col", "backgroundColor", { tableStart: args.tableStart, index: args.colIndex, name: args.name }, state, dispatch),
-      setTableRowTextColor:
-        (args: { tableStart: number; rowIndex: number; name: ColorName | "default" | null }) =>
-        ({ state, dispatch }: TableCommandProps) =>
-          setCellAxisAttr("row", "textColor", { tableStart: args.tableStart, index: args.rowIndex, name: args.name }, state, dispatch),
-      setTableRowBackgroundColor:
-        (args: { tableStart: number; rowIndex: number; name: ColorName | "default" | null }) =>
-        ({ state, dispatch }: TableCommandProps) =>
-          setCellAxisAttr("row", "backgroundColor", { tableStart: args.tableStart, index: args.rowIndex, name: args.name }, state, dispatch),
       toggleTableHeaderRow:
         (args: { tableStart: number; rowIndex: number }) =>
         ({ state, dispatch }: TableCommandProps) =>
@@ -634,65 +599,14 @@ function clearAxis(
   return true
 }
 
-// Apply a single block-attr (textColor or backgroundColor) to every cell
-// along one axis (column or row) of a single table. Used by the four
-// pill-dropdown color commands. Walks via TableMap — same primitive used
-// by clearAxis above; do not hand-roll an alternative walker (it would
-// bypass the merged-cell guard's invariants).
-function setCellAxisAttr(
-  axis: "col" | "row",
-  attr: "textColor" | "backgroundColor",
-  args: { tableStart: number; index: number; name: ColorName | "default" | null },
-  state: TableCommandProps["state"],
-  dispatch?: TableCommandProps["dispatch"],
-): boolean {
-  const tableNodePos = args.tableStart - 1
-  if (tableNodePos < 0 || tableNodePos >= state.doc.content.size) return false
-  const table = state.doc.nodeAt(tableNodePos)
-  if (!table || table.type.name !== "table") return false
-  const map = TableMap.get(table)
-
-  // Bounds check — reject indices outside the table.
-  if (axis === "col" && (args.index < 0 || args.index >= map.width)) return false
-  if (axis === "row" && (args.index < 0 || args.index >= map.height)) return false
-
-  if (!dispatch) return true
-
-  const value = args.name === "default" ? null : args.name
-  const tr = state.tr
-
-  // Collect absolute cell positions, then walk back-to-front so earlier
-  // setNodeAttribute calls don't shift later positions. (setNodeAttribute
-  // is size-preserving so this is defensive — but mirroring clearAxis's
-  // pattern keeps the codebase uniform.)
-  const cellPositions: number[] = []
-  if (axis === "col") {
-    for (let r = 0; r < map.height; r++) {
-      cellPositions.push(args.tableStart + map.map[r * map.width + args.index]!)
-    }
-  } else {
-    for (let c = 0; c < map.width; c++) {
-      cellPositions.push(args.tableStart + map.map[args.index * map.width + c]!)
-    }
-  }
-  cellPositions.sort((a, b) => b - a)
-  for (const cellPos of cellPositions) {
-    tr.setNodeAttribute(cellPos, attr, value)
-  }
-
-  dispatch(tr)
-  return true
-}
-
 /** Flip every cell in row `rowIndex` (resp. col `colIndex`) of the table
  *  at `tableStart - 1` between `tableCell` and `tableHeader`. The new
  *  type is decided once: if every cell is already `tableHeader`, target
  *  is `tableCell`; otherwise `tableHeader` (so a mixed axis normalises
  *  to all-header on first call). Forward iteration is safe —
  *  `setNodeMarkup` is size-preserving (same arity, same content type),
- *  so later positions don't shift. attrs and marks are copied verbatim,
- *  which preserves colwidth / textColor / backgroundColor and any inline
- *  content. Caller already enforced `index === 0`. */
+ *  so later positions don't shift. attrs, marks, and inline content are
+ *  copied verbatim. Caller already enforced `index === 0`. */
 function toggleHeaderAxis(
   axis: "col" | "row",
   args: { tableStart: number; index: number },

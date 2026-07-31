@@ -78,17 +78,13 @@ export class MultiBlockSelection extends Selection {
     const surfaceStart = surface ? surface.start() : 0
 
     // SINGLE enforcement point for `selectable: false`. The leading run of
-    // non-selectable blocks on this surface (the in-document title is index 0 on
-    // the root surface) is never block-selectable, so clamp BOTH boundaries past
+    // non-selectable blocks on this surface is never block-selectable, so clamp BOTH boundaries past
     // it — no MBS built here can cover it. Every MBS originates in this factory
     // (Escape, drag-extend, marquee, setBlockSelection, arrow movement, …), so
     // doing it here closes the contract for all of them, present and future,
-    // rather than at each call site (which is how the title slipped into the
-    // Escape and drag-extend paths). No-op when the surface has no leading
-    // non-selectable block (every `column` surface; a title-less doc) — so the
-    // columns path and historical behavior are unchanged. Skipped when the
-    // surface has NO selectable block at all (a transient title-only doc, which
-    // normalizeTitle does not let persist) so we never clamp past the last index.
+    // rather than at each call site. No-op when the surface has no leading
+    // non-selectable block. Skipped when the surface has no selectable block at
+    // all so we never clamp past the last index.
     const minSelectable = firstSelectableIndex(parent)
     if (minSelectable > 0 && minSelectable <= parent.childCount - 1) {
       anchorBlockIndex = Math.max(minSelectable, anchorBlockIndex)

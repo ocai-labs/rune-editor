@@ -9,16 +9,10 @@ import { createColorExtension } from "./createColorExtension"
 
 describe("createColorExtension", () => {
   it("creates the four public color extension names from kind + scope", () => {
-    expect(createColorExtension({ kind: "text", scope: "block" }).name).toBe(
-      "runeBlockTextColor",
-    )
-    expect(createColorExtension({ kind: "background", scope: "block" }).name).toBe(
-      "runeBlockBackgroundColor",
-    )
-    expect(createColorExtension({ kind: "text", scope: "inline" }).name).toBe(
+    expect(createColorExtension({ kind: "text" }).name).toBe(
       "runeTextColor",
     )
-    expect(createColorExtension({ kind: "background", scope: "inline" }).name).toBe(
+    expect(createColorExtension({ kind: "background" }).name).toBe(
       "runeBackgroundColor",
     )
   })

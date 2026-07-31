@@ -87,10 +87,8 @@
   --rune-color-red-bg:    var(--rune-color-red-bg-dark);
 }
 
-/* Application — block-level (data-text-color rides on .rune-block-content)
-   AND inline (data-text-color rides on a textStyle <span>). Same selector
-   matches both so one rule covers either. Scoped to .rune-editor so a
-   stray attr outside the editor doesn't trigger styling. */
+/* Inline textStyle color marks. Scoped to .rune-editor so a stray attr
+   outside the editor doesn't trigger styling. */
 
 .rune-editor [data-text-color="gray"]   { color: var(--rune-color-gray-fg); }
 .rune-editor [data-text-color="brown"]  { color: var(--rune-color-brown-fg); }
